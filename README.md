@@ -1,4 +1,4 @@
-# TodoPlanner
+# TickyTask
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
@@ -15,22 +15,22 @@ A **native macOS** weekly & monthly planner — a privacy-first, local-only rewr
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, and automatically carry unfinished tasks forward to today.
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
 - **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
-- **Global shortcuts** — configurable hotkeys to open TodoPlanner and to capture a new task for today from any app.
+- **Global shortcuts** — configurable hotkeys to open TickyTask and to capture a new task for today from any app.
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
-- **Backup & restore** — export your entire store to a portable `.todoplanner` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
+- **Backup & restore** — export your entire store to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
 - **Appearance** — System/Light/Dark theme, compact rows.
 - **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
 - Clean app icon; first-run sample data.
 
 ## How it works
 
-TodoPlanner is a single SwiftUI app with three scenes sharing one local SwiftData store and one `AppState`:
+TickyTask is a single SwiftUI app with three scenes sharing one local SwiftData store and one `AppState`:
 
 1. **Main window** — the Week/Month planner.
 2. **Menu-bar popover** — a compact calendar + today's agenda + quick-add.
 3. **Quick-capture window** — a tiny "new task for today" box opened by a global shortcut.
 
-Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TodoPlanner/TodoPlanner.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
+Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
 
 ```mermaid
 flowchart TD
@@ -59,14 +59,14 @@ flowchart TD
 Prerequisites: **macOS 15+**, **Xcode 26**, and **XcodeGen** (`brew install xcodegen`).
 
 ```bash
-xcodegen generate            # generates TodoPlanner.xcodeproj from project.yml
-open TodoPlanner.xcodeproj    # then Run (⌘R) — or build from the CLI:
+xcodegen generate            # generates TickyTask.xcodeproj from project.yml
+open TickyTask.xcodeproj    # then Run (⌘R) — or build from the CLI:
 
-xcodebuild -project TodoPlanner.xcodeproj -scheme TodoPlanner \
+xcodebuild -project TickyTask.xcodeproj -scheme TickyTask \
   -destination 'platform=macOS' build
 
 # run the tests
-xcodebuild test -project TodoPlanner.xcodeproj -scheme TodoPlanner \
+xcodebuild test -project TickyTask.xcodeproj -scheme TickyTask \
   -destination 'platform=macOS'
 ```
 
@@ -77,7 +77,7 @@ The only third-party dependency is [KeyboardShortcuts](https://github.com/sindre
 Because the app is not yet code-signed/notarized, Gatekeeper will warn on first launch. Right-click the app → **Open**, or clear the quarantine flag:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/TodoPlanner.app
+xattr -dr com.apple.quarantine /Applications/TickyTask.app
 ```
 
 Note: macOS delivers local notifications only for code-signed apps, so the reminder features require at least an ad-hoc/Developer-ID signed build to actually fire.

@@ -11,7 +11,7 @@ struct MenuBarContentView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("TodoPlanner")
+                Text("TickyTask")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button {
@@ -22,7 +22,7 @@ struct MenuBarContentView: View {
                 }
                 .buttonStyle(.borderless)
                 .frame(width: 28, height: 28)
-                .help("Open TodoPlanner")
+                .help("Open TickyTask")
             }
 
             MiniMonthCalendar()

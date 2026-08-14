@@ -43,7 +43,7 @@ final class BackupCoordinator {
     }
 
     var defaultFilename: String {
-        "TodoPlanner Backup \(Self.dateStamp.string(from: Date()))"
+        "TickyTask Backup \(Self.dateStamp.string(from: Date()))"
     }
 
     // MARK: Export
@@ -191,11 +191,11 @@ final class BackupCoordinator {
         case BackupError.missingPassphrase:
             return "This backup is encrypted — enter its passphrase."
         case BackupError.corruptPayload:
-            return "This file isn't a valid TodoPlanner backup."
+            return "This file isn't a valid TickyTask backup."
         case BackupError.fileTooLarge(let maxMB):
-            return "That file is too large to be a TodoPlanner backup (over \(maxMB) MB)."
+            return "That file is too large to be a TickyTask backup (over \(maxMB) MB)."
         case BackupError.unsupportedFormat(let found, _), BackupError.unsupportedSchema(let found, _):
-            return "This backup was made by a newer version of TodoPlanner (v\(found)). Update the app to restore it."
+            return "This backup was made by a newer version of TickyTask (v\(found)). Update the app to restore it."
         case BackupError.validationFailed(let reason):
             return "The backup didn't pass validation: \(reason)."
         case BackupError.invalidReference(let entity, _):

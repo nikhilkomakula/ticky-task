@@ -1,5 +1,5 @@
 import Testing
-@testable import TodoPlanner
+@testable import TickyTask
 
 @MainActor
 @Suite("Editor support")

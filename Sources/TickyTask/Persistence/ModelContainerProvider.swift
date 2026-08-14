@@ -15,12 +15,12 @@ enum ModelContainerProvider {
         let configuration = ModelConfiguration(schema: schema, url: try defaultStoreURL())
         return try ModelContainer(
             for: schema,
-            migrationPlan: TodoPlannerMigrationPlan.self,
+            migrationPlan: TickyTaskMigrationPlan.self,
             configurations: configuration
         )
     }
 
-    /// Dedicated on-disk location: `~/Library/Application Support/TodoPlanner/TodoPlanner.store`
+    /// Dedicated on-disk location: `~/Library/Application Support/TickyTask/TickyTask.store`
     /// (namespaced rather than the generic `default.store` in the shared root).
     static func defaultStoreURL() throws -> URL {
         let fileManager = FileManager.default
@@ -28,9 +28,9 @@ enum ModelContainerProvider {
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
         )
-        let directory = base.appendingPathComponent("TodoPlanner", isDirectory: true)
+        let directory = base.appendingPathComponent("TickyTask", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("TodoPlanner.store")
+        return directory.appendingPathComponent("TickyTask.store")
     }
 
     /// An ephemeral in-memory container for tests and SwiftUI previews.

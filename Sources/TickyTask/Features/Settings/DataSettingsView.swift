@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Settings › Data: export the whole store to a `.todoplanner` backup file
+/// Settings › Data: export the whole store to a `.tickytask` backup file
 /// (optionally passphrase-encrypted) and restore one. Restore is replace-all,
 /// gated behind a diff preview and an explicit confirmation.
 struct DataSettingsView: View {
@@ -55,12 +55,12 @@ struct DataSettingsView: View {
         .fileExporter(
             isPresented: $coordinator.showExporter,
             document: coordinator.exportDocument,
-            contentType: .todoPlannerBackup,
+            contentType: .tickyTaskBackup,
             defaultFilename: coordinator.defaultFilename
         ) { coordinator.handleExport($0) }
         .fileImporter(
             isPresented: $coordinator.showImporter,
-            allowedContentTypes: [.todoPlannerBackup, .json],
+            allowedContentTypes: [.tickyTaskBackup, .json],
             allowsMultipleSelection: false
         ) { coordinator.handleImportPick($0) }
         .sheet(isPresented: $coordinator.showImportPassphrasePrompt) {
@@ -104,10 +104,10 @@ private struct RestoreConfirmSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Replace all TodoPlanner data?", systemImage: "exclamationmark.triangle.fill")
+            Label("Replace all TickyTask data?", systemImage: "exclamationmark.triangle.fill")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(.red)
-            Text("This deletes everything currently in TodoPlanner and restores the selected backup. This can't be undone.")
+            Text("This deletes everything currently in TickyTask and restores the selected backup. This can't be undone.")
                 .foregroundStyle(.secondary)
 
             if let diff = coordinator.diff {

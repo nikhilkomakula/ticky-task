@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import TodoPlanner
+@testable import TickyTask
 
 @Suite("WeekMath")
 struct WeekMathTests {

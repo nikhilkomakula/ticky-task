@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import TodoPlanner
+@testable import TickyTask
 
 @MainActor
 @Suite("AppState navigation")

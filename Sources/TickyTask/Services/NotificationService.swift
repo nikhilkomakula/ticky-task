@@ -11,7 +11,7 @@ import UserNotifications
 /// is correct either way.
 enum NotificationService {
     private static var center: UNUserNotificationCenter { .current() }
-    private static let endOfDayIdentifier = "todoplanner.endOfDay"
+    private static let endOfDayIdentifier = "tickytask.endOfDay"
     private static let taskPrefix = "task."
 
     @discardableResult

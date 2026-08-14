@@ -1,5 +1,5 @@
 import Testing
-@testable import TodoPlanner
+@testable import TickyTask
 
 /// Phase 0 smoke test: proves the app module links into the test target and the
 /// Swift Testing runner is wired up. Real unit suites (recurrence, backup,

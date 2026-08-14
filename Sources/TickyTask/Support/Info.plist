@@ -13,7 +13,7 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleDisplayName</key>
-	<string>TodoPlanner</string>
+	<string>TickyTask</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,14 +25,14 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>TodoPlanner — native macOS fork. GPL-3.0.</string>
+	<string>TickyTask — native macOS fork. GPL-3.0.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.todoplanner.backup</string>
+			<string>com.tickytask.backup</string>
 			<key>UTTypeDescription</key>
-			<string>TodoPlanner Backup</string>
+			<string>TickyTask Backup</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.json</string>
@@ -41,7 +41,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>todoplanner</string>
+					<string>tickytask</string>
 				</array>
 			</dict>
 		</dict>

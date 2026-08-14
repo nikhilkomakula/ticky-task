@@ -9,7 +9,7 @@ import AppKit
 /// `AppState` is likewise shared so selection stays in sync. On store-open
 /// failure a recovery UI is shown instead of crashing.
 @main
-struct TodoPlannerApp: App {
+struct TickyTaskApp: App {
     @State private var appState = AppState()
     private let containerResult: Result<ModelContainer, Error>
 
@@ -18,7 +18,7 @@ struct TodoPlannerApp: App {
     }
 
     var body: some Scene {
-        Window("TodoPlanner", id: "main") {
+        Window("TickyTask", id: "main") {
             ContainerGate(containerResult: containerResult) { ContentView() }
                 .environment(appState)
         }
@@ -30,7 +30,7 @@ struct TodoPlannerApp: App {
             }
         }
 
-        MenuBarExtra("TodoPlanner", systemImage: "checklist") {
+        MenuBarExtra("TickyTask", systemImage: "checklist") {
             ContainerGate(containerResult: containerResult) { MenuBarContentView() }
                 .environment(appState)
         }

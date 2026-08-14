@@ -4,7 +4,7 @@ import KeyboardShortcuts
 
 /// Global keyboard-shortcut names, configurable in Settings › Shortcuts.
 extension KeyboardShortcuts.Name {
-    /// Bring the main TodoPlanner window to the front.
+    /// Bring the main TickyTask window to the front.
     static let openApp = Self("openApp")
     /// Open the quick-capture window to add a task for today from anywhere.
     static let newTaskToday = Self("newTaskToday")

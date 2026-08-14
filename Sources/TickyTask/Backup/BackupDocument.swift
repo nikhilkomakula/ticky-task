@@ -2,10 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    /// TodoPlanner's own backup type — a JSON subtype so the file is
+    /// TickyTask's own backup type — a JSON subtype so the file is
     /// distinguishable in the picker but still openable as plain JSON. A
     /// matching exported-type declaration lives in Info.plist.
-    static let todoPlannerBackup = UTType(exportedAs: "com.todoplanner.backup", conformingTo: .json)
+    static let tickyTaskBackup = UTType(exportedAs: "com.tickytask.backup", conformingTo: .json)
 }
 
 /// Thin `FileDocument` used only to hand pre-encoded bytes to `.fileExporter`,
@@ -13,8 +13,8 @@ extension UTType {
 /// the picked URL directly (see `BackupCoordinator`), so this stays write-only
 /// in practice.
 struct BackupDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.todoPlannerBackup, .json]
-    static let writableContentTypes: [UTType] = [.todoPlannerBackup]
+    static let readableContentTypes: [UTType] = [.tickyTaskBackup, .json]
+    static let writableContentTypes: [UTType] = [.tickyTaskBackup]
 
     var data: Data
 

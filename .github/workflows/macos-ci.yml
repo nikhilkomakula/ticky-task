@@ -21,8 +21,8 @@ jobs:
       - name: Test (unsigned)
         run: |
           xcodebuild test \
-            -project TodoPlanner.xcodeproj \
-            -scheme TodoPlanner \
+            -project TickyTask.xcodeproj \
+            -scheme TickyTask \
             -configuration Debug \
             -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \

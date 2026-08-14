@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import SwiftData
-@testable import TodoPlanner
+@testable import TickyTask
 
 @Suite("Backup export/import")
 struct BackupTests {
