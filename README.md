@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.0** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.1** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.0.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.1.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -102,7 +102,7 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 - Import from legacy WeekToDo `.wtdb` exports
 - Drag-and-drop reordering / moving tasks across days
 - Localization (String Catalog)
-- Signed & notarized **universal** DMG release; retire the legacy Electron sources
+- Signed & notarized **universal** DMG release (the app is currently unsigned/arm64)
 
 ## Tech stack
 
