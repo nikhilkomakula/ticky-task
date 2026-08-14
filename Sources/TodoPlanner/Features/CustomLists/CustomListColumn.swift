@@ -5,6 +5,7 @@ import SwiftData
 /// renamable title, its tasks, an empty state, and an inline quick-add.
 struct CustomListColumn: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppState.self) private var app
     @Bindable var list: CustomList
     var onEditTask: (TaskItem) -> Void
 
@@ -29,12 +30,17 @@ struct CustomListColumn: View {
             if sortedTasks.isEmpty {
                 EmptyTasksView(title: "This list is empty")
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(sortedTasks) { task in
-                            TaskRowView(task: task) { onEditTask(task) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(sortedTasks) { task in
+                                TaskRowView(task: task) { onEditTask(task) }
+                                    .id(task.id)
+                            }
                         }
                     }
+                    .onChange(of: app.highlightedTaskID) { _, id in scrollToHighlight(id, proxy: proxy) }
+                    .onAppear { scrollToHighlight(app.highlightedTaskID, proxy: proxy) }
                 }
             }
 
@@ -45,6 +51,15 @@ struct CustomListColumn: View {
         .cardSurface()
         .contextMenu {
             Button("Delete List", role: .destructive) { deleteList() }
+        }
+    }
+
+    /// Center + flash a searched-for task if it lives in this list.
+    private func scrollToHighlight(_ id: UUID?, proxy: ScrollViewProxy) {
+        guard let id, sortedTasks.contains(where: { $0.id == id }) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
         }
     }
 

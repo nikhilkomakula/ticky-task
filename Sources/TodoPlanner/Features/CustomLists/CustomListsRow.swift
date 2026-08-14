@@ -7,6 +7,7 @@ import SwiftData
 /// horizontally when there are more lists than day columns.
 struct CustomListsRow: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppState.self) private var app
     @AppStorage("calendarColumns") private var calendarColumns = 5
     @Query(sort: [SortDescriptor(\CustomList.sortIndex)]) private var lists: [CustomList]
     var onEditTask: (TaskItem) -> Void
@@ -14,18 +15,33 @@ struct CustomListsRow: View {
     var body: some View {
         GeometryReader { geo in
             let cardWidth = columnWidth(for: geo.size.width)
-            ScrollView(.horizontal, showsIndicators: true) {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(lists) { list in
-                        CustomListColumn(list: list, onEditTask: onEditTask)
-                            .frame(width: cardWidth)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(lists) { list in
+                            CustomListColumn(list: list, onEditTask: onEditTask)
+                                .frame(width: cardWidth)
+                                .id(list.id)
+                        }
+                        addListButton
                     }
-                    addListButton
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .frame(minWidth: geo.size.width, alignment: .leading)
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
-                .frame(minWidth: geo.size.width, alignment: .leading)
+                .onChange(of: app.highlightedTaskID) { _, id in scrollToOwningList(id, proxy: proxy) }
+                .onAppear { scrollToOwningList(app.highlightedTaskID, proxy: proxy) }
             }
+        }
+    }
+
+    /// When a searched-for task lives in a custom list, bring that list's column
+    /// into the horizontal viewport (the column itself scrolls to the row).
+    private func scrollToOwningList(_ id: UUID?, proxy: ScrollViewProxy) {
+        guard let id, let owner = lists.first(where: { list in list.tasks.contains { $0.id == id } }) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(owner.id, anchor: .center) }
         }
     }
 

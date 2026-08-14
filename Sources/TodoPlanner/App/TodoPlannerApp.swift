@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AppKit
 
 /// Application entry point.
 ///
@@ -23,6 +24,11 @@ struct TodoPlannerApp: App {
         }
         .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .textEditing) {
+                FindTaskCommand(appState: appState)
+            }
+        }
 
         MenuBarExtra("TodoPlanner", systemImage: "checklist") {
             ContainerGate(containerResult: containerResult) { MenuBarContentView() }
@@ -40,5 +46,22 @@ struct TodoPlannerApp: App {
         Settings {
             SettingsView()
         }
+    }
+}
+
+/// The ⌘F "Find Task" menu command. Opens/activates the main window before
+/// presenting search, so it works even if that window is closed or another
+/// window (e.g. quick-capture) is key.
+private struct FindTaskCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    let appState: AppState
+
+    var body: some View {
+        Button("Find Task…") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+            appState.isSearchPresented = true
+        }
+        .keyboardShortcut("f", modifiers: .command)
     }
 }

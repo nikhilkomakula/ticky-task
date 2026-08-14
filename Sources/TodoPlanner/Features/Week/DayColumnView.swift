@@ -42,12 +42,17 @@ struct DayColumnView: View {
             if orderedTasks.isEmpty {
                 EmptyTasksView()
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(orderedTasks) { task in
-                            TaskRowView(task: task) { onEditTask(task) }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(orderedTasks) { task in
+                                TaskRowView(task: task) { onEditTask(task) }
+                                    .id(task.id)
+                            }
                         }
                     }
+                    .onChange(of: app.highlightedTaskID) { _, id in scrollToHighlight(id, proxy: proxy) }
+                    .onAppear { scrollToHighlight(app.highlightedTaskID, proxy: proxy) }
                 }
             }
             QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
@@ -77,6 +82,15 @@ struct DayColumnView: View {
             }
         }
         .frame(minHeight: 30)
+    }
+
+    /// Center + flash a searched-for task if it lives in this day.
+    private func scrollToHighlight(_ id: UUID?, proxy: ScrollViewProxy) {
+        guard let id, orderedTasks.contains(where: { $0.id == id }) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+        }
     }
 
     private func addTask() {

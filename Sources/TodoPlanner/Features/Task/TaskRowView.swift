@@ -5,11 +5,20 @@ import SwiftData
 /// metadata (subtask badge, alarm, time). Hover-highlighted; tap to edit.
 struct TaskRowView: View {
     @Environment(\.modelContext) private var context
+    @Environment(AppState.self) private var app
     @AppStorage("compactView") private var compactView = false
     let task: TaskItem
     var onEdit: (() -> Void)? = nil
 
     @State private var isHovering = false
+
+    /// Flashed briefly when a search result jumps to this row.
+    private var isHighlighted: Bool { app.highlightedTaskID == task.id }
+
+    private var rowFill: Color {
+        if isHighlighted { return Color.accentColor.opacity(0.18) }
+        return isHovering ? Color.primary.opacity(0.075) : Color.primary.opacity(0.035)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -59,9 +68,15 @@ struct TaskRowView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, compactView ? 4 : 6)
         .background(
-            isHovering ? Color.primary.opacity(0.075) : Color.primary.opacity(0.035),
+            rowFill,
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .overlay {
+            if isHighlighted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         // Edit/Delete float over the trailing metadata on hover, so the row never
         // reflows and the title keeps its full width when not hovering. Real
@@ -85,6 +100,7 @@ struct TaskRowView: View {
         }
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeInOut(duration: 0.2), value: isHighlighted)
         .onTapGesture { onEdit?() }
         .help("Edit task")
         .contextMenu {

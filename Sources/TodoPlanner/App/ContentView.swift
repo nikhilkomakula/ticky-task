@@ -16,8 +16,9 @@ struct ContentView: View {
     @AppStorage("menuBarOnly") private var menuBarOnly = false
 
     var body: some View {
+        @Bindable var app = app
         VStack(spacing: 0) {
-            TopToolbar()
+            TopToolbar(onSearch: { app.isSearchPresented = true })
             Divider()
             switch app.viewMode {
             case .week:
@@ -38,6 +39,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await runLaunchTasks() } }
         }
+        .sheet(isPresented: $app.isSearchPresented) { SearchView() }
     }
 
     private var preferredColorScheme: ColorScheme? {
@@ -76,6 +78,7 @@ private struct TopToolbar: View {
     @Environment(AppState.self) private var app
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("calendarColumns") private var calendarColumns = 5
+    var onSearch: () -> Void = {}
 
     private var columns: Int { max(1, min(12, calendarColumns)) }
 
@@ -87,7 +90,15 @@ private struct TopToolbar: View {
                 .font(.headline.weight(.semibold))
 
             HStack(spacing: 12) {
-                // Left: Week / Month switcher.
+                // Left: search + Week / Month switcher.
+                Button(action: onSearch) {
+                    Image(systemName: "magnifyingglass")
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+                .help("Search tasks (⌘F)")
+
                 Picker("View", selection: $app.viewMode) {
                     ForEach(ViewMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol).tag(mode)
