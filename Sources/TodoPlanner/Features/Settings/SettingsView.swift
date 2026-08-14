@@ -1,6 +1,7 @@
 import SwiftUI
+import KeyboardShortcuts
 
-/// The macOS Settings window (⌘,). Three tabs: Appearance, Behavior, Notifications.
+/// The macOS Settings window (⌘,): Appearance, Behavior, Notifications, Shortcuts.
 /// All values are persisted via `@AppStorage` and read by the relevant views.
 struct SettingsView: View {
     var body: some View {
@@ -11,8 +12,10 @@ struct SettingsView: View {
                 .tabItem { Label("Behavior", systemImage: "slider.horizontal.3") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
+            ShortcutsSettingsView()
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
         }
-        .frame(width: 500, height: 360)
+        .frame(width: 500, height: 400)
     }
 }
 
@@ -105,5 +108,22 @@ private struct NotificationSettingsView: View {
 
     private func reschedule() {
         Task { await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes) }
+    }
+}
+
+private struct ShortcutsSettingsView: View {
+    @AppStorage("menuBarOnly") private var menuBarOnly = false
+
+    var body: some View {
+        Form {
+            KeyboardShortcuts.Recorder("Open TodoPlanner:", name: .openApp)
+            KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
+            Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
+            Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+        .padding()
     }
 }

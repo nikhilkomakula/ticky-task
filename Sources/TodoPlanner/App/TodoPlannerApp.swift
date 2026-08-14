@@ -3,12 +3,13 @@ import SwiftData
 
 /// Application entry point.
 ///
-/// The persistent store is opened once at launch. On success the container is
-/// injected into the scene; on failure a recovery UI is shown instead of
-/// crashing (never a silent in-memory fallback, which would mislead the user
-/// into thinking their data is being saved).
+/// The persistent store is opened once at launch and shared (via `ContainerGate`)
+/// across the main window, the menu-bar popover, and the quick-capture window.
+/// `AppState` is likewise shared so selection stays in sync. On store-open
+/// failure a recovery UI is shown instead of crashing.
 @main
 struct TodoPlannerApp: App {
+    @State private var appState = AppState()
     private let containerResult: Result<ModelContainer, Error>
 
     init() {
@@ -16,11 +17,25 @@ struct TodoPlannerApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
-            RootView(containerResult: containerResult)
+        Window("TodoPlanner", id: "main") {
+            ContainerGate(containerResult: containerResult) { ContentView() }
+                .environment(appState)
         }
         .defaultSize(width: 1100, height: 720)
         .windowResizability(.contentMinSize)
+
+        MenuBarExtra("TodoPlanner", systemImage: "checklist") {
+            ContainerGate(containerResult: containerResult) { MenuBarContentView() }
+                .environment(appState)
+        }
+        .menuBarExtraStyle(.window)
+
+        Window("New Task", id: "quickCapture") {
+            ContainerGate(containerResult: containerResult) { QuickCaptureView() }
+                .environment(appState)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)   // opened on demand via the global shortcut
 
         Settings {
             SettingsView()

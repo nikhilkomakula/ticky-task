@@ -1,165 +1,97 @@
-# WeekToDo | FOSS Minimalist Weekly Planner
+# TodoPlanner
+
+A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
+
+> Status: active rewrite on the `feature/native-macos-rewrite` branch. macOS 15+ (Sequoia and later), Apple Silicon & Intel. Distributed **unsigned** for now.
+
 ---
-![GitHub all releases](https://img.shields.io/github/downloads/zuntek/weektodoweb/total) 
-[![vue3](https://img.shields.io/badge/vue-3.x-brightgreen.svg)](https://vuejs.org/)
-
-WeekToDo is a free minimalist weekly planner app focused on privacy. Schedule your tasks and projects with to do lists and a calendar. Available for Windows, Mac, Linux or online.
-
-![Logo](https://weektodo.me/weektodo-preview.webp)
 
 ## Features
 
-- Cross platform
-- Light/dark mode toggle
-- Custom To-do Lists
-- Drag and Drop
-- Multi-language
-- Sub-tasks
-- Markdown Support
-- Customizable user interface
-- Local Storage
-- Task Colors
-- Task Time
-- Recurring Tasks
-- Notifications and reminders
+- **Week view** (the default) — configurable 1–12 day columns, Monday/Sunday start, previous/next/today navigation.
+- **Month view** — a calendar grid showing every day's tasks, with a selected-day agenda panel; toggle between **Week** and **Month**.
+- **Task editor** — title, **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High/Critical) that color-codes the task (green → yellow → orange → red; a flag marks Critical), and **subtasks**.
+- **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend chores*) that persists across all weeks; resizable split.
+- **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, and automatically carry unfinished tasks forward to today.
+- **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
+- **Menu-bar app** — a menu-bar icon opens a mini calendar with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
+- **Global shortcuts** — configurable hotkeys to open TodoPlanner and to capture a new task for today from any app.
+- **Appearance** — System/Light/Dark theme, compact rows.
+- Clean app icon; first-run sample data.
+
+## How it works
+
+TodoPlanner is a single SwiftUI app with three scenes sharing one local SwiftData store and one `AppState`:
+
+1. **Main window** — the Week/Month planner.
+2. **Menu-bar popover** — a compact calendar + today's agenda + quick-add.
+3. **Quick-capture window** — a tiny "new task for today" box opened by a global shortcut.
+
+Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TodoPlanner/TodoPlanner.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
+
+```mermaid
+flowchart TD
+    subgraph Scenes
+        MW[Main Window\nWeek / Month] 
+        MB[Menu-bar Popover]
+        QC[Quick-capture Window]
+        ST[Settings]
+    end
+    MW & MB & QC --> AS[AppState]
+    MW & MB & QC --> DS[DataService]
+    DS --> SD[(SwiftData store)]
+    subgraph Services
+        BEH[BehaviorService\nsort · carry-forward]
+        NOT[NotificationService\nper-task · end-of-day]
+        WM[WeekMath / RecurrenceEngine]
+    end
+    MW --> BEH
+    MW --> NOT
+    MW --> WM
+    ST -->|@AppStorage| MW
+```
+
+## Build & run from source
+
+Prerequisites: **macOS 15+**, **Xcode 26**, and **XcodeGen** (`brew install xcodegen`).
+
+```bash
+xcodegen generate            # generates TodoPlanner.xcodeproj from project.yml
+open TodoPlanner.xcodeproj    # then Run (⌘R) — or build from the CLI:
+
+xcodebuild -project TodoPlanner.xcodeproj -scheme TodoPlanner \
+  -destination 'platform=macOS' build
+
+# run the tests
+xcodebuild test -project TodoPlanner.xcodeproj -scheme TodoPlanner \
+  -destination 'platform=macOS'
+```
+
+The only third-party dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (resolved via Swift Package Manager).
+
+### Opening the unsigned build
+
+Because the app is not yet code-signed/notarized, Gatekeeper will warn on first launch. Right-click the app → **Open**, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/TodoPlanner.app
+```
+
+Note: macOS delivers local notifications only for code-signed apps, so the reminder features require at least an ad-hoc/Developer-ID signed build to actually fire.
 
 ## Roadmap
 
-- Touch mode
-- Mobile Version
-- Sync across devices
-- Workspaces
-- Themes
+- Recurring-tasks UI (daily/weekly/weekdays/monthly/yearly) — the model & engine are in place; the editor UI is next
+- Import from legacy WeekToDo `.wtdb` exports; portable JSON export
+- Encrypted backup **export/import** with restore preview
+- Drag-and-drop reordering / moving tasks across days
+- Localization (String Catalog)
+- Signed & notarized **universal** DMG release; retire the legacy Electron sources
 
-## Sponsors
+## Tech stack
 
-WeekToDo is an GPL-licensed open source project with its ongoing development made possible entirely by users support and sponsors. If you'd like to join them, please consider [ sponsoring WeekToDo's development](https://weektodo.me/sponsor-us/) or [make the donation](https://weektodo.me/support-us/) you can.
+SwiftUI · SwiftData · Swift Testing · XcodeGen · KeyboardShortcuts. macOS 15+ deployment, built against the macOS 26 SDK.
 
-<p align="center">
-  <h3 align="center">Diamond Sponsors</h3>
-</p>
+## Credits & license
 
-<p align="center">
-  <a target="_blank" href="https://password.link">
-  <img alt="Password.link - Securely share sensitive information with one-time links. Send and receive passwords and confidential documents." src="https://weektodo.me/img/sponsors/passwordlink/wide.webp" width="350">
-  </a>
-</p>
-
-<p align="center">
-  <h3 align="center">Silver Sponsors</h3>
-</p>
-
-<p align="center">
-  <a target="_blank" href="https://www.snapclear.app/">
-    <img alt="Snapclear - Remove image backgrounds with a single click for free." src="https://weektodo.me/img/sponsors/snapclear/wide.webp" width="150">
-  </a>
-  <a target="_blank" href="https://chrome.google.com/webstore/detail/easyfiller-automatic-form/oaphggcbnpminjffkjgldfepehcdjndp?hl=es&authuser=0">
-    <img alt="Easyfiller - Fill your forms with a single click for free" src="https://weektodo.me/img/sponsors/easyfiller/wide.webp" width="150">
-  </a>
-</p>
-
-  
-## Installation
-
-### Download installer 
-
-[Windows / Linux / macOS](https://github.com/zuntek/weektodoweb/releases/latest
-) 
-
-### External Stores
-
-#### Windows 
-
-[Uptodown](https://weektodo.uptodown.com/windows)
-
-#### macOS 
-
-[Macupdate](https://www.macupdate.com/app/mac/63506/weektodo)
-
-#### Linux 
-
-Snapd can be installed from the command line:
-
-```bash
-sudo apt update
-sudo apt install snapd
-```
-To install WeekToDo, simply use the following command:
-```bash
-sudo snap install weektodo
-```    
-
-## Build and Run From Source
-
-If you want to understand how WeekToDo works or want to debug an issue, you'll want to get the source, build it, and run it locally.
-
-### Installing Prerequisites
-
-You'll need git, a recent version of [Node.JS](https://nodejs.org/en/) (currently v16.X is recommended), [Yarn](https://yarnpkg.com/) and [Electron](https://www.electronjs.org/).
-
-```
-git clone https://github.com/manuelernestog/weektodo
-cd weektodo
-yarn install
-yarn run serve // to run web version
-yarn run electron:serve // to run native version
-```
-
-### Docker
-
- To run the development web version use `docker-compose up`
-
-## Contributing
-
-You can support this project in several ways:
-
-### Donate
-
-https://weektodo.me/support-us
-
-### Share
-
-- [Facebook](https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fweektodo.me%2F)
-- [Twitter](https://twitter.com/intent/tweet?url=https%3A%2F%2Fweektodo.me%2F&text=)
-- [Linkedin](https://www.linkedin.com/shareArticle?mini=true&url=https%3A%2F%2Fweektodo.me%2F&title=)
-
-### Rate the app
-
-- [ProductHunt](https://www.producthunt.com/posts/weektodo)
-- [AlternativeTo](https://alternativeto.net/software/weektodo/about/)
-- [SassHub](https://www.saashub.com/weektodo-reviews/new)
-
-### Translations
-
-Currently the system is developed in multiple languages, you can send me a correction of any error or you can add your language if it's not available.
-
-You can find the base file with all the used words in english [here](src/assets/languages/en.json/)
-
-For add a new language Fork the repo and create a Pull Request creating a new file of the `translations/en.json` and name he file acording the [language code](https://gist.github.com/Josantonius/b455e315bc7f790d14b136d61d9ae469). 
-
-If this is to dificult, you can donwload this [file](src/assets/languages/en.json/), translate it and send the file to the email contact@weektodo.me
- 
-## Contributing
-
-Weektodo is open-source. Pull requests and contributions are welcome! There are three ways to contribute: grab a [bug report](https://github.com/manuelernestog/issues?q=is%3Aopen+is%3Aissue+label%3Abug) or [feature suggestion](https://github.com/manuelernestog/issues?q=is%3Aissue+is%3Aopen+label%3Afeature) that has been marked `accepted` and dig in.
-
-Read [Contributing.md](/CONTRIBUTING.md) for more information.
-
-## Author
-
-- [Manuel Ernesto Garcia](https://manuelernestogr.bio.link/)
-
-## Contributors
-
-- Logo Rebranding by [hallgraph](https://twitter.com/hallgraph)
-- [Translators](https://weektodo.me/about/)
-
-<a href="https://github.com/manuelernestog/weektodo/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=manuelernestog/weektodo" />
-</a>
-
-
-
-Made with [contrib.rocks](https://contrib.rocks).
-
-  
+A native macOS fork of **WeekToDo** by [Manuel Ernesto Garcia](https://manuelernestogr.bio.link/). Licensed under **GPL-3.0**, like the original.

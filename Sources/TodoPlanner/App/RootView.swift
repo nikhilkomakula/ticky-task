@@ -1,20 +1,18 @@
 import SwiftUI
 import SwiftData
 
-/// Injects the SwiftData container + shared `AppState` on success, or shows a
-/// recoverable error UI if the persistent store failed to open. Never silently
-/// falls back to an in-memory store — that would mislead the user into thinking
-/// data is saved.
-struct RootView: View {
+/// Attaches the SwiftData container to its content on success, or shows a
+/// recoverable error UI if the persistent store failed to open. Shared by every
+/// scene that needs data (main window, menu bar, quick capture). Never silently
+/// falls back to an in-memory store.
+struct ContainerGate<Content: View>: View {
     let containerResult: Result<ModelContainer, Error>
-    @State private var appState = AppState()
+    @ViewBuilder var content: () -> Content
 
     var body: some View {
         switch containerResult {
         case .success(let container):
-            ContentView()
-                .environment(appState)
-                .modelContainer(container)
+            content().modelContainer(container)
         case .failure(let error):
             StoreErrorView(error: error)
         }
@@ -40,7 +38,7 @@ struct StoreErrorView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(minWidth: 420, minHeight: 280)
         .padding(40)
     }
 }

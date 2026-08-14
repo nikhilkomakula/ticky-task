@@ -81,36 +81,7 @@ struct TaskEditorView: View {
             }
             Picker("Priority", selection: priorityBinding) {
                 ForEach(TaskPriority.allCases) { priority in
-                    Text(priority.label).tag(priority)
-                }
-            }
-            colorRow
-        }
-    }
-
-    private var colorRow: some View {
-        HStack {
-            Text("Color")
-            Spacer()
-            HStack(spacing: 6) {
-                Button { task.colorHex = nil } label: {
-                    Image(systemName: task.colorHex == nil ? "slash.circle.fill" : "slash.circle")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("No color")
-
-                ForEach(TaskColor.allCases) { swatch in
-                    Button { task.colorHex = swatch.hex } label: {
-                        Circle()
-                            .fill(swatch.color)
-                            .frame(width: 16, height: 16)
-                            .overlay(
-                                Circle().stroke(Color.primary,
-                                                lineWidth: task.colorHex == swatch.hex ? 2 : 0)
-                            )
-                    }
-                    .buttonStyle(.plain)
+                    Label(priority.label, systemImage: priority.symbol).tag(priority)
                 }
             }
         }

@@ -16,15 +16,14 @@ enum SampleData {
 
         do {
             let review = try service.addTask(title: "Review pull request", location: .day(today))
-            review.priorityLevel = .high
-            review.colorHex = TaskColor.blue.hex
+            review.priorityLevel = .critical
             review.timeMinutes = 10 * 60
             service.addSubtask(to: review, title: "Check the tests pass")
             service.addSubtask(to: review, title: "Leave review comments")
 
             let lunch = try service.addTask(title: "Lunch with the team", location: .day(today))
+            lunch.priorityLevel = .low
             lunch.timeMinutes = 12 * 60 + 30
-            lunch.colorHex = TaskColor.green.hex
 
             let plan = try service.addTask(title: "Draft weekly plan", location: .day(today))
             plan.priorityLevel = .medium

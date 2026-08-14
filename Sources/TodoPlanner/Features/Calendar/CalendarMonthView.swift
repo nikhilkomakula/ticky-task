@@ -103,7 +103,7 @@ private struct CalendarDayCell: View {
             ForEach(tasks.prefix(3)) { task in
                 HStack(spacing: 3) {
                     Circle()
-                        .fill(task.colorHex.flatMap { Color(hex: $0) } ?? Color.secondary)
+                        .fill(task.priorityLevel.tint)
                         .frame(width: 5, height: 5)
                     Text(task.title.isEmpty ? "Untitled" : task.title)
                         .font(.caption2)

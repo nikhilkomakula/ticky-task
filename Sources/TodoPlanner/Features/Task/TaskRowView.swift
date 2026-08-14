@@ -18,15 +18,9 @@ struct TaskRowView: View {
             }
             .buttonStyle(.plain)
 
-            if let hex = task.colorHex, let color = Color(hex: hex) {
-                Circle().fill(color).frame(width: 8, height: 8)
-            }
-
-            if task.priorityLevel.isFlagged {
-                Image(systemName: "flag.fill")
-                    .font(.caption2)
-                    .foregroundStyle(task.priorityLevel.tint)
-            }
+            Image(systemName: task.priorityLevel.symbol)
+                .font(.caption2)
+                .foregroundStyle(task.priorityLevel.tint)
 
             if task.alarmEnabled {
                 Image(systemName: "bell.fill")

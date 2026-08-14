@@ -14,9 +14,10 @@ struct EditorSupportTests {
 
     @Test("priority maps to/from the stored integer")
     func priorityMapping() {
-        #expect(TaskPriority(rawValue: 0) == TaskPriority.none)
-        #expect(TaskPriority(rawValue: 3) == TaskPriority.high)
-        #expect(TaskPriority.none.isFlagged == false)
-        #expect(TaskPriority.high.isFlagged == true)
+        #expect(TaskPriority(rawValue: 0) == TaskPriority.low)
+        #expect(TaskPriority(rawValue: 3) == TaskPriority.critical)
+        #expect(TaskPriority.critical.isCritical == true)
+        #expect(TaskPriority.high.isCritical == false)
+        #expect(TaskPriority.critical.symbol == "flag.fill")
     }
 }
