@@ -36,7 +36,7 @@ enum SampleData {
             """
 
             // Default custom lists (renamable; persist across all weeks).
-            for name in ["Requires immediate attention", "To be addressed", "Weekend chores"] {
+            for name in ["Requires immediate attention", "To be addressed", "Weekend tasks", "Miscellaneous"] {
                 _ = try service.addCustomList(name: name)
             }
 
