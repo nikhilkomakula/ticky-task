@@ -63,6 +63,26 @@ struct TaskRowView: View {
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        // Edit/Delete float over the trailing metadata on hover, so the row never
+        // reflows and the title keeps its full width when not hovering. Real
+        // Buttons consume the click, so the row's tap-to-edit never double-fires.
+        .overlay(alignment: .trailing) {
+            if isHovering {
+                HStack(spacing: 2) {
+                    Button { onEdit?() } label: { Image(systemName: "pencil") }
+                        .help("Edit task")
+                    Button(role: .destructive, action: delete) { Image(systemName: "trash") }
+                        .help("Delete task")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .font(.system(size: 12))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.trailing, 6)
+            }
+        }
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovering)
         .onTapGesture { onEdit?() }

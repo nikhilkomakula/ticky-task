@@ -82,29 +82,12 @@ private struct TopToolbar: View {
     var body: some View {
         @Bindable var app = app
         ZStack {
-            // Centered navigation cluster (truly window-centered via the ZStack).
-            HStack(spacing: 6) {
-                Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help(app.viewMode == .week ? "Previous week" : "Previous month")
-                Button("Today") { app.goToToday() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                Button { navigate(1) } label: { Image(systemName: "chevron.right") }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help(app.viewMode == .week ? "Next week" : "Next month")
-                Text(navLabel)
-                    .font(.headline.weight(.semibold))
-                    .padding(.leading, 4)
-            }
+            // Center: current week range / month label (truly window-centered).
+            Text(navLabel)
+                .font(.headline.weight(.semibold))
 
-            // Trailing view switcher.
-            HStack {
-                Spacer()
+            HStack(spacing: 12) {
+                // Left: Week / Month switcher.
                 Picker("View", selection: $app.viewMode) {
                     ForEach(ViewMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol).tag(mode)
@@ -113,6 +96,25 @@ private struct TopToolbar: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+
+                Spacer()
+
+                // Right: navigation.
+                HStack(spacing: 6) {
+                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                    Button("Today") { app.goToToday() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Next week" : "Next month")
+                }
             }
         }
         .frame(height: 44)

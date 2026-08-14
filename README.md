@@ -14,10 +14,10 @@ A **native macOS** weekly & monthly planner — a privacy-first, local-only rewr
 - **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend chores*) that persists across all weeks; resizable split.
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, and automatically carry unfinished tasks forward to today.
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
-- **Menu-bar app** — a menu-bar icon opens a mini calendar with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
+- **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TodoPlanner and to capture a new task for today from any app.
 - **Appearance** — System/Light/Dark theme, compact rows.
-- **Polished native UI** — material day/list cards, hover affordances, and refined typography; opens **maximized** with a single centered ‹ Today › toolbar alongside the Week/Month switcher.
+- **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
 - Clean app icon; first-run sample data.
 
 ## How it works

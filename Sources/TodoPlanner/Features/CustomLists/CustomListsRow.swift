@@ -1,26 +1,42 @@
 import SwiftUI
 import SwiftData
 
-/// The horizontal row of custom-list cards beneath the week grid. Lists are
-/// user-created, date-independent, and renamable.
+/// The horizontal row of custom-list cards beneath the week grid. Each card is
+/// sized to match a day column (same width formula + 8pt padding/gaps) so the
+/// lists line up directly under the day columns above; the row scrolls
+/// horizontally when there are more lists than day columns.
 struct CustomListsRow: View {
     @Environment(\.modelContext) private var context
+    @AppStorage("calendarColumns") private var calendarColumns = 5
     @Query(sort: [SortDescriptor(\CustomList.sortIndex)]) private var lists: [CustomList]
     var onEditTask: (TaskItem) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            HStack(alignment: .top, spacing: 8) {
-                ForEach(lists) { list in
-                    CustomListColumn(list: list, onEditTask: onEditTask)
-                        .frame(width: 260)
+        GeometryReader { geo in
+            let cardWidth = columnWidth(for: geo.size.width)
+            ScrollView(.horizontal, showsIndicators: true) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(lists) { list in
+                        CustomListColumn(list: list, onEditTask: onEditTask)
+                            .frame(width: cardWidth)
+                    }
+                    addListButton
                 }
-                addListButton
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+                .frame(minWidth: geo.size.width, alignment: .leading)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-            .frame(maxHeight: .infinity, alignment: .top)
         }
+    }
+
+    /// Matches `WeekView`'s day-column width exactly: (width − 16pt outer padding
+    /// − 8pt gaps) ÷ column count. No minimum floor (WeekView has none), so the
+    /// cards track the day columns at every column count; `max(1, …)` only guards
+    /// against a transient zero-width layout pass.
+    private func columnWidth(for totalWidth: CGFloat) -> CGFloat {
+        let cols = CGFloat(max(1, min(12, calendarColumns)))
+        let usable = totalWidth - 16 - 8 * (cols - 1)
+        return max(1, usable / cols)
     }
 
     private var addListButton: some View {

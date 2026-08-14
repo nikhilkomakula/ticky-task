@@ -1,19 +1,19 @@
 import SwiftUI
 
-/// A compact month calendar that **fills the available width** — unlike the
-/// graphical `DatePicker`, which renders at its intrinsic size and centers,
-/// leaving side gaps. Uses a flexible 7-column grid so day cells stretch to the
-/// popover width. Selecting a day updates the shared `AppState`; month
-/// navigation is local.
+/// A compact month calendar that fills the available width (unlike the graphical
+/// `DatePicker`). The menu-bar calendar is always **Sunday → Saturday** and
+/// highlights the weekend (Sat/Sun) columns so they're distinguishable at a
+/// glance. Selecting a day updates the shared `AppState`; month navigation is
+/// local.
 struct MiniMonthCalendar: View {
     @Environment(AppState.self) private var app
-    @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @State private var monthAnchor = Date()
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
 
     var body: some View {
-        let days = WeekMath.monthGridDays(containing: monthAnchor, weekStartsMonday: weekStartsMonday)
+        // Menu-bar calendar is fixed to a Sunday-first week per product decision.
+        let days = WeekMath.monthGridDays(containing: monthAnchor, weekStartsMonday: false)
         let todayKey = WeekMath.dayKey(for: Date())
 
         VStack(spacing: 6) {
@@ -23,7 +23,7 @@ struct MiniMonthCalendar: View {
                 ForEach(Array(days.prefix(7)), id: \.self) { day in
                     Text(day.formatted(.dateTime.weekday(.narrow)))
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isWeekend(day) ? Color.red.opacity(0.8) : Color.secondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -55,6 +55,7 @@ struct MiniMonthCalendar: View {
         let inMonth = WeekMath.isSameMonth(day, as: monthAnchor)
         let isSelected = key == app.selectedDayKey
         let isToday = key == todayKey
+        let weekend = isWeekend(day)
 
         return Button {
             app.select(day: day)
@@ -63,7 +64,9 @@ struct MiniMonthCalendar: View {
                 .font(.callout)
                 .frame(maxWidth: .infinity, minHeight: 26)
                 .background(
-                    isSelected ? Color.accentColor.opacity(0.25) : Color.clear,
+                    isSelected
+                        ? Color.accentColor.opacity(0.25)
+                        : (weekend ? Color.red.opacity(0.08) : Color.clear),
                     in: RoundedRectangle(cornerRadius: 5)
                 )
                 .overlay(
@@ -73,6 +76,13 @@ struct MiniMonthCalendar: View {
                 .foregroundStyle(inMonth ? (isToday ? Color.accentColor : .primary) : .secondary)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Saturday (7) or Sunday (1) in the Gregorian calendar — independent of the
+    /// locale's weekend definition, matching the requested Sat/Sun highlight.
+    private func isWeekend(_ date: Date) -> Bool {
+        let weekday = Calendar.current.component(.weekday, from: date)
+        return weekday == 1 || weekday == 7
     }
 
     private func shiftMonth(_ delta: Int) {
