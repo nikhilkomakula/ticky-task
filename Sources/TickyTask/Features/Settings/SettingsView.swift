@@ -8,6 +8,8 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             BehaviorSettingsView()
@@ -18,8 +20,10 @@ struct SettingsView: View {
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             DataSettingsView(context: context)
                 .tabItem { Label("Data", systemImage: "externaldrive") }
+            AboutView()
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 500, height: 440)
+        .frame(width: 520, height: 460)
     }
 }
 

@@ -34,6 +34,10 @@ final class AppState {
     /// Bumped on each reveal so a newer flash isn't cleared by an older timer.
     private var revealGeneration = 0
 
+    /// A newer release found by the update check (manual or automatic), surfaced
+    /// in Settings › General.
+    var availableUpdate: AppRelease?
+
     private let calendar: Calendar
 
     init(calendar: Calendar = .current, now: Date = Date()) {

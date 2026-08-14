@@ -19,6 +19,9 @@ A **native macOS** weekly & monthly planner — a privacy-first, local-only rewr
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
 - **Backup & restore** — export your entire store to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
 - **Appearance** — System/Light/Dark theme, compact rows.
+- **Launch at login** — starts TickyTask automatically when you log in (**Settings › General**, on by default; also manageable in System Settings › General › Login Items).
+- **Software updates** — checks the project's GitHub Releases for a newer version, manually or automatically (**Settings › General**).
+- **About & Help** — app version, GitHub/issue links, license, and quick tips (**Settings › About**).
 - **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
 - Clean app icon; first-run sample data.
 

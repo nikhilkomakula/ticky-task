@@ -14,6 +14,7 @@ struct ContentView: View {
     @AppStorage("endOfDayReminderEnabled") private var endOfDayEnabled = false
     @AppStorage("endOfDayReminderMinutes") private var endOfDayMinutes = 18 * 60
     @AppStorage("menuBarOnly") private var menuBarOnly = false
+    @AppStorage("autoCheckUpdates") private var autoCheckUpdates = true
 
     var body: some View {
         @Bindable var app = app
@@ -62,8 +63,23 @@ struct ContentView: View {
         if autoCarryForward {
             try? BehaviorService.carryForwardIncomplete(context: context)
         }
+        LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes)
+        await maybeCheckForUpdates()
+    }
+
+    /// Automatic update check, at most once per day, feeding Settings › General.
+    @MainActor
+    private func maybeCheckForUpdates() async {
+        guard autoCheckUpdates else { return }
+        let defaults = UserDefaults.standard
+        let now = Date().timeIntervalSince1970
+        guard now - defaults.double(forKey: "lastUpdateCheck") > 86_400 else { return }
+        defaults.set(now, forKey: "lastUpdateCheck")
+        if case .updateAvailable(let release)? = try? await UpdateService.check(currentVersion: Bundle.main.appVersion) {
+            app.availableUpdate = release
+        }
     }
 
     private func applyActivationPolicy() {

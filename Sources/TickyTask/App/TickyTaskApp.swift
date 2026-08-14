@@ -44,7 +44,8 @@ struct TickyTaskApp: App {
         .defaultLaunchBehavior(.suppressed)   // opened on demand via the global shortcut
 
         Settings {
-            SettingsView()
+            ContainerGate(containerResult: containerResult) { SettingsView() }
+                .environment(appState)
         }
     }
 }
