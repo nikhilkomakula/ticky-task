@@ -11,7 +11,7 @@ enum ModelContainerProvider {
     /// recovery UI (see `StoreErrorView`) instead of crashing on a migration
     /// failure, corrupt store, or unavailable filesystem.
     static func makeContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: SchemaV1.self)
+        let schema = Schema(versionedSchema: SchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, url: try defaultStoreURL())
         return try ModelContainer(
             for: schema,
@@ -35,7 +35,7 @@ enum ModelContainerProvider {
 
     /// An ephemeral in-memory container for tests and SwiftUI previews.
     static func makeInMemoryContainer() -> ModelContainer {
-        let schema = Schema(versionedSchema: SchemaV1.self)
+        let schema = Schema(versionedSchema: SchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         do {
             return try ModelContainer(for: schema, configurations: configuration)

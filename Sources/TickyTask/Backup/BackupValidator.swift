@@ -37,7 +37,9 @@ enum BackupValidator {
             if let minutes = task.timeMinutes, !(0...1439).contains(minutes) {
                 throw BackupError.validationFailed(reason: "Task \(task.id) has an out-of-range time")
             }
-            guard TaskPriority(rawValue: task.priority) != nil else {
+            // 0–2 are the current levels; 3 is the legacy "critical" value from
+            // pre-0.1.2 backups (loaded as .high), still accepted for compatibility.
+            guard (0...3).contains(task.priority) else {
                 throw BackupError.validationFailed(reason: "Task \(task.id) has an unknown priority")
             }
             guard Set(task.tagIds).count == task.tagIds.count else {

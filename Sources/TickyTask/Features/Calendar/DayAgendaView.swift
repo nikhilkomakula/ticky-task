@@ -12,15 +12,19 @@ struct DayAgendaView: View {
     let dayKey: String
     var showsHeader: Bool
     var insets: CGFloat
+    /// When false (menu bar), render every task without a scroll view so the
+    /// popover grows to fit them all.
+    var scrolls: Bool
 
     @Query private var tasks: [TaskItem]
     @State private var newTitle = ""
     @State private var editingTask: TaskItem?
 
-    init(dayKey: String, showsHeader: Bool = true, insets: CGFloat = 8) {
+    init(dayKey: String, showsHeader: Bool = true, insets: CGFloat = 8, scrolls: Bool = true) {
         self.dayKey = dayKey
         self.showsHeader = showsHeader
         self.insets = insets
+        self.scrolls = scrolls
         let target: String? = dayKey
         _tasks = Query(
             filter: #Predicate<TaskItem> { $0.dayKey == target },
@@ -43,7 +47,7 @@ struct DayAgendaView: View {
 
             if orderedTasks.isEmpty {
                 EmptyTasksView(hint: "Add one below")
-            } else {
+            } else if scrolls {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
@@ -55,6 +59,13 @@ struct DayAgendaView: View {
                     }
                     .onChange(of: app.highlightedTaskID) { _, id in scrollToHighlight(id, proxy: proxy) }
                     .onAppear { scrollToHighlight(app.highlightedTaskID, proxy: proxy) }
+                }
+            } else {
+                // Menu bar: every task, no scrolling — the popover sizes to fit.
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(orderedTasks) { task in
+                        TaskRowView(task: task) { editingTask = task }
+                    }
                 }
             }
 

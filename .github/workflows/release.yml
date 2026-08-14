@@ -1,0 +1,97 @@
+name: Release
+
+# Auto-build the DMG and publish a GitHub Release whenever a vX.Y.Z tag is
+# pushed. `workflow_dispatch` lets you (re)build a release for an existing tag by
+# hand. The project's postBuildScripts stamp the app version from the tag.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a release for (e.g. v0.1.2)'
+        required: true
+
+permissions:
+  contents: write   # create the GitHub Release and upload the DMG asset
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      # Validate the tag first (the 'v*.*.*' trigger glob also matches junk like
+      # vfoo.bar.baz or v1.2.3.4) and expose only sanitized outputs — the raw tag
+      # is never interpolated into a later shell script.
+      - name: Resolve and validate version
+        id: ver
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag must match vX.Y.Z (got '$RELEASE_TAG')"
+            exit 1
+          fi
+          printf 'tag=%s\n'     "$RELEASE_TAG"     >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          # The validated tag; full history + tags so the version-stamp script's
+          # `git describe` resolves it. Don't leave the write-scoped token in git
+          # config while repo-controlled xcodegen / post-build scripts run.
+          ref: ${{ steps.ver.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Release, arm64, ad-hoc signed (CODE_SIGN_IDENTITY "-" from project.yml) —
+      # same output as the manual v0.1.0/v0.1.1 DMGs. postBuildScripts stamp the
+      # version from the tag before the implicit codesign, so the signature stays valid.
+      - name: Build (Release, arm64)
+        run: |
+          xcodebuild \
+            -project TickyTask.xcodeproj \
+            -scheme TickyTask \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            build
+
+      - name: Package DMG
+        id: dmg
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          APP="build/Build/Products/Release/TickyTask.app"
+          test -d "$APP" || { echo "::error::TickyTask.app not found at $APP"; exit 1; }
+          DMG="TickyTask-${VERSION}-arm64.dmg"
+          STAGE="$(mktemp -d)/TickyTask"
+          mkdir -p "$STAGE"
+          ditto "$APP" "$STAGE/TickyTask.app"
+          ln -s /Applications "$STAGE/Applications"   # drag-to-install affordance
+          hdiutil create -volname "TickyTask ${VERSION}" \
+            -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          printf 'dmg=%s\n' "$DMG" >> "$GITHUB_OUTPUT"
+
+      # Idempotent: reruns for an existing tag replace the asset instead of failing.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          DMG: ${{ steps.dmg.outputs.dmg }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" --clobber
+          else
+            gh release create "$TAG" "$DMG" \
+              --title "TickyTask $TAG" \
+              --prerelease \
+              --generate-notes
+          fi

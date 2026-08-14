@@ -30,9 +30,17 @@ struct TaskRowView: View {
             .buttonStyle(.plain)
             .frame(width: 20, height: 20)
 
-            Image(systemName: task.priorityLevel.symbol)
-                .font(.system(size: 11))
-                .foregroundStyle(task.priorityLevel.tint)
+            HStack(spacing: 3) {
+                Image(systemName: task.priorityLevel.symbol)
+                    .foregroundStyle(task.priorityLevel.tint)
+                    .accessibilityLabel("\(task.priorityLevel.label) priority")
+                if task.needsImmediateAttention {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Needs immediate attention")
+                }
+            }
+            .font(.system(size: 11))
 
             Text(task.title.isEmpty ? "Untitled" : task.title)
                 .font(.system(size: 13))

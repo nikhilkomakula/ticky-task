@@ -8,12 +8,46 @@ import AppKit
 struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    @Environment(AppState.self) private var app
+
+    /// The menu bar shows a self-contained day that resets to today each time the
+    /// popover opens — independent of the main window's selection.
+    @State private var selectedDayKey = WeekMath.dayKey(for: Date())
 
     /// Weak handle to this popover's own `NSPanel`, captured from the view tree,
     /// so we can close it on demand. `MenuBarExtra(.window)` is an `NSPanel`
     /// (not an `NSPopover`), so `performClose:`/`dismiss()` don't collapse it.
     @State private var panelRef = WeakWindowReference()
+
+    /// Natural (unclipped) height of the day agenda, measured so the popover can
+    /// hug short days and scroll only when a day would exceed `agendaMaxHeight`.
+    @State private var agendaContentHeight: CGFloat = 0
+
+    /// Cap the agenda so a day with an unusually long list scrolls instead of
+    /// growing the popover off-screen; sized to the current screen, leaving room
+    /// for the calendar and chrome above it. A normal day stays well under this
+    /// and never scrolls.
+    private var agendaMaxHeight: CGFloat {
+        let usable = NSScreen.main?.visibleFrame.height ?? 800
+        return max(240, usable * 0.55)
+    }
+
+    /// The day agenda, measured for its natural height and made scrollable only
+    /// when it would exceed `agendaMaxHeight` — so a normal day shows every task
+    /// with no scrolling and no blank space, while a very long day scrolls inside
+    /// the cap instead of pushing the popover off-screen.
+    @ViewBuilder private var menuBarAgenda: some View {
+        let agenda = DayAgendaView(dayKey: selectedDayKey, insets: 8, scrolls: false)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: AgendaHeightKey.self, value: geo.size.height)
+                }
+            )
+        if agendaContentHeight > agendaMaxHeight {
+            ScrollView { agenda }.frame(height: agendaMaxHeight)
+        } else {
+            agenda
+        }
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -35,12 +69,12 @@ struct MenuBarContentView: View {
                 .help("Open TickyTask")
             }
 
-            MiniMonthCalendar()
+            MiniMonthCalendar(selectedDayKey: $selectedDayKey)
                 .padding(8)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            DayAgendaView(dayKey: app.selectedDayKey, insets: 8)
-                .frame(minHeight: 180, maxHeight: 260)
+            menuBarAgenda
+                .onPreferenceChange(AgendaHeightKey.self) { agendaContentHeight = $0 }
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .padding(10)
@@ -52,6 +86,8 @@ struct MenuBarContentView: View {
             }
             .frame(width: 0, height: 0)
         }
+        // Always open on today.
+        .onAppear { selectedDayKey = WeekMath.dayKey(for: Date()) }
     }
 
     /// Close this popover's own panel (`MenuBarExtra(.window)` is an `NSPanel`;
@@ -89,6 +125,15 @@ struct MenuBarContentView: View {
 final class WeakWindowReference {
     weak var window: NSWindow?
     init() {}
+}
+
+/// Carries the day agenda's natural (unclipped) height up to the menu-bar view,
+/// which uses it to decide whether the agenda needs to scroll.
+private struct AgendaHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 enum MenuBarWindowSupport {

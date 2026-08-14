@@ -28,6 +28,9 @@ final class TaskItem {
     /// Manual ordering within a day/list (fractional indexing).
     var sortIndex: Double = 0
     var alarmEnabled: Bool = false
+    /// Escalation flag: this task needs immediate attention. Replaces the former
+    /// `.critical` priority level; surfaced with a red warning mark. Default off.
+    var needsImmediateAttention: Bool = false
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 

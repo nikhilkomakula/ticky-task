@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.1** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.2** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.1.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.2-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -21,11 +21,11 @@ Requires **macOS 15+** on **Apple Silicon**. Because the build isn't signed/nota
 
 - **Week view** (the default) — configurable 1–12 day columns, Monday/Sunday start, previous/next/today navigation.
 - **Month view** — a calendar grid showing every day's tasks, with a selected-day agenda panel; toggle between **Week** and **Month**.
-- **Task editor** — title, **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High/Critical) that color-codes the task (green → yellow → orange → red; a flag marks Critical), and **subtasks**.
-- **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend chores*) that persists across all weeks; resizable split.
+- **Task editor** — title, **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High) that color-codes the task (green → yellow → orange), an optional **"needs immediate attention"** flag (off by default) that adds a red ⚠︎ mark independent of priority, and **subtasks**.
+- **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split.
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, and automatically carry unfinished tasks forward to today.
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
-- **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
+- **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today** and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TickyTask and to capture a new task for today from any app.
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
 - **Backup & restore** — export your entire store to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
@@ -95,6 +95,14 @@ xattr -dr com.apple.quarantine /Applications/TickyTask.app
 ```
 
 Note: macOS delivers local notifications only for code-signed apps, so the reminder features require at least an ad-hoc/Developer-ID signed build to actually fire.
+
+### Releasing
+
+Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
+
+```bash
+git tag v0.1.2 && git push origin v0.1.2   # → CI builds the DMG and creates the release
+```
 
 ## Roadmap
 

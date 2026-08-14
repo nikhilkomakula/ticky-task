@@ -6,7 +6,9 @@ import SwiftUI
 /// glance. Selecting a day updates the shared `AppState`; month navigation is
 /// local.
 struct MiniMonthCalendar: View {
-    @Environment(AppState.self) private var app
+    /// Menu-bar-local selection (independent of the main window), so the popover
+    /// can default to today on each open without moving the main window.
+    @Binding var selectedDayKey: String
     @State private var monthAnchor = Date()
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
@@ -35,6 +37,9 @@ struct MiniMonthCalendar: View {
             }
         }
         .onAppear(perform: alignMonthToSelection)
+        // Realign the visible month when the selection resets — e.g. the popover
+        // reopens on today after the user had navigated to another month.
+        .onChange(of: selectedDayKey) { _, _ in alignMonthToSelection() }
     }
 
     private var header: some View {
@@ -53,12 +58,12 @@ struct MiniMonthCalendar: View {
     private func dayCell(_ day: Date, todayKey: String) -> some View {
         let key = WeekMath.dayKey(for: day)
         let inMonth = WeekMath.isSameMonth(day, as: monthAnchor)
-        let isSelected = key == app.selectedDayKey
+        let isSelected = key == selectedDayKey
         let isToday = key == todayKey
         let weekend = isWeekend(day)
 
         return Button {
-            app.select(day: day)
+            selectedDayKey = key
         } label: {
             Text("\(Calendar.current.component(.day, from: day))")
                 .font(.callout)
@@ -95,7 +100,7 @@ struct MiniMonthCalendar: View {
     }
 
     private func alignMonthToSelection() {
-        if let selected = WeekMath.date(fromDayKey: app.selectedDayKey) {
+        if let selected = WeekMath.date(fromDayKey: selectedDayKey) {
             monthAnchor = selected
         }
     }

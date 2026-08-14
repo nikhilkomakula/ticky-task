@@ -98,6 +98,10 @@ struct TaskItemDTO: Codable, Equatable, Sendable {
     var updatedAt: Date
     var recurrence: RecurrenceRule?
     var tagIds: [UUID]
+    /// Optional for backward compatibility: pre-0.1.2 backups omit this key and
+    /// decode as `nil` (treated as `false` on restore). Defaulted so the projection
+    /// and older call sites need not pass it.
+    var needsImmediateAttention: Bool? = nil
 }
 
 struct SubtaskDTO: Codable, Equatable, Sendable {
@@ -141,7 +145,8 @@ extension TaskItemDTO {
             priority: task.priority, sortIndex: task.sortIndex, alarmEnabled: task.alarmEnabled,
             createdAt: task.createdAt, updatedAt: task.updatedAt,
             recurrence: task.recurrence,
-            tagIds: task.tags.map(\.id).sorted { $0.uuidString < $1.uuidString }
+            tagIds: task.tags.map(\.id).sorted { $0.uuidString < $1.uuidString },
+            needsImmediateAttention: task.needsImmediateAttention
         )
     }
 }

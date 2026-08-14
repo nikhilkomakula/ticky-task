@@ -134,6 +134,7 @@ enum BackupStore {
             )
             task.notes = dto.notes
             task.isDone = dto.isDone
+            task.needsImmediateAttention = dto.needsImmediateAttention ?? false
             task.createdAt = dto.createdAt
             task.updatedAt = dto.updatedAt
             task.tags = dto.tagIds.compactMap { tagMap[$0] }

@@ -6,12 +6,12 @@
       <stop offset="1" stop-color="#EC4899"/>
     </linearGradient>
     <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
-      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#1E1B4B" flood-opacity="0.28"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#1E1B4B" flood-opacity="0.32"/>
     </filter>
   </defs>
 
   <!-- Rounded gradient tile (self-contained: reads on light and dark backgrounds) -->
-  <rect x="112" y="112" width="800" height="800" rx="190" ry="190" fill="url(#bg)" filter="url(#tileShadow)"/>
+  <rect x="112" y="112" width="800" height="800" rx="190" ry="190" fill="url(#bg)" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="4" filter="url(#tileShadow)"/>
 
   <!-- Calendar binder rings (drawn behind the page; only the tops peek out) -->
   <rect x="430" y="298" width="30" height="70" rx="15" fill="#FFFFFF" opacity="0.92"/>

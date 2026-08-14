@@ -29,7 +29,8 @@ struct BackupTests {
                             isDone: false, dayKey: day, customListId: nil, timeMinutes: 600,
                             colorHex: "#ff0000", priority: 3, sortIndex: 1, alarmEnabled: true,
                             createdAt: t0, updatedAt: t0.addingTimeInterval(100),
-                            recurrence: recurrence, tagIds: [tagId]),
+                            recurrence: recurrence, tagIds: [tagId],
+                            needsImmediateAttention: true),
                 TaskItemDTO(id: listTaskId, title: "Buy milk", notes: "", isDone: true,
                             dayKey: nil, customListId: listId, timeMinutes: nil, colorHex: nil,
                             priority: 0, sortIndex: 2, alarmEnabled: false,
@@ -152,6 +153,27 @@ struct BackupTests {
         let listId = store.data.customLists[0].id
         store.data.taskItems[0].customListId = listId  // already has a dayKey
         #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
+    }
+
+    @Test("Legacy critical priority (3) is accepted and loads as .high")
+    func legacyCriticalPriorityMapsToHigh() throws {
+        try BackupValidator.validate(makeFixture())   // fixture's day task stores priority 3
+        #expect(TaskItem(priority: 3).priorityLevel == .high)
+    }
+
+    @Test("An unknown priority is rejected")
+    func unknownPriorityRejected() {
+        var store = makeFixture()
+        store.data.taskItems[0].priority = 4
+        #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
+    }
+
+    @Test("needsImmediateAttention round-trips through a plaintext backup")
+    func immediateAttentionRoundTrips() throws {
+        let fixture = makeFixture()
+        let decoded = try service.readFile(try service.makeFile(store: fixture, passphrase: nil), passphrase: nil)
+        let dayTask = try #require(decoded.data.taskItems.first { $0.dayKey != nil })
+        #expect(dayTask.needsImmediateAttention == true)
     }
 
     @Test("A malicious iteration count is rejected, not executed")

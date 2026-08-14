@@ -12,12 +12,19 @@ struct EditorSupportTests {
         #expect(TaskRowView.timeLabel(23 * 60 + 59) == "23:59")
     }
 
-    @Test("priority maps to/from the stored integer")
+    @Test("priority maps to/from the stored integer, clamping legacy values")
     func priorityMapping() {
-        #expect(TaskPriority(rawValue: 0) == TaskPriority.low)
-        #expect(TaskPriority(rawValue: 3) == TaskPriority.critical)
-        #expect(TaskPriority.critical.isCritical == true)
-        #expect(TaskPriority.high.isCritical == false)
-        #expect(TaskPriority.critical.symbol == "flag.fill")
+        #expect(TaskPriority(rawValue: 0) == .low)
+        #expect(TaskPriority(rawValue: 2) == .high)
+        #expect(TaskPriority(rawValue: 3) == nil)             // the former "critical" level is gone
+        // The stored-integer accessor clamps out-of-range values (legacy 3 → high).
+        #expect(TaskItem(priority: 3).priorityLevel == .high)
+        #expect(TaskItem(priority: -1).priorityLevel == .low)
+        #expect(TaskItem(priority: 1).priorityLevel == .medium)
+    }
+
+    @Test("needsImmediateAttention defaults off")
+    func immediateAttentionDefaultsOff() {
+        #expect(TaskItem(title: "x").needsImmediateAttention == false)
     }
 }

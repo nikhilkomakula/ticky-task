@@ -15,7 +15,7 @@ struct BehaviorTests {
         let context = makeContext()
         let service = DataService(context)
         let low = try service.addTask(title: "low", location: .day("20260814")); low.priority = 1
-        let high = try service.addTask(title: "high", location: .day("20260814")); high.priority = 3
+        let high = try service.addTask(title: "high", location: .day("20260814")); high.priority = 2
         let ordered = BehaviorService.sorted([low, high], mode: .priority, completedToBottom: false)
         #expect(ordered.map(\.title) == ["high", "low"])
     }
