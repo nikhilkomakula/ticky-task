@@ -51,18 +51,23 @@ struct TaskRowView: View {
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(.quaternary, in: Capsule())
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             if task.alarmEnabled {
                 Image(systemName: "bell.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             if let minutes = task.timeMinutes, !compactView {
                 Text(Self.timeLabel(minutes))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    // Keep the time at its intrinsic width so it never compresses
+                    // and wraps vertically; the title (layoutPriority 1) wraps instead.
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .padding(.horizontal, 8)
