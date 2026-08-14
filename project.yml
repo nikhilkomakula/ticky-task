@@ -1,0 +1,49 @@
+name: TodoPlanner
+
+options:
+  bundleIdPrefix: com.todoplanner
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    MARKETING_VERSION: "3.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    # Catch real cross-actor issues without SwiftData's spurious non-Sendable
+    # key-path noise. Full `complete` / Swift 6 is revisited in P13 hardening.
+    SWIFT_STRICT_CONCURRENCY: targeted
+    PRODUCT_BUNDLE_IDENTIFIER: com.todoplanner.mac
+    # Unsigned local + CI builds (no Apple Developer account required).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  TodoPlanner:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/TodoPlanner
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/TodoPlanner/Support/Info.plist
+        PRODUCT_NAME: TodoPlanner
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets:
+        - TodoPlannerTests
+
+  TodoPlannerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/TodoPlannerTests
+    dependencies:
+      - target: TodoPlanner
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TodoPlanner.app/Contents/MacOS/TodoPlanner"
+        BUNDLE_LOADER: "$(TEST_HOST)"

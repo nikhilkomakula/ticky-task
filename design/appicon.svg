@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="112" y1="112" x2="912" y2="912" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366F1"/>
+      <stop offset="0.55" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#1E1B4B" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded gradient tile (self-contained: reads on light and dark backgrounds) -->
+  <rect x="112" y="112" width="800" height="800" rx="190" ry="190" fill="url(#bg)" filter="url(#tileShadow)"/>
+
+  <!-- Calendar binder rings (drawn behind the page; only the tops peek out) -->
+  <rect x="430" y="298" width="30" height="70" rx="15" fill="#FFFFFF" opacity="0.92"/>
+  <rect x="564" y="298" width="30" height="70" rx="15" fill="#FFFFFF" opacity="0.92"/>
+
+  <!-- Calendar page -->
+  <rect x="322" y="330" width="380" height="342" rx="54" fill="#FFFFFF"/>
+
+  <!-- Faint title bar (month/heading cue) -->
+  <rect x="356" y="378" width="312" height="16" rx="8" fill="#8B5CF6" opacity="0.35"/>
+
+  <!-- Bold gradient checkmark = "done" -->
+  <path d="M400 520 L474 592 L636 432"
+        fill="none" stroke="url(#bg)" stroke-width="48"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,63 @@
+import Testing
+import Foundation
+import SwiftData
+@testable import TodoPlanner
+
+@MainActor
+@Suite("Behavior")
+struct BehaviorTests {
+    private func makeContext() -> ModelContext {
+        ModelContext(ModelContainerProvider.makeInMemoryContainer())
+    }
+
+    @Test("Sort by priority puts higher priority first")
+    func sortPriority() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        let low = try service.addTask(title: "low", location: .day("20260814")); low.priority = 1
+        let high = try service.addTask(title: "high", location: .day("20260814")); high.priority = 3
+        let ordered = BehaviorService.sorted([low, high], mode: .priority, completedToBottom: false)
+        #expect(ordered.map(\.title) == ["high", "low"])
+    }
+
+    @Test("Completed tasks sink to the bottom")
+    func completedToBottom() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        let done = try service.addTask(title: "done", location: .day("20260814"))
+        done.isDone = true; done.sortIndex = 1
+        let open = try service.addTask(title: "open", location: .day("20260814"))
+        open.sortIndex = 2
+        let ordered = BehaviorService.sorted([done, open], mode: .manual, completedToBottom: true)
+        #expect(ordered.map(\.title) == ["open", "done"])
+    }
+
+    @Test("Sort by time keeps untimed tasks last")
+    func sortTime() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        let untimed = try service.addTask(title: "untimed", location: .day("20260814")); untimed.sortIndex = 1
+        let timed = try service.addTask(title: "9am", location: .day("20260814"))
+        timed.timeMinutes = 9 * 60; timed.sortIndex = 2
+        let ordered = BehaviorService.sorted([untimed, timed], mode: .time, completedToBottom: false)
+        #expect(ordered.map(\.title) == ["9am", "untimed"])
+    }
+
+    @Test("Carry-forward moves only past, unfinished, non-recurring tasks to today")
+    func carryForward() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        _ = try service.addTask(title: "old-open", location: .day("20260101"))
+        let oldDone = try service.addTask(title: "old-done", location: .day("20260101"))
+        oldDone.isDone = true
+        _ = try service.addTask(title: "today", location: .day("20260814"))
+        try service.save()
+
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        #expect(moved == 1)
+
+        let tasks = try context.fetch(FetchDescriptor<TaskItem>())
+        #expect(tasks.first { $0.title == "old-open" }?.dayKey == "20260814")
+        #expect(tasks.first { $0.title == "old-done" }?.dayKey == "20260101")
+    }
+}
