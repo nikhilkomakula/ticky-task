@@ -1,11 +1,9 @@
 import SwiftUI
 import AppKit
-import KeyboardShortcuts
 
-/// Root content: a Week ⇄ Month switcher on top of the selected view. Week is
-/// the default; Month is the calendar grid (P2b). Applies the theme preference,
-/// runs launch behaviors (sample seed, carry-forward, notification sync),
-/// installs global shortcuts, and applies the menu-bar-only activation policy.
+/// Root content: a single top toolbar (centered ‹ Today › nav + the current
+/// week/month label, with the Week/Month switcher far-right) above the selected
+/// view. Opens maximized. Applies the theme and runs launch behaviors.
 struct ContentView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
@@ -18,24 +16,9 @@ struct ContentView: View {
     @AppStorage("menuBarOnly") private var menuBarOnly = false
 
     var body: some View {
-        @Bindable var app = app
         VStack(spacing: 0) {
-            HStack {
-                Picker("View", selection: $app.viewMode) {
-                    ForEach(ViewMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.symbol).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-
+            TopToolbar()
             Divider()
-
             switch app.viewMode {
             case .week:
                 WeekView()
@@ -44,6 +27,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 600)
+        .background(WindowConfigurator(configure: maximize))
         .preferredColorScheme(preferredColorScheme)
         .task { await runLaunchTasks() }
         .onAppear {
@@ -52,11 +36,7 @@ struct ContentView: View {
         }
         .onChange(of: menuBarOnly) { _, _ in applyActivationPolicy() }
         .onChange(of: scenePhase) { _, phase in
-            // Re-run on re-activation: catches post-authorization scheduling,
-            // midnight rollover carry-forward, and reminder reconciliation.
-            if phase == .active {
-                Task { await runLaunchTasks() }
-            }
+            if phase == .active { Task { await runLaunchTasks() } }
         }
     }
 
@@ -65,6 +45,12 @@ struct ContentView: View {
         case "light": .light
         case "dark": .dark
         default: nil
+        }
+    }
+
+    private func maximize(_ window: NSWindow) {
+        if let screen = window.screen ?? NSScreen.main {
+            window.setFrame(screen.visibleFrame, display: true)
         }
     }
 
@@ -80,5 +66,76 @@ struct ContentView: View {
 
     private func applyActivationPolicy() {
         NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
+    }
+}
+
+/// The single shared toolbar row: centered navigation (‹ Today ›) with the
+/// current week range or month label, and the Week/Month switcher on the right.
+/// Navigation and label adapt to the active view mode.
+private struct TopToolbar: View {
+    @Environment(AppState.self) private var app
+    @AppStorage("weekStartsMonday") private var weekStartsMonday = true
+    @AppStorage("calendarColumns") private var calendarColumns = 5
+
+    private var columns: Int { max(1, min(12, calendarColumns)) }
+
+    var body: some View {
+        @Bindable var app = app
+        ZStack {
+            // Centered navigation cluster (truly window-centered via the ZStack).
+            HStack(spacing: 6) {
+                Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                Button("Today") { app.goToToday() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Button { navigate(1) } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help(app.viewMode == .week ? "Next week" : "Next month")
+                Text(navLabel)
+                    .font(.headline.weight(.semibold))
+                    .padding(.leading, 4)
+            }
+
+            // Trailing view switcher.
+            HStack {
+                Spacer()
+                Picker("View", selection: $app.viewMode) {
+                    ForEach(ViewMode.allCases) { mode in
+                        Label(mode.label, systemImage: mode.symbol).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+        .frame(height: 44)
+        .padding(.horizontal, 12)
+    }
+
+    private func navigate(_ delta: Int) {
+        switch app.viewMode {
+        case .week:
+            if delta < 0 { app.previousWeek() } else { app.nextWeek() }
+        case .calendar:
+            if delta < 0 { app.previousMonth() } else { app.nextMonth() }
+        }
+    }
+
+    private var navLabel: String {
+        switch app.viewMode {
+        case .week:
+            let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday)
+            guard let first = days.first, let last = days.last else { return "" }
+            return "\(first.formatted(.dateTime.month(.abbreviated).day())) – \(last.formatted(.dateTime.month(.abbreviated).day()))"
+        case .calendar:
+            return app.weekAnchor.formatted(.dateTime.month(.wide).year())
+        }
     }
 }

@@ -1,9 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// The horizontal row of custom lists shown beneath the week grid. Lists are
-/// user-created, date-independent, and freely renamable (e.g. "Requires
-/// immediate attention", "Weekend chores").
+/// The horizontal row of custom-list cards beneath the week grid. Lists are
+/// user-created, date-independent, and renamable.
 struct CustomListsRow: View {
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\CustomList.sortIndex)]) private var lists: [CustomList]
@@ -11,15 +10,15 @@ struct CustomListsRow: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
                 ForEach(lists) { list in
                     CustomListColumn(list: list, onEditTask: onEditTask)
-                        .frame(width: 240)
-                    Divider()
+                        .frame(width: 260)
                 }
                 addListButton
-                    .frame(width: 200)
             }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
             .frame(maxHeight: .infinity, alignment: .top)
         }
     }
@@ -27,10 +26,10 @@ struct CustomListsRow: View {
     private var addListButton: some View {
         Button(action: addList) {
             Label("Add list", systemImage: "plus")
-                .frame(maxWidth: .infinity)
         }
         .buttonStyle(.bordered)
-        .padding(8)
+        .controlSize(.small)
+        .padding(.top, 4)
     }
 
     private func addList() {

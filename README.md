@@ -17,6 +17,7 @@ A **native macOS** weekly & monthly planner — a privacy-first, local-only rewr
 - **Menu-bar app** — a menu-bar icon opens a mini calendar with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TodoPlanner and to capture a new task for today from any app.
 - **Appearance** — System/Light/Dark theme, compact rows.
+- **Polished native UI** — material day/list cards, hover affordances, and refined typography; opens **maximized** with a single centered ‹ Today › toolbar alongside the Week/Month switcher.
 - Clean app icon; first-run sample data.
 
 ## How it works

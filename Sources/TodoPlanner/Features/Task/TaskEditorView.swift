@@ -30,23 +30,27 @@ struct TaskEditorView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(minWidth: 520, minHeight: 580)
+        .frame(minWidth: 560, minHeight: 580)
     }
 
     private var header: some View {
         HStack {
-            Text("Edit Task").font(.headline)
+            Text("Edit Task").font(.system(size: 15, weight: .semibold))
             Spacer()
             Button("Done") { finish() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .keyboardShortcut(.defaultAction)
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .frame(height: 44)
     }
 
     private var titleSection: some View {
         Section {
             TextField("Title", text: $task.title, axis: .vertical)
-                .font(.title3)
+                .font(.system(size: 20, weight: .semibold))
+                .textFieldStyle(.plain)
         }
     }
 
@@ -57,11 +61,19 @@ struct TaskEditorView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .frame(width: 180)
 
             if notesMode == .edit {
                 TextEditor(text: $task.notes)
-                    .frame(minHeight: 120)
                     .font(.body)
+                    .frame(minHeight: 120)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08))
+                    }
                 Text("Markdown supported — **bold**, *italic*, `code`, [links](https://…)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -155,6 +167,7 @@ struct TaskEditorView: View {
 private struct SubtaskRow: View {
     @Bindable var subtask: Subtask
     var onDelete: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         HStack {
@@ -163,15 +176,20 @@ private struct SubtaskRow: View {
                     .foregroundStyle(subtask.isDone ? Color.accentColor : .secondary)
             }
             .buttonStyle(.plain)
+            .frame(width: 20, height: 20)
 
             TextField("Subtask", text: $subtask.title)
                 .strikethrough(subtask.isDone)
 
-            Button(role: .destructive, action: onDelete) {
-                Image(systemName: "trash")
+            if isHovering {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
         }
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
     }
 }

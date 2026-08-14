@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// One day column in the week view: a header, the day's tasks (live `@Query`
-/// scoped to the day key), and an inline quick-add field.
+/// One day column: a header (today shown as an accent day-number circle), the
+/// day's tasks (live `@Query`), an empty state, and an inline quick-add. Rendered
+/// as a material card; selected day gets an accent border.
 struct DayColumnView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppState.self) private var app
@@ -38,41 +39,44 @@ struct DayColumnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(orderedTasks) { task in
-                        TaskRowView(task: task) { onEditTask(task) }
+            if orderedTasks.isEmpty {
+                EmptyTasksView()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(orderedTasks) { task in
+                            TaskRowView(task: task) { onEditTask(task) }
+                        }
                     }
                 }
             }
-            quickAddField
+            QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
         }
-        .padding(8)
-        .background(isSelected ? Color.accentColor.opacity(0.06) : Color.clear)
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .cardSurface(selected: isSelected)
         .contentShape(Rectangle())
         .onTapGesture { app.selectedDayKey = dayKey }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 8) {
             Text(date.formatted(.dateTime.weekday(.wide)))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isToday ? Color.accentColor : .primary)
-            Text(date.formatted(.dateTime.month(.abbreviated).day()))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer()
+            if isToday {
+                Text("\(Calendar.current.component(.day, from: date))")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Color.accentColor, in: Circle())
+            } else {
+                Text(date.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
         }
-    }
-
-    private var quickAddField: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "plus.circle").foregroundStyle(.secondary)
-            TextField("Add task", text: $newTitle)
-                .textFieldStyle(.plain)
-                .onSubmit(addTask)
-        }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+        .frame(minHeight: 30)
     }
 
     private func addTask() {

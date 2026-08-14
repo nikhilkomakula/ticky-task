@@ -1,8 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// One custom list rendered as a column: an inline-renamable title, its tasks,
-/// and a quick-add field. Used in the week view's bottom custom-lists row.
+/// One custom list as a material card matching the day columns: an inline-
+/// renamable title, its tasks, an empty state, and an inline quick-add.
 struct CustomListColumn: View {
     @Environment(\.modelContext) private var context
     @Bindable var list: CustomList
@@ -21,35 +21,31 @@ struct CustomListColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("List name", text: $list.name)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .textFieldStyle(.plain)
                 .onSubmit { try? context.save() }
+                .frame(minHeight: 30)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(sortedTasks) { task in
-                        TaskRowView(task: task) { onEditTask(task) }
+            if sortedTasks.isEmpty {
+                EmptyTasksView(title: "This list is empty")
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(sortedTasks) { task in
+                            TaskRowView(task: task) { onEditTask(task) }
+                        }
                     }
                 }
             }
 
-            quickAddField
+            QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
         }
-        .padding(8)
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .cardSurface()
         .contextMenu {
             Button("Delete List", role: .destructive) { deleteList() }
         }
-    }
-
-    private var quickAddField: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "plus.circle").foregroundStyle(.secondary)
-            TextField("Add task", text: $newTitle)
-                .textFieldStyle(.plain)
-                .onSubmit(addTask)
-        }
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
     }
 
     private func addTask() {

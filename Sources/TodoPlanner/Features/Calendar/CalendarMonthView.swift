@@ -15,7 +15,6 @@ struct CalendarMonthView: View {
 
         HStack(spacing: 0) {
             VStack(spacing: 8) {
-                monthToolbar
                 weekdayHeader(sample: Array(days.prefix(7)))
                 grid(days: days, tasksByDay: tasksByDay)
                 Spacer(minLength: 0)
@@ -27,21 +26,6 @@ struct CalendarMonthView: View {
             DayAgendaView(dayKey: app.selectedDayKey)
                 .frame(width: 300)
         }
-    }
-
-    private var monthToolbar: some View {
-        HStack(spacing: 12) {
-            Button { app.previousMonth() } label: { Image(systemName: "chevron.left") }
-                .help("Previous month")
-            Button("Today") { app.goToToday() }
-            Button { app.nextMonth() } label: { Image(systemName: "chevron.right") }
-                .help("Next month")
-            Spacer()
-            Text(app.weekAnchor.formatted(.dateTime.month(.wide).year()))
-                .font(.headline)
-            Spacer()
-        }
-        .buttonStyle(.bordered)
     }
 
     private func weekdayHeader(sample: [Date]) -> some View {
@@ -61,14 +45,16 @@ struct CalendarMonthView: View {
         return LazyVGrid(columns: columns, spacing: 4) {
             ForEach(days, id: \.self) { day in
                 let key = WeekMath.dayKey(for: day)
-                CalendarDayCell(
-                    date: day,
-                    inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
-                    isToday: key == todayKey,
-                    isSelected: key == app.selectedDayKey,
-                    tasks: tasksByDay[key] ?? []
-                )
-                .onTapGesture { app.select(day: day) }
+                Button { app.select(day: day) } label: {
+                    CalendarDayCell(
+                        date: day,
+                        inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
+                        isToday: key == todayKey,
+                        isSelected: key == app.selectedDayKey,
+                        tasks: tasksByDay[key] ?? []
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -84,6 +70,13 @@ private struct CalendarDayCell: View {
     let tasks: [TaskItem]
 
     private var dayNumber: Int { Calendar.current.component(.day, from: date) }
+
+    @State private var isHovering = false
+    private var cellFill: Color {
+        if isSelected { return Color.accentColor.opacity(0.15) }
+        if isHovering { return Color.primary.opacity(0.08) }
+        return Color.primary.opacity(0.03)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -124,15 +117,16 @@ private struct CalendarDayCell: View {
         .padding(4)
         .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.03))
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(cellFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isToday ? Color.accentColor : Color.clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(isToday ? Color.accentColor : Color.clear, lineWidth: 1.5)
         )
         .contentShape(Rectangle())
         .opacity(inCurrentMonth ? 1 : 0.4)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
     }
 
     private var dayNumberColor: Color {
