@@ -16,6 +16,7 @@ A **native macOS** weekly & monthly planner — a privacy-first, local-only rewr
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
 - **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) with the selected day's tasks and inline quick-add; open the main window or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TodoPlanner and to capture a new task for today from any app.
+- **Backup & restore** — export your entire store to a portable `.todoplanner` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
 - **Appearance** — System/Light/Dark theme, compact rows.
 - **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
 - Clean app icon; first-run sample data.
@@ -83,15 +84,15 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 ## Roadmap
 
 - Recurring-tasks UI (daily/weekly/weekdays/monthly/yearly) — the model & engine are in place; the editor UI is next
-- Import from legacy WeekToDo `.wtdb` exports; portable JSON export
-- Encrypted backup **export/import** with restore preview
+- Import from legacy WeekToDo `.wtdb` exports
+- Full-text search across all tasks
 - Drag-and-drop reordering / moving tasks across days
 - Localization (String Catalog)
 - Signed & notarized **universal** DMG release; retire the legacy Electron sources
 
 ## Tech stack
 
-SwiftUI · SwiftData · Swift Testing · XcodeGen · KeyboardShortcuts. macOS 15+ deployment, built against the macOS 26 SDK.
+SwiftUI · SwiftData · Swift Testing · CryptoKit · XcodeGen · KeyboardShortcuts. macOS 15+ deployment, built against the macOS 26 SDK.
 
 ## Credits & license
 

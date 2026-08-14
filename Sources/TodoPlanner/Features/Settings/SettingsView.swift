@@ -4,6 +4,8 @@ import KeyboardShortcuts
 /// The macOS Settings window (⌘,): Appearance, Behavior, Notifications, Shortcuts.
 /// All values are persisted via `@AppStorage` and read by the relevant views.
 struct SettingsView: View {
+    @Environment(\.modelContext) private var context
+
     var body: some View {
         TabView {
             AppearanceSettingsView()
@@ -14,8 +16,10 @@ struct SettingsView: View {
                 .tabItem { Label("Notifications", systemImage: "bell") }
             ShortcutsSettingsView()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
+            DataSettingsView(context: context)
+                .tabItem { Label("Data", systemImage: "externaldrive") }
         }
-        .frame(width: 500, height: 400)
+        .frame(width: 500, height: 440)
     }
 }
 
