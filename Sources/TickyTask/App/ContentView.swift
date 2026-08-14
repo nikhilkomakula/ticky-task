@@ -92,6 +92,7 @@ struct ContentView: View {
 /// Navigation and label adapt to the active view mode.
 private struct TopToolbar: View {
     @Environment(AppState.self) private var app
+    @Environment(\.openSettings) private var openSettings
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("calendarColumns") private var calendarColumns = 5
     var onSearch: () -> Void = {}
@@ -141,6 +142,20 @@ private struct TopToolbar: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                         .help(app.viewMode == .week ? "Next week" : "Next month")
+
+                    // Always-available Settings entry — the only way to reach
+                    // Settings when the Dock icon is hidden (accessory mode).
+                    // Activate explicitly so it comes frontmost in accessory mode.
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Settings")
                 }
             }
         }

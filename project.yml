@@ -39,6 +39,26 @@ targets:
         INFOPLIST_FILE: Sources/TickyTask/Support/Info.plist
         PRODUCT_NAME: TickyTask
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    postBuildScripts:
+      - name: Stamp version from latest git tag
+        basedOnDependencyAnalysis: false
+        script: |
+          # Make the About version follow the release: CFBundleShortVersionString
+          # from the latest git tag (v0.1.0 -> 0.1.0) and CFBundleVersion from the
+          # commit count (a unique, increasing build number). Both no-op when
+          # there are no tags / not a git checkout (e.g. shallow CI clones), so
+          # MARKETING_VERSION/CURRENT_PROJECT_VERSION stay as the fallback. Runs
+          # before the implicit CodeSign step, so the signature stays valid.
+          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          [ -f "$PLIST" ] || exit 0
+          TAG=$(cd "$SRCROOT" && git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+          if [ -n "$TAG" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $TAG" "$PLIST"
+          fi
+          BUILD=$(cd "$SRCROOT" && git rev-list --count HEAD 2>/dev/null)
+          if [ -n "$BUILD" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$PLIST"
+          fi
     scheme:
       testTargets:
         - TickyTaskTests

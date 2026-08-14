@@ -11,6 +11,8 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so the version-stamp script can read the latest release tag
 
       - name: Install XcodeGen
         run: brew install xcodegen
