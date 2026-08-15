@@ -17,9 +17,9 @@ struct CalendarMonthView: View {
             VStack(spacing: 8) {
                 weekdayHeader(sample: Array(days.prefix(7)))
                 grid(days: days, tasksByDay: tasksByDay)
-                Spacer(minLength: 0)
             }
             .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
 
@@ -39,24 +39,34 @@ struct CalendarMonthView: View {
         }
     }
 
+    /// A month grid that scales to fill the available width and height: each week
+    /// is a row taking an equal share of the height, and each day cell fills its
+    /// column and row.
     private func grid(days: [Date], tasksByDay: [String: [TaskItem]]) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         let todayKey = WeekMath.dayKey(for: Date())
-        return LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(days, id: \.self) { day in
-                let key = WeekMath.dayKey(for: day)
-                Button { app.select(day: day) } label: {
-                    CalendarDayCell(
-                        date: day,
-                        inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
-                        isToday: key == todayKey,
-                        isSelected: key == app.selectedDayKey,
-                        tasks: tasksByDay[key] ?? []
-                    )
+        let weeks = stride(from: 0, to: days.count, by: 7).map { Array(days[$0 ..< min($0 + 7, days.count)]) }
+        return VStack(spacing: 4) {
+            ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
+                HStack(spacing: 4) {
+                    ForEach(week, id: \.self) { day in
+                        let key = WeekMath.dayKey(for: day)
+                        Button { app.select(day: day) } label: {
+                            CalendarDayCell(
+                                date: day,
+                                inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
+                                isToday: key == todayKey,
+                                isSelected: key == app.selectedDayKey,
+                                tasks: tasksByDay[key] ?? []
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
-                .buttonStyle(.plain)
+                .frame(maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -121,7 +131,7 @@ private struct CalendarDayCell: View {
             Spacer(minLength: 0)
         }
         .padding(4)
-        .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(cellFill)
         )
