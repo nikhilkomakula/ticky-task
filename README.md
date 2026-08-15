@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.5** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.6** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.5-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.6-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -103,7 +103,7 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
 
 ```bash
-git tag v0.1.5 && git push origin v0.1.5   # → CI builds the DMG and creates the release
+git tag v0.1.6 && git push origin v0.1.6   # → CI builds the DMG and creates the release
 ```
 
 ## Roadmap

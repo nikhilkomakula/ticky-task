@@ -91,7 +91,6 @@ struct MenuBarContentView: View {
             DragOverlayView(controller: dragController)
         }
         .frame(width: 340)
-        .coordinateSpace(.named("planner"))
         .environment(dragController)
         .onPreferenceChange(RowFramesKey.self) { dragController.rowFrames = $0 }
         .onPreferenceChange(ContainerFramesKey.self) { dragController.containerFrames = $0 }

@@ -21,12 +21,16 @@ jobs:
         run: xcodegen generate
 
       - name: Test (unsigned)
+        # Unit tests only. The UI tests (TickyTaskUITests) drive a real dragging
+        # gesture and need an isolated build + explicit-path launch to avoid a
+        # LaunchServices bundle-id collision, so they're run locally, not in CI.
         run: |
           xcodebuild test \
             -project TickyTask.xcodeproj \
             -scheme TickyTask \
             -configuration Debug \
             -destination 'platform=macOS' \
+            -only-testing:TickyTaskTests \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO

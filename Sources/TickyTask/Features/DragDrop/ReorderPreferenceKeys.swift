@@ -24,7 +24,7 @@ extension View {
             GeometryReader { geo in
                 Color.clear.preference(
                     key: RowFramesKey.self,
-                    value: [RowSnapshot(id: id, container: container, frame: geo.frame(in: .named("planner")))]
+                    value: [RowSnapshot(id: id, container: container, frame: geo.frame(in: .global))]
                 )
             }
         )
@@ -36,7 +36,7 @@ extension View {
             GeometryReader { geo in
                 Color.clear.preference(
                     key: ContainerFramesKey.self,
-                    value: [ContainerSnapshot(container: container, frame: geo.frame(in: .named("planner")),
+                    value: [ContainerSnapshot(container: container, frame: geo.frame(in: .global),
                                               accepts: accepts, axis: axis, isEmpty: isEmpty)]
                 )
             }

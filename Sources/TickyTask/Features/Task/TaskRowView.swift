@@ -132,6 +132,7 @@ struct TaskRowView: View {
             Divider()
             Button("Delete", role: .destructive, action: delete)
         }
+        .accessibilityIdentifier("taskRow-\(task.title.isEmpty ? "Untitled" : task.title)")
     }
 
     private func toggleDone() {

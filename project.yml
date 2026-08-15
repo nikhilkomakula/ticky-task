@@ -14,7 +14,7 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "0.1.5"
+    MARKETING_VERSION: "0.1.6"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     # Catch real cross-actor issues without SwiftData's spurious non-Sendable
@@ -62,6 +62,7 @@ targets:
     scheme:
       testTargets:
         - TickyTaskTests
+        - TickyTaskUITests
 
   TickyTaskTests:
     type: bundle.unit-test
@@ -80,3 +81,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.tickytask.mac.tests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TickyTask.app/Contents/MacOS/TickyTask"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  # UI-test target: launches the app (with -uitest → isolated in-memory store +
+  # seeded tasks) and performs real drag gestures to verify reordering end-to-end.
+  TickyTaskUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/TickyTaskUITests
+    dependencies:
+      - target: TickyTask
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.tickytask.mac.uitests
+        TEST_TARGET_NAME: TickyTask

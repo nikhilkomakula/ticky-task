@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AppKit
 
 /// Root content: a single top toolbar (centered ‹ Today › nav + the current
@@ -39,7 +40,6 @@ struct ContentView: View {
             }
             DragOverlayView(controller: dragController)
         }
-        .coordinateSpace(.named("planner"))
         .environment(dragController)
         .onPreferenceChange(RowFramesKey.self) { dragController.rowFrames = $0 }
         .onPreferenceChange(ContainerFramesKey.self) { dragController.containerFrames = $0 }
@@ -84,7 +84,11 @@ struct ContentView: View {
 
     @MainActor
     private func runLaunchTasks() async {
-        SampleData.seedIfEmpty(context)
+        if UITestSupport.isRunning {
+            UITestSupport.seed(context)
+        } else {
+            SampleData.seedIfEmpty(context)
+        }
         if autoCarryForward {
             try? BehaviorService.carryForwardIncomplete(context: context)
         }

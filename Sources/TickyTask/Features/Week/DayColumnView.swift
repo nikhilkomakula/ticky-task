@@ -68,6 +68,7 @@ struct DayColumnView: View {
         .publishContainerFrame(.weekDay(dayKey), accepts: .task, axis: .vertical, isEmpty: orderedTasks.isEmpty)
         .contentShape(Rectangle())
         .onTapGesture { app.selectedDayKey = dayKey }
+        .accessibilityIdentifier("dayColumn-\(dayKey)")
     }
 
     private var header: some View {

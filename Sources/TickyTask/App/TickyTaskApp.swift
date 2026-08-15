@@ -14,7 +14,12 @@ struct TickyTaskApp: App {
     private let containerResult: Result<ModelContainer, Error>
 
     init() {
-        containerResult = Result { try ModelContainerProvider.makeContainer() }
+        // UI tests run against an isolated in-memory store so real data is never touched.
+        if UITestSupport.isRunning {
+            containerResult = .success(ModelContainerProvider.makeInMemoryContainer())
+        } else {
+            containerResult = Result { try ModelContainerProvider.makeContainer() }
+        }
     }
 
     var body: some Scene {

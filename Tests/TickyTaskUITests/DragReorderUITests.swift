@@ -1,0 +1,105 @@
+import XCTest
+
+/// End-to-end verification that a REAL drag reorders tasks. Launches the app with
+/// `-uitest` (isolated in-memory store seeded with Alpha/Bravo/Charlie in the first
+/// week column) and performs an actual click-drag, then asserts the visible order
+/// by comparing on-screen row positions. This is the harness that catches the
+/// gesture/layout failures unit tests and static review cannot.
+final class DragReorderUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    private func launchedApp() -> XCUIApplication {
+        // Launch the EXACT built app by path when provided (TEST_RUNNER_UITEST_APP_PATH),
+        // bypassing LaunchServices bundle-id resolution — otherwise XCUITest's
+        // "Launch com.tickytask.mac" can resolve to a stale registered copy.
+        let app: XCUIApplication
+        if let path = ProcessInfo.processInfo.environment["UITEST_APP_PATH"], !path.isEmpty {
+            app = XCUIApplication(url: URL(fileURLWithPath: path))
+        } else {
+            app = XCUIApplication()
+        }
+        // Force 7 columns so TODAY (where -uitest seeds) is always visible, and a
+        // Monday week start, regardless of the machine's real prefs.
+        app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES"]
+        app.launch()
+        return app
+    }
+
+    private func row(_ app: XCUIApplication, _ title: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "taskRow-\(title)").firstMatch
+    }
+
+    /// Drag a task onto a DIFFERENT day column and confirm it moves there (the key
+    /// cross-container use case).
+    func testDragTaskToAnotherDayMovesIt() throws {
+        let app = launchedApp()
+        let alpha = row(app, "Alpha")
+        XCTAssertTrue(alpha.waitForExistence(timeout: 20), "Alpha should exist before dragging")
+        let mondayColumn = app.descendants(matching: .any).matching(identifier: "dayColumn-20260810").firstMatch
+        XCTAssertTrue(mondayColumn.waitForExistence(timeout: 5), "Monday column should be visible")
+
+        let alphaStartX = alpha.frame.midX
+        // Drag Alpha from today's column onto Monday's (empty) column body.
+        let start = alpha.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let dest = mondayColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 2.0))
+        start.press(forDuration: 0.35, thenDragTo: dest)
+        Thread.sleep(forTimeInterval: 1.2)
+
+        let alphaEndX = row(app, "Alpha").frame.midX
+        XCTAssertLessThan(alphaEndX, alphaStartX - 150, "Alpha moved left into a different day column")
+    }
+
+    /// Sanity: the seeded rows show up in the expected initial order.
+    func testSeededRowsAppearInOrder() throws {
+        let app = launchedApp()
+        XCTAssertTrue(row(app, "Alpha").waitForExistence(timeout: 20), "seeded rows should appear")
+        XCTAssertTrue(row(app, "Bravo").waitForExistence(timeout: 5))
+        XCTAssertTrue(row(app, "Charlie").waitForExistence(timeout: 5))
+
+        XCTAssertLessThan(row(app, "Alpha").frame.minY, row(app, "Bravo").frame.minY, "Alpha above Bravo")
+        XCTAssertLessThan(row(app, "Bravo").frame.minY, row(app, "Charlie").frame.minY, "Bravo above Charlie")
+    }
+
+    /// Drag Alpha down past Charlie's midpoint → it should end up last (Bravo, Charlie, Alpha).
+    func testDragAlphaBelowCharlieReorders() throws {
+        let app = launchedApp()
+        let alpha = row(app, "Alpha")
+        let charlie = row(app, "Charlie")
+        XCTAssertTrue(alpha.waitForExistence(timeout: 20), "Alpha should exist before dragging")
+        XCTAssertTrue(charlie.waitForExistence(timeout: 5))
+
+        let alphaStartY = alpha.frame.minY
+        let charlieStartY = charlie.frame.minY
+        XCTAssertLessThan(alphaStartY, charlieStartY, "precondition: Alpha starts above Charlie")
+
+        // Real click-drag from Alpha's center to just below Charlie's midpoint.
+        let start = alpha.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = charlie.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        start.press(forDuration: 0.35, thenDragTo: end)
+
+        // Let the commit + spring settle, then re-read positions.
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(row(app, "Alpha").waitForExistence(timeout: 5), "Alpha still present after drag")
+
+        let alphaY = row(app, "Alpha").frame.minY
+        let bravoY = row(app, "Bravo").frame.minY
+        let charlieY = row(app, "Charlie").frame.minY
+
+        XCTAssertLessThan(bravoY, charlieY, "after drag: Bravo above Charlie")
+        XCTAssertLessThan(charlieY, alphaY, "after drag: Alpha moved below Charlie (reorder happened)")
+    }
+
+    /// A plain click (no movement) must still open the editor — i.e. the
+    /// high-priority drag gesture does NOT swallow taps.
+    func testTapRowOpensEditor() throws {
+        let app = launchedApp()
+        // Click the title text (not the row's leading checkbox) to exercise tap-to-edit.
+        let title = app.staticTexts["Alpha"]
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "Alpha title should exist")
+        XCTAssertFalse(app.buttons["Done"].exists, "editor should not be open initially")
+        title.click()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5), "clicking a task opens the editor (tap not swallowed by the drag gesture)")
+    }
+}

@@ -20,8 +20,12 @@ struct ReorderableRow: ViewModifier {
         content
             .opacity(controller.isDragging(id) ? 0.001 : 1)
             .publishRowFrame(id: id, container: container)
-            .gesture(
-                DragGesture(minimumDistance: 4, coordinateSpace: .named("planner"))
+            // High-priority so the drag wins over TaskRowView's own row-wide
+            // .onTapGesture (a descendant gesture would otherwise defeat this
+            // ancestor drag, so it never started). A click that never crosses the
+            // 4pt threshold still falls through to the tap (edit).
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
                     .onChanged { value in
                         if !controller.isDragging(id) {
                             controller.begin(id: id, kind: kind, task: task, list: list, startLocation: value.startLocation)
@@ -52,8 +56,8 @@ extension View {
 
     /// A drag handle that starts a `.listCard` drag for list `list`.
     func reorderCardHandle(id: UUID, controller: DragController, list: CustomList) -> some View {
-        gesture(
-            DragGesture(minimumDistance: 4, coordinateSpace: .named("planner"))
+        highPriorityGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
                 .onChanged { value in
                     if !controller.isDragging(id) {
                         controller.begin(id: id, kind: .listCard, task: nil, list: list, startLocation: value.startLocation)
