@@ -28,9 +28,14 @@ final class TaskItem {
     /// Manual ordering within a day/list (fractional indexing).
     var sortIndex: Double = 0
     var alarmEnabled: Bool = false
-    /// Escalation flag: this task needs immediate attention. Replaces the former
-    /// `.critical` priority level; surfaced with a red warning mark. Default off.
-    var needsImmediateAttention: Bool = false
+    /// Critical flag: surfaced with a red flag shown before the priority, and
+    /// independent of the priority level. Default off. Persisted under its original
+    /// column name `needsImmediateAttention` (see `SchemaV3`) so existing stores
+    /// keep their data across the rename.
+    @Attribute(originalName: "needsImmediateAttention") var isCritical: Bool = false
+    /// When the task was marked done (`nil` while open). Drives optional
+    /// auto-deletion of long-completed tasks; additive, so older stores read nil.
+    var completedAt: Date?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
@@ -86,4 +91,14 @@ extension TaskItem {
     }
 
     var isRecurringTemplate: Bool { recurrence != nil }
+}
+
+extension TaskItem {
+    /// Mark the task done/undone, stamping `completedAt` (used by optional
+    /// auto-deletion of long-completed tasks) and `updatedAt`.
+    func setDone(_ done: Bool, at date: Date = Date()) {
+        isDone = done
+        completedAt = done ? date : nil
+        updatedAt = date
+    }
 }

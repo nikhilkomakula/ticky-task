@@ -59,6 +59,9 @@ struct BackupStoreDTO: Codable, Equatable, Sendable {
     var appVersion: String
     var exportedAt: Date
     var data: BackupDataDTO
+    /// User-facing preferences (UserDefaults) captured at export and applied on
+    /// restore. Optional so older backups without it still decode.
+    var settings: AppSettingsDTO? = nil
 }
 
 struct BackupDataDTO: Codable, Equatable, Sendable {
@@ -98,10 +101,13 @@ struct TaskItemDTO: Codable, Equatable, Sendable {
     var updatedAt: Date
     var recurrence: RecurrenceRule?
     var tagIds: [UUID]
-    /// Optional for backward compatibility: pre-0.1.2 backups omit this key and
-    /// decode as `nil` (treated as `false` on restore). Defaulted so the projection
-    /// and older call sites need not pass it.
+    /// Persists `TaskItem.isCritical`. Kept under its original JSON key
+    /// `needsImmediateAttention` for backup-format stability across 0.1.2↔0.1.3,
+    /// and optional so pre-0.1.2 backups (which omit it) still decode → `false`.
     var needsImmediateAttention: Bool? = nil
+    /// When the task was completed (`nil` if open). Optional so older backups
+    /// without the key still decode.
+    var completedAt: Date? = nil
 }
 
 struct SubtaskDTO: Codable, Equatable, Sendable {
@@ -134,6 +140,78 @@ struct TaskOccurrenceDTO: Codable, Equatable, Sendable {
     var templateId: UUID?
 }
 
+/// The app's user-facing preferences (UserDefaults), included in a backup so a
+/// restore reproduces the full setup — not just the task data. Machine-specific
+/// keys (the chosen data-folder path) are deliberately excluded. Every field is
+/// optional: a preference still at its default (absent from `UserDefaults`) is
+/// omitted, and older backups without a `settings` block decode to `nil`.
+struct AppSettingsDTO: Codable, Equatable, Sendable {
+    var appTheme: String? = nil
+    var calendarColumns: Int? = nil
+    var weekStartsMonday: Bool? = nil
+    var compactView: Bool? = nil
+    var taskSortMode: String? = nil
+    var moveCompletedToBottom: Bool? = nil
+    var autoCarryForward: Bool? = nil
+    var autoDeleteCompletedEnabled: Bool? = nil
+    var autoDeleteCompletedDays: Int? = nil
+    var endOfDayReminderEnabled: Bool? = nil
+    var endOfDayReminderMinutes: Int? = nil
+    var menuBarOnly: Bool? = nil
+    var autoCheckUpdates: Bool? = nil
+
+    /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
+    /// stays `nil` rather than reading back as `false` / `0`.
+    static func capture(from d: UserDefaults = .standard) -> AppSettingsDTO {
+        AppSettingsDTO(
+            appTheme: d.string(forKey: "appTheme"),
+            calendarColumns: d.object(forKey: "calendarColumns") as? Int,
+            weekStartsMonday: d.object(forKey: "weekStartsMonday") as? Bool,
+            compactView: d.object(forKey: "compactView") as? Bool,
+            taskSortMode: d.string(forKey: "taskSortMode"),
+            moveCompletedToBottom: d.object(forKey: "moveCompletedToBottom") as? Bool,
+            autoCarryForward: d.object(forKey: "autoCarryForward") as? Bool,
+            autoDeleteCompletedEnabled: d.object(forKey: "autoDeleteCompletedEnabled") as? Bool,
+            autoDeleteCompletedDays: d.object(forKey: "autoDeleteCompletedDays") as? Int,
+            endOfDayReminderEnabled: d.object(forKey: "endOfDayReminderEnabled") as? Bool,
+            endOfDayReminderMinutes: d.object(forKey: "endOfDayReminderMinutes") as? Int,
+            menuBarOnly: d.object(forKey: "menuBarOnly") as? Bool,
+            autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool
+        )
+    }
+
+    /// Every UserDefaults key this DTO carries — used to reset before a restore so
+    /// the destination reproduces the source's *effective* settings (a key the
+    /// source left at its default clears any explicit value here, back to default).
+    static let portableKeys = [
+        "appTheme", "calendarColumns", "weekStartsMonday", "compactView",
+        "taskSortMode", "moveCompletedToBottom", "autoCarryForward",
+        "autoDeleteCompletedEnabled", "autoDeleteCompletedDays",
+        "endOfDayReminderEnabled", "endOfDayReminderMinutes",
+        "menuBarOnly", "autoCheckUpdates",
+    ]
+
+    /// Reproduce the backed-up settings: clear every portable key first (so a
+    /// preference the source left at its default resets any explicit value here to
+    /// the same default), then write the values the backup carries.
+    func apply(to d: UserDefaults = .standard) {
+        for key in Self.portableKeys { d.removeObject(forKey: key) }
+        if let v = appTheme { d.set(v, forKey: "appTheme") }
+        if let v = calendarColumns { d.set(v, forKey: "calendarColumns") }
+        if let v = weekStartsMonday { d.set(v, forKey: "weekStartsMonday") }
+        if let v = compactView { d.set(v, forKey: "compactView") }
+        if let v = taskSortMode { d.set(v, forKey: "taskSortMode") }
+        if let v = moveCompletedToBottom { d.set(v, forKey: "moveCompletedToBottom") }
+        if let v = autoCarryForward { d.set(v, forKey: "autoCarryForward") }
+        if let v = autoDeleteCompletedEnabled { d.set(v, forKey: "autoDeleteCompletedEnabled") }
+        if let v = autoDeleteCompletedDays { d.set(v, forKey: "autoDeleteCompletedDays") }
+        if let v = endOfDayReminderEnabled { d.set(v, forKey: "endOfDayReminderEnabled") }
+        if let v = endOfDayReminderMinutes { d.set(v, forKey: "endOfDayReminderMinutes") }
+        if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
+        if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
+    }
+}
+
 // MARK: - Projections from live models
 
 extension TaskItemDTO {
@@ -146,7 +224,8 @@ extension TaskItemDTO {
             createdAt: task.createdAt, updatedAt: task.updatedAt,
             recurrence: task.recurrence,
             tagIds: task.tags.map(\.id).sorted { $0.uuidString < $1.uuidString },
-            needsImmediateAttention: task.needsImmediateAttention
+            needsImmediateAttention: task.isCritical,
+            completedAt: task.completedAt
         )
     }
 }

@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// Task priority: **low / medium / high**. Backed by `TaskItem.priority` (Int);
-/// a task's color and glyph are derived from its level. The former `.critical`
-/// level is gone — urgency that needs to jump the queue is now the independent,
-/// opt-in `TaskItem.needsImmediateAttention` flag (a red warning mark), so a task
-/// can be, say, low priority yet still flagged for immediate attention.
+/// a task's color and glyph are derived from its level. Urgency that needs to
+/// jump the queue is the independent, opt-in `TaskItem.isCritical` flag (a red
+/// flag mark shown before the priority), so a task can be, say, low priority yet
+/// still flagged critical.
 enum TaskPriority: Int, CaseIterable, Identifiable, Sendable {
     case low = 0
     case medium = 1
@@ -29,12 +29,12 @@ enum TaskPriority: Int, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Escalating color scheme: green → yellow → orange.
+    /// Escalating color scheme: green → orange → red.
     var tint: Color {
         switch self {
         case .low: .green
-        case .medium: .yellow
-        case .high: .orange
+        case .medium: .orange
+        case .high: .red
         }
     }
 }

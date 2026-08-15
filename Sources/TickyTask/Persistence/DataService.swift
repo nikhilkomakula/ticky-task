@@ -43,8 +43,7 @@ struct DataService {
     }
 
     func toggleDone(_ task: TaskItem) {
-        task.isDone.toggle()
-        task.updatedAt = Date()
+        task.setDone(!task.isDone)
     }
 
     // MARK: - Subtasks

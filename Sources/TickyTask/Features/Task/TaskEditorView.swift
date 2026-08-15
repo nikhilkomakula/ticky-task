@@ -96,10 +96,10 @@ struct TaskEditorView: View {
                     Label(priority.label, systemImage: priority.symbol).tag(priority)
                 }
             }
-            Toggle(isOn: $task.needsImmediateAttention) {
-                Label("Needs immediate attention", systemImage: "exclamationmark.triangle.fill")
+            Toggle(isOn: $task.isCritical) {
+                Label("Critical", systemImage: "flag.fill")
             }
-            .help("Flag this task as urgent — shown with a red warning mark, independent of its priority.")
+            .help("Mark this task critical — shown with a red flag before its priority, independent of the priority level.")
         }
     }
 

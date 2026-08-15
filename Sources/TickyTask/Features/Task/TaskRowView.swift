@@ -21,7 +21,7 @@ struct TaskRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 6) {
             Button(action: toggleDone) {
                 Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 15))
@@ -31,14 +31,14 @@ struct TaskRowView: View {
             .frame(width: 20, height: 20)
 
             HStack(spacing: 3) {
+                if task.isCritical {
+                    Image(systemName: "flag.fill")
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Critical")
+                }
                 Image(systemName: task.priorityLevel.symbol)
                     .foregroundStyle(task.priorityLevel.tint)
                     .accessibilityLabel("\(task.priorityLevel.label) priority")
-                if task.needsImmediateAttention {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .accessibilityLabel("Needs immediate attention")
-                }
             }
             .font(.system(size: 11))
 
@@ -46,10 +46,15 @@ struct TaskRowView: View {
                 .font(.system(size: 13))
                 .strikethrough(task.isDone)
                 .foregroundStyle(task.isDone ? .secondary : .primary)
-                .lineLimit(compactView ? 1 : 2)
-                .layoutPriority(1)
-
-            Spacer(minLength: 4)
+                // Always wrap to the available column width (week columns, day agenda,
+                // and custom lists all use this row) — including compact mode, which the
+                // user asked for; compact still hides the time and tightens row padding.
+                // `maxWidth` bounds the width so the title wraps instead of claiming its
+                // full single-line width; `fixedSize(vertical:)` lets the wrapped title
+                // grow the row height instead of being clipped to one line.
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             if !task.subtasks.isEmpty {
                 let done = task.subtasks.filter(\.isDone).count
@@ -125,8 +130,7 @@ struct TaskRowView: View {
     }
 
     private func toggleDone() {
-        task.isDone.toggle()
-        task.updatedAt = Date()
+        task.setDone(!task.isDone)
         try? context.save()
         Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
     }

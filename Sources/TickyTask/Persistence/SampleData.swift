@@ -17,7 +17,7 @@ enum SampleData {
         do {
             let review = try service.addTask(title: "Review pull request", location: .day(today))
             review.priorityLevel = .high
-            review.needsImmediateAttention = true
+            review.isCritical = true
             review.timeMinutes = 10 * 60
             service.addSubtask(to: review, title: "Check the tests pass")
             service.addSubtask(to: review, title: "Leave review comments")

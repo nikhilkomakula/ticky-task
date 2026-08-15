@@ -23,8 +23,8 @@ struct EditorSupportTests {
         #expect(TaskItem(priority: 1).priorityLevel == .medium)
     }
 
-    @Test("needsImmediateAttention defaults off")
-    func immediateAttentionDefaultsOff() {
-        #expect(TaskItem(title: "x").needsImmediateAttention == false)
+    @Test("isCritical defaults off")
+    func criticalDefaultsOff() {
+        #expect(TaskItem(title: "x").isCritical == false)
     }
 }

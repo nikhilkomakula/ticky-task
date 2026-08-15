@@ -53,6 +53,8 @@ private struct BehaviorSettingsView: View {
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
     @AppStorage("autoCarryForward") private var autoCarryForward = false
+    @AppStorage("autoDeleteCompletedEnabled") private var autoDeleteEnabled = false
+    @AppStorage("autoDeleteCompletedDays") private var autoDeleteDays = 7
 
     var body: some View {
         Form {
@@ -64,6 +66,17 @@ private struct BehaviorSettingsView: View {
             Text("When the app opens, unfinished tasks from past days are carried forward to today.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Section("Auto-delete completed tasks") {
+                Toggle("Delete old completed tasks", isOn: $autoDeleteEnabled)
+                if autoDeleteEnabled {
+                    Stepper("Delete after \(autoDeleteDays) day\(autoDeleteDays == 1 ? "" : "s")",
+                            value: $autoDeleteDays, in: 1...365)
+                }
+                Text("Off by default — completed tasks stay until you delete them. When on, tasks completed more than the chosen number of days ago are removed automatically each time TickyTask opens.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

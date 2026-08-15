@@ -1,11 +1,16 @@
 import SwiftUI
 import SwiftData
+import AppKit
 
-/// Settings › Data: export the whole store to a `.tickytask` backup file
-/// (optionally passphrase-encrypted) and restore one. Restore is replace-all,
-/// gated behind a diff preview and an explicit confirmation.
+/// Settings › Data: choose where the store is kept (with automatic data move),
+/// and export/import backups. Restore is replace-all, gated behind a diff
+/// preview and an explicit confirmation.
 struct DataSettingsView: View {
     @State private var coordinator: BackupCoordinator
+    @AppStorage(ModelContainerProvider.Keys.desired) private var desiredPath = ""
+    @AppStorage(ModelContainerProvider.Keys.active) private var activePath = ""
+    @State private var showRelaunchAlert = false
+    @State private var relaunchFailed = false
 
     init(context: ModelContext) {
         _coordinator = State(initialValue: BackupCoordinator(context: context))
@@ -14,6 +19,42 @@ struct DataSettingsView: View {
     var body: some View {
         @Bindable var coordinator = coordinator
         Form {
+            Section("Data Location") {
+                LabeledContent("Current folder") {
+                    Text(displayPath(currentDirPath))
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                if hasPendingChange {
+                    Label("After relaunch, your data moves to: \(displayPath(effectiveDesiredPath))",
+                          systemImage: "arrow.right.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                HStack {
+                    Button { chooseFolder() } label: { Label("Change Folder…", systemImage: "folder") }
+                    Button { revealInFinder() } label: { Label("Reveal in Finder", systemImage: "magnifyingglass") }
+                    if isCustomLocation {
+                        Button(role: .destructive) { resetToDefault() } label: {
+                            Label("Reset to Default", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                }
+                Label("Tip: you can keep your data in an iCloud Drive, Google Drive, or Dropbox folder to carry it between Macs. It's a live database, not real-time sync — use one Mac at a time, and fully quit TickyTask and let the folder finish syncing before opening it on another Mac. Changing the folder moves your data there and relaunches TickyTask.",
+                      systemImage: "cloud")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if relaunchFailed {
+                    Label("Couldn't relaunch automatically — quit and reopen TickyTask to finish moving your data.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
             Section("Export") {
                 Toggle("Encrypt with a passphrase", isOn: $coordinator.encryptExport)
                 if coordinator.encryptExport {
@@ -38,7 +79,7 @@ struct DataSettingsView: View {
                 } label: {
                     Label("Import Backup…", systemImage: "square.and.arrow.down")
                 }
-                Text("Restoring replaces all current tasks, lists, tags, and occurrences with the backup's contents.")
+                Text("Restoring replaces all current tasks, lists, tags, and occurrences with the backup's contents, and applies the backup's app settings.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -69,6 +110,77 @@ struct DataSettingsView: View {
         .sheet(isPresented: $coordinator.showRestoreConfirm) {
             RestoreConfirmSheet(coordinator: coordinator)
         }
+        .alert("Relaunch to move your data?", isPresented: $showRelaunchAlert) {
+            Button("Relaunch Now") { if !AppRelaunch.now() { relaunchFailed = true } }
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("TickyTask will move all your data to the new folder and relaunch. Your tasks are preserved.")
+        }
+    }
+
+    // MARK: - Data location
+
+    private var defaultDirPath: String { (try? ModelContainerProvider.defaultDirectory().path) ?? "" }
+    private var currentDirPath: String { activePath.isEmpty ? defaultDirPath : activePath }
+    private var effectiveDesiredPath: String { desiredPath.isEmpty ? defaultDirPath : desiredPath }
+    private var isCustomLocation: Bool { !desiredPath.isEmpty && !samePath(desiredPath, defaultDirPath) }
+    private var hasPendingChange: Bool { !samePath(effectiveDesiredPath, currentDirPath) }
+
+    private func samePath(_ a: String, _ b: String) -> Bool {
+        URL(fileURLWithPath: a).standardizedFileURL == URL(fileURLWithPath: b).standardizedFileURL
+    }
+
+    private func displayPath(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Choose a folder to store your TickyTask data."
+        if panel.runModal() == .OK, let url = panel.url {
+            desiredPath = url.path
+            if hasPendingChange { showRelaunchAlert = true }
+        }
+    }
+
+    private func resetToDefault() {
+        desiredPath = ""
+        if hasPendingChange { showRelaunchAlert = true }
+    }
+
+    private func revealInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: currentDirPath)])
+    }
+}
+
+/// Relaunches the app so a pending data-folder move can be applied at the next
+/// launch (the store is relocated before it's opened).
+private enum AppRelaunch {
+    /// Wait for this instance to fully exit — releasing the store — then relaunch,
+    /// so two instances never touch the store at once. Returns false if the helper
+    /// couldn't be started; the caller then stays open rather than quitting into
+    /// nothing (the pending data move still applies on the next manual launch).
+    @discardableResult
+    static func now() -> Bool {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \(quoted(Bundle.main.bundlePath))"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", script]
+        do {
+            try task.run()
+        } catch {
+            return false
+        }
+        NSApp.terminate(nil)
+        return true
+    }
+
+    private static func quoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 

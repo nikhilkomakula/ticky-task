@@ -57,7 +57,8 @@ enum BackupStore {
             schemaVersion: BackupStoreDTO.currentSchemaVersion,
             appVersion: appVersion,
             exportedAt: Date(),
-            data: data
+            data: data,
+            settings: AppSettingsDTO.capture()
         )
     }
 
@@ -93,6 +94,16 @@ enum BackupStore {
         } catch {
             context.rollback()
             throw error
+        }
+        // Apply the backed-up preferences once the data restore has succeeded.
+        store.settings?.apply()
+        // Settings live in UserDefaults; reschedule the end-of-day reminder now so
+        // notification behavior matches the restored settings without a relaunch.
+        let defaults = UserDefaults.standard
+        let reminderEnabled = defaults.bool(forKey: "endOfDayReminderEnabled")
+        let reminderMinutes = defaults.object(forKey: "endOfDayReminderMinutes") as? Int ?? 18 * 60
+        Task { @MainActor in
+            await NotificationService.scheduleEndOfDayReminder(enabled: reminderEnabled, minutes: reminderMinutes)
         }
     }
 
@@ -134,7 +145,8 @@ enum BackupStore {
             )
             task.notes = dto.notes
             task.isDone = dto.isDone
-            task.needsImmediateAttention = dto.needsImmediateAttention ?? false
+            task.isCritical = dto.needsImmediateAttention ?? false
+            task.completedAt = dto.completedAt
             task.createdAt = dto.createdAt
             task.updatedAt = dto.updatedAt
             task.tags = dto.tagIds.compactMap { tagMap[$0] }

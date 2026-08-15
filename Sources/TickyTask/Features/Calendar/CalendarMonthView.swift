@@ -95,15 +95,15 @@ private struct CalendarDayCell: View {
 
             ForEach(tasks.prefix(3)) { task in
                 HStack(spacing: 3) {
+                    if task.isCritical {
+                        Image(systemName: "flag.fill")
+                            .font(.system(size: 7))
+                            .foregroundStyle(.red)
+                            .accessibilityLabel("Critical")
+                    }
                     Circle()
                         .fill(task.priorityLevel.tint)
                         .frame(width: 5, height: 5)
-                    if task.needsImmediateAttention {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 7))
-                            .foregroundStyle(.red)
-                            .accessibilityLabel("Needs immediate attention")
-                    }
                     Text(task.title.isEmpty ? "Untitled" : task.title)
                         .font(.caption2)
                         .lineLimit(1)

@@ -15,6 +15,8 @@ struct ContentView: View {
     @AppStorage("endOfDayReminderMinutes") private var endOfDayMinutes = 18 * 60
     @AppStorage("menuBarOnly") private var menuBarOnly = false
     @AppStorage("autoCheckUpdates") private var autoCheckUpdates = true
+    @AppStorage("autoDeleteCompletedEnabled") private var autoDeleteEnabled = false
+    @AppStorage("autoDeleteCompletedDays") private var autoDeleteDays = 7
 
     var body: some View {
         @Bindable var app = app
@@ -63,6 +65,7 @@ struct ContentView: View {
         if autoCarryForward {
             try? BehaviorService.carryForwardIncomplete(context: context)
         }
+        AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes)
