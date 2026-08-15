@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.7** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.8** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.7-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.8-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -21,7 +21,7 @@ Requires **macOS 15+** on **Apple Silicon**. Because the build isn't signed/nota
 
 - **Week view** (the default) — configurable 1–12 day columns, Monday/Sunday start, an optional **show weekends** toggle (off by default, so weekends are hidden and the columns show only weekdays — **Settings › Appearance**), and previous/next/today navigation.
 - **Month view** — a calendar grid showing every day's tasks, with a selected-day agenda panel; toggle between **Week** and **Month**.
-- **Task editor** — title, **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High) that color-codes the task (green → orange → red), an optional **Critical** flag (off by default) that adds a red flag *before* the priority — independent of the priority level — and **subtasks**.
+- **Task editor** — title (grows to fit long titles that wrap to multiple lines), **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High) that color-codes the task (green → orange → red), an optional **Critical** flag (off by default) that adds a red flag *before* the priority — independent of the priority level — and **subtasks**.
 - **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split.
 - **Drag & drop** — smooth, cursor-tracking reordering: drag a task to reorder it within a day or list, or move it **across days and across lists**, in the **Week** and **Month** views *and* the menu-bar popover — a lifted preview follows the cursor and an accent line shows exactly where it will land. Drop a task onto any day in the calendar grid (or the menu-bar mini-calendar) to move it there, and reorder the custom-list cards by dragging a card's grip handle.
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, automatically carry unfinished tasks forward to today, and optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
@@ -103,7 +103,7 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
 
 ```bash
-git tag v0.1.7 && git push origin v0.1.7   # → CI builds the DMG and creates the release
+git tag v0.1.8 && git push origin v0.1.8   # → CI builds the DMG and creates the release
 ```
 
 ## Roadmap

@@ -48,9 +48,16 @@ struct TaskEditorView: View {
 
     private var titleSection: some View {
         Section {
+            // A vertical-axis TextField only grows to show wrapped lines when given
+            // a line-limit RANGE; without it the field stays one line tall and the
+            // second line is clipped. `fixedSize(vertical:)` makes the row adopt the
+            // field's full height (same pattern TaskRowView uses for wrapped titles).
             TextField("Title", text: $task.title, axis: .vertical)
                 .font(.system(size: 20, weight: .semibold))
                 .textFieldStyle(.plain)
+                .lineLimit(1...10)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("editor-title")
         }
     }
 

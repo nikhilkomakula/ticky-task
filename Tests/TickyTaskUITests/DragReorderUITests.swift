@@ -168,4 +168,22 @@ final class DragReorderUITests: XCTestCase {
         XCTAssertLessThan(yb, ya, "ListB now above ListA")
         XCTAssertLessThan(ya, yc, "→ order ListB, ListA, ListC (reorder within the list worked)")
     }
+
+    /// The editor's Title field must grow to reveal wrapped lines — a long title
+    /// should not be clipped to a single line (the reported bug).
+    func testEditorTitleGrowsWhenWrapping() throws {
+        let app = launchedApp()
+        let alpha = app.staticTexts["Alpha"]
+        XCTAssertTrue(alpha.waitForExistence(timeout: 20))
+        alpha.click()
+        let field = app.descendants(matching: .any).matching(identifier: "editor-title").firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "editor Title field should exist")
+        field.click()
+        let oneLineHeight = field.frame.height
+        field.typeKey("a", modifierFlags: .command) // select the seeded "Alpha"
+        field.typeText("Pradeep / Bhuvanesh / Anirban / TechTalk Recording session agenda notes for the weekly team sync")
+        Thread.sleep(forTimeInterval: 0.6) // let the field reflow
+        XCTAssertGreaterThan(field.frame.height, oneLineHeight + 12,
+                             "Title field should grow to reveal the wrapped line, not clip it")
+    }
 }
