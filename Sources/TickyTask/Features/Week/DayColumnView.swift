@@ -7,6 +7,7 @@ import SwiftData
 struct DayColumnView: View {
     @Environment(\.modelContext) private var context
     @Environment(AppState.self) private var app
+    @Environment(DragController.self) private var drag
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
 
@@ -48,8 +49,7 @@ struct DayColumnView: View {
                             ForEach(orderedTasks) { task in
                                 TaskRowView(task: task) { onEditTask(task) }
                                     .id(task.id)
-                                    .draggable(DraggedItem(id: task.id, kind: .task))
-                                    .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
+                                    .reorderableRow(id: task.id, kind: .task, container: .weekDay(dayKey), controller: drag, task: task)
                             }
                         }
                     }
@@ -62,19 +62,12 @@ struct DayColumnView: View {
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .cardSurface(selected: isSelected)
-        // Whole-column drop target: move a task into this day (append). Rows below
-        // handle precise positioning; this catches drops on the empty area.
-        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: nil) }
+        // Whole-column drop target: catches drops on the empty area / padding below
+        // the rows (moving a task into this day). Rows publish their own frames so
+        // the engine can position precisely between them.
+        .publishContainerFrame(.weekDay(dayKey), accepts: .task, axis: .vertical, isEmpty: orderedTasks.isEmpty)
         .contentShape(Rectangle())
         .onTapGesture { app.selectedDayKey = dayKey }
-    }
-
-    /// Move/reorder a dropped task into this day, before `beforeID` (append if nil).
-    @discardableResult
-    private func dropTask(_ items: [DraggedItem], before beforeID: UUID?) -> Bool {
-        guard let item = items.first, item.kind == .task else { return false }
-        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: beforeID, siblings: orderedTasks)
-        return true
     }
 
     private var header: some View {

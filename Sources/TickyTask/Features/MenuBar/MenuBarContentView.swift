@@ -8,6 +8,14 @@ import AppKit
 struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.modelContext) private var context
+    @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
+    @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
+
+    /// This popover's own drag-to-reorder controller. `MenuBarExtra(.window)` is a
+    /// separate `NSPanel` scene, so it needs its own `"planner"` space + overlay
+    /// (the main window's overlay can't cover it).
+    @State private var dragController = DragController()
 
     /// The menu bar shows a self-contained day that resets to today each time the
     /// popover opens — independent of the main window's selection.
@@ -36,7 +44,7 @@ struct MenuBarContentView: View {
     /// with no scrolling and no blank space, while a very long day scrolls inside
     /// the cap instead of pushing the popover off-screen.
     @ViewBuilder private var menuBarAgenda: some View {
-        let agenda = DayAgendaView(dayKey: selectedDayKey, insets: 8, scrolls: false)
+        let agenda = DayAgendaView(dayKey: selectedDayKey, dragController: dragController, insets: 8, scrolls: false)
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: AgendaHeightKey.self, value: geo.size.height)
@@ -50,35 +58,43 @@ struct MenuBarContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Text("TickyTask")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button(action: openSettingsWindow) {
-                    Image(systemName: "gearshape")
+        ZStack {
+            VStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    Text("TickyTask")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button(action: openSettingsWindow) {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .help("Settings")
+                    Button(action: openMainWindow) {
+                        Image(systemName: "macwindow")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .help("Open TickyTask")
                 }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Settings")
-                Button(action: openMainWindow) {
-                    Image(systemName: "macwindow")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Open TickyTask")
+
+                MiniMonthCalendar(selectedDayKey: $selectedDayKey)
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                menuBarAgenda
+                    .onPreferenceChange(AgendaHeightKey.self) { agendaContentHeight = $0 }
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
+            .padding(10)
 
-            MiniMonthCalendar(selectedDayKey: $selectedDayKey)
-                .padding(8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            menuBarAgenda
-                .onPreferenceChange(AgendaHeightKey.self) { agendaContentHeight = $0 }
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            DragOverlayView(controller: dragController)
         }
-        .padding(10)
         .frame(width: 340)
+        .coordinateSpace(.named("planner"))
+        .environment(dragController)
+        .onPreferenceChange(RowFramesKey.self) { dragController.rowFrames = $0 }
+        .onPreferenceChange(ContainerFramesKey.self) { dragController.containerFrames = $0 }
         .background {
             // Capture the hosting panel (structurally, not by private class name).
             HostingWindowAccessor { [panelRef] window in
@@ -86,8 +102,20 @@ struct MenuBarContentView: View {
             }
             .frame(width: 0, height: 0)
         }
-        // Always open on today.
-        .onAppear { selectedDayKey = WeekMath.dayKey(for: Date()) }
+        .onAppear {
+            // Always open on today.
+            selectedDayKey = WeekMath.dayKey(for: Date())
+            syncDragConfig()
+        }
+        .onChange(of: sortModeRaw) { _, _ in syncDragConfig() }
+        .onChange(of: moveCompletedToBottom) { _, _ in syncDragConfig() }
+    }
+
+    /// Keep the popover's drag controller pointed at the store + current sort config.
+    private func syncDragConfig() {
+        dragController.context = context
+        dragController.sortMode = TaskSortMode(rawValue: sortModeRaw) ?? .manual
+        dragController.completedToBottom = moveCompletedToBottom
     }
 
     /// Close this popover's own panel (`MenuBarExtra(.window)` is an `NSPanel`;

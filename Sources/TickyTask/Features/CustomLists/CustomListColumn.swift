@@ -6,9 +6,9 @@ import SwiftData
 struct CustomListColumn: View {
     @Environment(\.modelContext) private var context
     @Environment(AppState.self) private var app
+    @Environment(DragController.self) private var drag
     @Bindable var list: CustomList
     var onEditTask: (TaskItem) -> Void
-    var onReorderList: (_ draggedID: UUID, _ beforeID: UUID?) -> Void
 
     @State private var newTitle = ""
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
@@ -26,7 +26,7 @@ struct CustomListColumn: View {
                 Image(systemName: "line.3.horizontal")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .draggable(DraggedItem(id: list.id, kind: .list))
+                    .reorderCardHandle(id: list.id, controller: drag, list: list)
                     .help("Drag to reorder lists")
                 TextField("List name", text: $list.name)
                     .font(.system(size: 13, weight: .semibold))
@@ -44,8 +44,7 @@ struct CustomListColumn: View {
                             ForEach(sortedTasks) { task in
                                 TaskRowView(task: task) { onEditTask(task) }
                                     .id(task.id)
-                                    .draggable(DraggedItem(id: task.id, kind: .task))
-                                    .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
+                                    .reorderableRow(id: task.id, kind: .task, container: .list(list.id), controller: drag, task: task)
                             }
                         }
                     }
@@ -59,30 +58,12 @@ struct CustomListColumn: View {
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .cardSurface()
-        .dropDestination(for: DraggedItem.self) { items, _ in handleCardDrop(items) }
+        // Drop target for tasks moved into this list, and (via reorderableListCard)
+        // this card's own frame as a row in the horizontal lists row.
+        .publishContainerFrame(.list(list.id), accepts: .task, axis: .vertical, isEmpty: sortedTasks.isEmpty)
+        .reorderableListCard(id: list.id, controller: drag)
         .contextMenu {
             Button("Delete List", role: .destructive) { deleteList() }
-        }
-    }
-
-    /// Move/reorder a dropped task into this list, before `beforeID` (append if nil).
-    @discardableResult
-    private func dropTask(_ items: [DraggedItem], before beforeID: UUID?) -> Bool {
-        guard let item = items.first, item.kind == .task else { return false }
-        try? DataService(context).dropTask(item.id, into: .customList(list), before: beforeID, siblings: sortedTasks)
-        return true
-    }
-
-    /// Whole-card drop: a dropped task appends to this list; a dropped list card
-    /// reorders the lists (via the parent's `onReorderList`).
-    private func handleCardDrop(_ items: [DraggedItem]) -> Bool {
-        guard let item = items.first else { return false }
-        switch item.kind {
-        case .task: return dropTask(items, before: nil)
-        case .list:
-            guard item.id != list.id else { return false }  // dropping a list on itself is a no-op
-            onReorderList(item.id, list.id)
-            return true
         }
     }
 
