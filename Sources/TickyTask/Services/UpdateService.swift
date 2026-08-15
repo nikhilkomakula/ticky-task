@@ -9,8 +9,13 @@ struct AppRelease: Equatable, Sendable {
 
 /// Checks the app's GitHub releases for a newer version. Pure version-comparison
 /// logic is separated from the network call so it's unit-testable; the network
-/// path talks to the public GitHub API (no auth — the repo is public) and
-/// degrades gracefully when there are no releases or the machine is offline.
+/// path queries the public GitHub releases *list* (no auth — the repo is public)
+/// and degrades gracefully when there are no releases or the machine is offline.
+///
+/// It queries the releases list rather than `/releases/latest` on purpose: this
+/// app ships every build as a GitHub **pre-release**, and `/releases/latest`
+/// returns only the newest non-prerelease (404 when there are none), which would
+/// wrongly report "no releases." The list includes pre-releases.
 enum UpdateService {
     static let repo = "nikhilkomakula/ticky-task"
 
@@ -22,26 +27,59 @@ enum UpdateService {
 
     static func check(currentVersion: String,
                       session: URLSession = .shared) async throws -> Outcome {
-        let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
+        let url = URL(string: "https://api.github.com/repos/\(repo)/releases?per_page=30")!
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 15
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
-        if http.statusCode == 404 { return .noReleases }         // repo exists but no releases yet
+        // A 404 here means the repo is missing/renamed/private — a genuine error,
+        // NOT "no releases" (an empty repo returns 200 with an empty array). Only a
+        // successfully decoded but empty/all-draft list maps to .noReleases below,
+        // so a network/auth failure surfaces as an error instead of a false
+        // "nothing published yet."
         guard http.statusCode == 200 else { throw URLError(.badServerResponse) }
 
-        struct GHRelease: Decodable { let tag_name: String; let html_url: String; let name: String? }
-        let release = try JSONDecoder().decode(GHRelease.self, from: data)
+        struct GHRelease: Decodable {
+            let tag_name: String
+            let html_url: String
+            let name: String?
+            let draft: Bool?
+            let prerelease: Bool?
+        }
+        let decoded = try JSONDecoder().decode([GHRelease].self, from: data)
+        let releases = decoded.map {
+            ReleaseInfo(tag: $0.tag_name, urlString: $0.html_url, name: $0.name, isDraft: $0.draft ?? false)
+        }
 
-        guard isNewer(release.tag_name, than: currentVersion),
-              let releaseURL = URL(string: release.html_url) else {
+        guard let newest = newestRelease(from: releases) else { return .noReleases }
+        guard isNewer(newest.tag, than: currentVersion),
+              let releaseURL = URL(string: newest.urlString) else {
             return .upToDate
         }
-        return .updateAvailable(AppRelease(version: normalize(release.tag_name),
+        return .updateAvailable(AppRelease(version: normalize(newest.tag),
                                            url: releaseURL,
-                                           name: release.name))
+                                           name: newest.name))
+    }
+
+    /// A GitHub release reduced to what the updater needs — `Sendable` so it can
+    /// cross the async boundary and be unit-tested without the network.
+    struct ReleaseInfo: Equatable, Sendable {
+        let tag: String
+        let urlString: String
+        let name: String?
+        let isDraft: Bool
+    }
+
+    /// The newest non-draft release by version precedence. Pre-releases are
+    /// **included** (this app ships every build as a GitHub pre-release), and the
+    /// winner is chosen by SemVer precedence rather than GitHub's list ordering,
+    /// so a late patch to an older line can't shadow the true newest.
+    static func newestRelease(from releases: [ReleaseInfo]) -> ReleaseInfo? {
+        releases
+            .filter { !$0.isDraft }
+            .max { compare(normalize($0.tag), normalize($1.tag)) == .orderedAscending }
     }
 
     // MARK: Version comparison (pure)

@@ -40,4 +40,34 @@ struct UpdateServiceTests {
         #expect(UpdateService.compare("1.0.0-beta", "1.0.0") == .orderedAscending)
         #expect(UpdateService.isNewer("1.1.0-beta", than: "1.0.0"))      // higher core still wins
     }
+
+    // MARK: newestRelease (list selection)
+
+    private func rel(_ tag: String, draft: Bool = false) -> UpdateService.ReleaseInfo {
+        UpdateService.ReleaseInfo(tag: tag, urlString: "https://example.com/\(tag)", name: tag, isDraft: draft)
+    }
+
+    @Test("Newest release is chosen by version precedence, regardless of list order")
+    func newestByVersion() {
+        let releases = [rel("v0.1.2"), rel("v0.1.4"), rel("v0.1.3")]
+        #expect(UpdateService.newestRelease(from: releases)?.tag == "v0.1.4")
+    }
+
+    @Test("Selection considers both stable and pre-releases")
+    func newestAcrossReleaseKinds() {
+        // GitHub's prerelease *flag* never gates selection — only the version
+        // does. A higher-versioned pre-release (plain tag, as this app ships)
+        // beats a lower stable one; a SemVer-suffixed prerelease ranks just below
+        // its matching stable but above older lines.
+        #expect(UpdateService.newestRelease(from: [rel("v0.2.0"), rel("v0.2.1")])?.tag == "v0.2.1")
+        #expect(UpdateService.newestRelease(from: [rel("1.0.0"), rel("1.0.0-beta.1")])?.tag == "1.0.0")
+        #expect(UpdateService.newestRelease(from: [rel("1.0.0-rc.1"), rel("0.9.9")])?.tag == "1.0.0-rc.1")
+    }
+
+    @Test("Drafts are skipped; empty or all-draft yields nil")
+    func draftsIgnored() {
+        #expect(UpdateService.newestRelease(from: [rel("v0.9.0", draft: true), rel("v0.1.4")])?.tag == "v0.1.4")
+        #expect(UpdateService.newestRelease(from: []) == nil)
+        #expect(UpdateService.newestRelease(from: [rel("v1.0.0", draft: true)]) == nil)
+    }
 }

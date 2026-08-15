@@ -33,7 +33,7 @@ Requires **macOS 15+** on **Apple Silicon**. Because the build isn't signed/nota
 - **Data location** — choose which folder holds your data (**Settings › Data**); changing it **moves everything there** and relaunches (or, if the folder already has a TickyTask store, adopts it). You can keep it in an **iCloud Drive / Google Drive / Dropbox** folder to carry your tasks between Macs — it's a live database, not real-time sync, so use one Mac at a time and let the folder finish syncing before opening it elsewhere.
 - **Appearance** — System/Light/Dark theme, compact rows.
 - **Launch at login** — starts TickyTask automatically when you log in (**Settings › General**, on by default; also manageable in System Settings › General › Login Items).
-- **Software updates** — checks the project's GitHub Releases for a newer version, manually or automatically (**Settings › General**).
+- **Software updates** — checks the project's GitHub Releases (latest stable **or pre-release**) for a newer version, manually or automatically (**Settings › General**).
 - **About & Help** — app version, GitHub/issue links, license, and quick tips (**Settings › About**).
 - **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
 - Clean gradient calendar app icon; first-run sample data.
