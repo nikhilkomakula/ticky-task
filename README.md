@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.3** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.4** (pre-release) · **macOS 15+** (Sequoia and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.3-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.4-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -23,10 +23,11 @@ Requires **macOS 15+** on **Apple Silicon**. Because the build isn't signed/nota
 - **Month view** — a calendar grid showing every day's tasks, with a selected-day agenda panel; toggle between **Week** and **Month**.
 - **Task editor** — title, **Markdown notes** (edit/preview), optional time (off by default), **priority** (Low/Medium/High) that color-codes the task (green → orange → red), an optional **Critical** flag (off by default) that adds a red flag *before* the priority — independent of the priority level — and **subtasks**.
 - **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split.
+- **Drag & drop** — reorder tasks within a day or list, and move them **across days and across lists**, in the **Week** and **Month** views and the menu-bar popover (drop a task onto any day in the calendar grid to move it there). Reorder the custom-list cards by dragging a card's grip handle.
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, automatically carry unfinished tasks forward to today, and optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
 - **Menu-bar app** — a menu-bar icon opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today** and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, or run menu-bar-only (no Dock icon).
-- **Global shortcuts** — configurable hotkeys to open TickyTask and to capture a new task for today from any app.
+- **Global shortcuts** — configurable hotkeys to open TickyTask, capture a new task for today, and **toggle the menu-bar popover** — from any app (**Settings › Shortcuts**).
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
 - **Backup & restore** — export your entire store **and app settings** to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
 - **Data location** — choose which folder holds your data (**Settings › Data**); changing it **moves everything there** and relaunches (or, if the folder already has a TickyTask store, adopts it). You can keep it in an **iCloud Drive / Google Drive / Dropbox** folder to carry your tasks between Macs — it's a live database, not real-time sync, so use one Mac at a time and let the folder finish syncing before opening it elsewhere.
@@ -45,7 +46,7 @@ TickyTask is a single SwiftUI app with three scenes sharing one local SwiftData 
 2. **Menu-bar popover** — a compact calendar + today's agenda + quick-add.
 3. **Quick-capture window** — a tiny "new task for today" box opened by a global shortcut.
 
-Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
+Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Drag-and-drop reordering and cross-day/-list moves route through the same `DataService`, which re-derives sort indices and preserves the day-XOR-list rule. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
 
 ```mermaid
 flowchart TD
@@ -102,14 +103,13 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
 
 ```bash
-git tag v0.1.2 && git push origin v0.1.2   # → CI builds the DMG and creates the release
+git tag v0.1.4 && git push origin v0.1.4   # → CI builds the DMG and creates the release
 ```
 
 ## Roadmap
 
 - Recurring-tasks UI (daily/weekly/weekdays/monthly/yearly) — the model & engine are in place; the editor UI is next
 - Import from legacy WeekToDo `.wtdb` exports
-- Drag-and-drop reordering / moving tasks across days
 - Localization (String Catalog)
 - Signed & notarized **universal** DMG release (the app is currently unsigned/arm64)
 

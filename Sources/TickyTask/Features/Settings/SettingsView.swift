@@ -139,6 +139,7 @@ private struct ShortcutsSettingsView: View {
         Form {
             KeyboardShortcuts.Recorder("Open TickyTask:", name: .openApp)
             KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
+            KeyboardShortcuts.Recorder("Toggle menu bar:", name: .toggleMenuBar)
             Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
             Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
                 .font(.caption)

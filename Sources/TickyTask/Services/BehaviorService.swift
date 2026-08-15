@@ -27,6 +27,20 @@ enum BehaviorService {
         }
     }
 
+    /// Return `items` with the element identified by `id` moved to just before
+    /// `beforeID` (appended when `beforeID` is nil or not found). Drives manual
+    /// drag reordering; a no-op when `id` isn't present.
+    static func reordered<T: Identifiable>(_ items: [T], moving id: T.ID, before beforeID: T.ID?) -> [T] {
+        guard let moving = items.first(where: { $0.id == id }) else { return items }
+        var order = items.filter { $0.id != id }
+        if let beforeID, let index = order.firstIndex(where: { $0.id == beforeID }) {
+            order.insert(moving, at: index)
+        } else {
+            order.append(moving)
+        }
+        return order
+    }
+
     /// Move non-recurring, unfinished tasks from past days onto today. Idempotent:
     /// once moved, a task's `dayKey` equals today's, so re-running is a no-op.
     /// Returns the number of tasks moved.

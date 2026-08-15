@@ -46,6 +46,51 @@ struct DataService {
         task.setDone(!task.isDone)
     }
 
+    /// Apply a drag-and-drop of a task: move it into `target` (reassigning its
+    /// day/list, preserving the day-XOR-list invariant) and position it just
+    /// before `beforeID` within that container's `siblings` — appended when
+    /// `beforeID` is nil or not found — renumbering every sibling's `sortIndex`.
+    /// Covers in-place reorder and moves across days and lists.
+    func dropTask(_ draggedID: UUID, into target: TaskLocation, before beforeID: UUID?, siblings: [TaskItem]) throws {
+        guard beforeID != draggedID, let task = fetchTask(draggedID) else { return }
+        switch target {
+        case .day(let key):         task.dayKey = key; task.customList = nil
+        case .customList(let list): task.customList = list; task.dayKey = nil
+        case .unassigned:           task.dayKey = nil; task.customList = nil
+        }
+        task.updatedAt = Date()
+        var order = siblings.filter { $0.id != draggedID }
+        if let beforeID, let index = order.firstIndex(where: { $0.id == beforeID }) {
+            order.insert(task, at: index)
+        } else {
+            order.append(task)
+        }
+        for (index, item) in order.enumerated() { item.sortIndex = Double(index) }
+        do {
+            try context.save()
+        } catch {
+            // Never leave a half-applied move (reassigned container + renumbered
+            // siblings) in the context if the save fails.
+            context.rollback()
+            throw error
+        }
+    }
+
+    /// Persist a manual reorder of the custom lists.
+    func reorderLists(_ ordered: [CustomList]) throws {
+        for (index, list) in ordered.enumerated() { list.sortIndex = Double(index) }
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
+    }
+
+    private func fetchTask(_ id: UUID) -> TaskItem? {
+        (try? context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.id == id })))?.first
+    }
+
     // MARK: - Subtasks
 
     @discardableResult

@@ -54,6 +54,8 @@ struct DayAgendaView: View {
                             ForEach(orderedTasks) { task in
                                 TaskRowView(task: task) { editingTask = task }
                                     .id(task.id)
+                                    .draggable(DraggedItem(id: task.id, kind: .task))
+                                    .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
                             }
                         }
                     }
@@ -65,6 +67,8 @@ struct DayAgendaView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(orderedTasks) { task in
                         TaskRowView(task: task) { editingTask = task }
+                            .draggable(DraggedItem(id: task.id, kind: .task))
+                            .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
                     }
                 }
             }
@@ -72,9 +76,18 @@ struct DayAgendaView: View {
             QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
         }
         .padding(insets)
+        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: nil) }
         .sheet(item: $editingTask) { task in
             TaskEditorView(task: task)
         }
+    }
+
+    /// Move/reorder a dropped task into this day, before `beforeID` (append if nil).
+    @discardableResult
+    private func dropTask(_ items: [DraggedItem], before beforeID: UUID?) -> Bool {
+        guard let item = items.first, item.kind == .task else { return false }
+        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: beforeID, siblings: orderedTasks)
+        return true
     }
 
     /// Center + flash a searched-for task if it's in this day's agenda (used when

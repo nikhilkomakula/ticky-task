@@ -6,6 +6,7 @@ import SwiftData
 /// view (P2b).
 struct CalendarMonthView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @Query(sort: [SortDescriptor(\TaskItem.sortIndex)]) private var allTasks: [TaskItem]
 
@@ -61,12 +62,24 @@ struct CalendarMonthView: View {
                         }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Drop a task onto a day to move it there (appends to that day).
+                        .dropDestination(for: DraggedItem.self) { items, _ in
+                            dropTask(items, into: key, siblings: tasksByDay[key] ?? [])
+                        }
                     }
                 }
                 .frame(maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Move a dropped task onto a day in the grid (appends to that day).
+    @discardableResult
+    private func dropTask(_ items: [DraggedItem], into dayKey: String, siblings: [TaskItem]) -> Bool {
+        guard let item = items.first, item.kind == .task else { return false }
+        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: nil, siblings: siblings)
+        return true
     }
 }
 
@@ -120,6 +133,8 @@ private struct CalendarDayCell: View {
                         .strikethrough(task.isDone)
                         .foregroundStyle(task.isDone ? .secondary : .primary)
                 }
+                .contentShape(Rectangle())
+                .draggable(DraggedItem(id: task.id, kind: .task))
             }
 
             if tasks.count > 3 {
