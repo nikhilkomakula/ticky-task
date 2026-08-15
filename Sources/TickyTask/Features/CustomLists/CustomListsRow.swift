@@ -19,7 +19,7 @@ struct CustomListsRow: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     HStack(alignment: .top, spacing: 8) {
                         ForEach(lists) { list in
-                            CustomListColumn(list: list, onEditTask: onEditTask)
+                            CustomListColumn(list: list, onEditTask: onEditTask, onReorderList: reorderLists)
                                 .frame(width: cardWidth)
                                 .id(list.id)
                         }
@@ -72,5 +72,11 @@ struct CustomListsRow: View {
         } catch {
             // Surfacing save errors in the UI is tracked as a P13 hardening item.
         }
+    }
+
+    /// Persist a manual reorder after a list card is dropped onto another card.
+    private func reorderLists(_ draggedID: UUID, before beforeID: UUID?) {
+        let newOrder = BehaviorService.reordered(lists, moving: draggedID, before: beforeID)
+        try? DataService(context).reorderLists(newOrder)
     }
 }

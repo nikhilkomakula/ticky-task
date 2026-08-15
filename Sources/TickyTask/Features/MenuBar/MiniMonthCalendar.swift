@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// A compact month calendar that fills the available width (unlike the graphical
 /// `DatePicker`). The menu-bar calendar is always **Sunday → Saturday** and
@@ -9,6 +10,8 @@ struct MiniMonthCalendar: View {
     /// Menu-bar-local selection (independent of the main window), so the popover
     /// can default to today on each open without moving the main window.
     @Binding var selectedDayKey: String
+    @Environment(\.modelContext) private var context
+    @Query(sort: [SortDescriptor(\TaskItem.sortIndex)]) private var allTasks: [TaskItem]
     @State private var monthAnchor = Date()
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
@@ -81,6 +84,17 @@ struct MiniMonthCalendar: View {
                 .foregroundStyle(inMonth ? (isToday ? Color.accentColor : .primary) : .secondary)
         }
         .buttonStyle(.plain)
+        // Drop a task onto a day to move it there (menu-bar cross-day move).
+        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, into: key) }
+    }
+
+    /// Move a dropped task onto a day in the mini calendar (appends to that day).
+    @discardableResult
+    private func dropTask(_ items: [DraggedItem], into dayKey: String) -> Bool {
+        guard let item = items.first, item.kind == .task else { return false }
+        let siblings = allTasks.filter { $0.dayKey == dayKey }
+        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: nil, siblings: siblings)
+        return true
     }
 
     /// Saturday (7) or Sunday (1) in the Gregorian calendar — independent of the

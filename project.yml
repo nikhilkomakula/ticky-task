@@ -14,7 +14,7 @@ packages:
 
 settings:
   base:
-    MARKETING_VERSION: "0.1.3"
+    MARKETING_VERSION: "0.1.4"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     # Catch real cross-actor issues without SwiftData's spurious non-Sendable
@@ -72,5 +72,11 @@ targets:
       - target: TickyTask
     settings:
       base:
+        # Generate the test bundle's Info.plist explicitly (don't rely on
+        # xcodegen's implicit default, which varies by version) so ad-hoc
+        # code-signing of the test bundle always has one, and give it its own
+        # bundle id so it doesn't collide with the app's.
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.tickytask.mac.tests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TickyTask.app/Contents/MacOS/TickyTask"
         BUNDLE_LOADER: "$(TEST_HOST)"

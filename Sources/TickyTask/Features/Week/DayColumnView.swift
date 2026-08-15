@@ -48,6 +48,8 @@ struct DayColumnView: View {
                             ForEach(orderedTasks) { task in
                                 TaskRowView(task: task) { onEditTask(task) }
                                     .id(task.id)
+                                    .draggable(DraggedItem(id: task.id, kind: .task))
+                                    .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
                             }
                         }
                     }
@@ -60,8 +62,19 @@ struct DayColumnView: View {
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .cardSurface(selected: isSelected)
+        // Whole-column drop target: move a task into this day (append). Rows below
+        // handle precise positioning; this catches drops on the empty area.
+        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: nil) }
         .contentShape(Rectangle())
         .onTapGesture { app.selectedDayKey = dayKey }
+    }
+
+    /// Move/reorder a dropped task into this day, before `beforeID` (append if nil).
+    @discardableResult
+    private func dropTask(_ items: [DraggedItem], before beforeID: UUID?) -> Bool {
+        guard let item = items.first, item.kind == .task else { return false }
+        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: beforeID, siblings: orderedTasks)
+        return true
     }
 
     private var header: some View {
