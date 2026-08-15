@@ -26,6 +26,11 @@ enum UITestSupport {
             for title in seededTitles {
                 _ = try service.addTask(title: title, location: .day(seededDayKey))
             }
+            // A custom list with its own tasks, for within-list reorder tests.
+            let list = try service.addCustomList(name: "Inbox")
+            for title in ["ListA", "ListB", "ListC"] {
+                _ = try service.addTask(title: title, location: .customList(list))
+            }
             try service.save()
         } catch {
             // Seeding is best-effort; a failed seed just yields an empty test board.

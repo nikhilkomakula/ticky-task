@@ -7,12 +7,13 @@ struct WeekView: View {
     @Environment(AppState.self) private var app
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("calendarColumns") private var calendarColumns = 5
+    @AppStorage("showWeekends") private var showWeekends = false
     @State private var editingTask: TaskItem?
 
     private var columns: Int { max(1, min(12, calendarColumns)) }
 
     var body: some View {
-        let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday)
+        let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday, showWeekends: showWeekends)
         VSplitView {
             HStack(spacing: 8) {
                 ForEach(days, id: \.self) { day in

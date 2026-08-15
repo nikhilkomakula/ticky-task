@@ -20,9 +20,10 @@ final class DragReorderUITests: XCTestCase {
         } else {
             app = XCUIApplication()
         }
-        // Force 7 columns so TODAY (where -uitest seeds) is always visible, and a
-        // Monday week start, regardless of the machine's real prefs.
-        app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES"]
+        // Force 7 columns so TODAY (where -uitest seeds) is always visible, a Monday
+        // week start, and weekends shown — otherwise a weekend "today" would be
+        // filtered out of the week view and the seeded rows wouldn't appear.
+        app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
         app.launch()
         return app
     }
@@ -101,5 +102,70 @@ final class DragReorderUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Done"].exists, "editor should not be open initially")
         title.click()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5), "clicking a task opens the editor (tap not swallowed by the drag gesture)")
+    }
+
+    /// Fine same-container reorder DOWN: drag Alpha just past Bravo's midpoint →
+    /// [Bravo, Alpha, Charlie]. Exercises a small adjacent swap, not a big move.
+    func testFineReorderDownSwapsAdjacent() throws {
+        let app = launchedApp()
+        let alpha = row(app, "Alpha")
+        let bravo = row(app, "Bravo")
+        XCTAssertTrue(alpha.waitForExistence(timeout: 20))
+        XCTAssertTrue(bravo.waitForExistence(timeout: 5))
+
+        let start = alpha.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = bravo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        start.press(forDuration: 0.35, thenDragTo: end)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(row(app, "Alpha").waitForExistence(timeout: 5))
+
+        let a = row(app, "Alpha").frame.minY
+        let b = row(app, "Bravo").frame.minY
+        let c = row(app, "Charlie").frame.minY
+        XCTAssertLessThan(b, a, "Bravo now above Alpha")
+        XCTAssertLessThan(a, c, "Alpha still above Charlie → order Bravo, Alpha, Charlie")
+    }
+
+    /// Fine same-container reorder UP: drag Charlie above Alpha → [Charlie, Alpha, Bravo].
+    func testFineReorderUp() throws {
+        let app = launchedApp()
+        let alpha = row(app, "Alpha")
+        let charlie = row(app, "Charlie")
+        XCTAssertTrue(alpha.waitForExistence(timeout: 20))
+        XCTAssertTrue(charlie.waitForExistence(timeout: 5))
+
+        let start = charlie.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = alpha.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+        start.press(forDuration: 0.35, thenDragTo: end)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(row(app, "Charlie").waitForExistence(timeout: 5))
+
+        let a = row(app, "Alpha").frame.minY
+        let b = row(app, "Bravo").frame.minY
+        let c = row(app, "Charlie").frame.minY
+        XCTAssertLessThan(c, a, "Charlie moved above Alpha")
+        XCTAssertLessThan(a, b, "→ order Charlie, Alpha, Bravo")
+    }
+
+    /// Reorder WITHIN a custom list: drag ListA below ListB → [ListB, ListA, ListC].
+    func testReorderWithinCustomList() throws {
+        let app = launchedApp()
+        let a = row(app, "ListA")
+        let b = row(app, "ListB")
+        XCTAssertTrue(a.waitForExistence(timeout: 20), "ListA should exist in the custom list")
+        XCTAssertTrue(b.waitForExistence(timeout: 5))
+        XCTAssertLessThan(a.frame.minY, b.frame.minY, "precondition: ListA above ListB")
+
+        let start = a.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = b.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        start.press(forDuration: 0.35, thenDragTo: end)
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(row(app, "ListA").waitForExistence(timeout: 5))
+
+        let ya = row(app, "ListA").frame.minY
+        let yb = row(app, "ListB").frame.minY
+        let yc = row(app, "ListC").frame.minY
+        XCTAssertLessThan(yb, ya, "ListB now above ListA")
+        XCTAssertLessThan(ya, yc, "→ order ListB, ListA, ListC (reorder within the list worked)")
     }
 }

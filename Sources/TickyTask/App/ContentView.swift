@@ -125,6 +125,7 @@ private struct TopToolbar: View {
     @Environment(\.openSettings) private var openSettings
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("calendarColumns") private var calendarColumns = 5
+    @AppStorage("showWeekends") private var showWeekends = false
     var onSearch: () -> Void = {}
 
     private var columns: Int { max(1, min(12, calendarColumns)) }
@@ -205,7 +206,7 @@ private struct TopToolbar: View {
     private var navLabel: String {
         switch app.viewMode {
         case .week:
-            let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday)
+            let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday, showWeekends: showWeekends)
             guard let first = days.first, let last = days.last else { return "" }
             return "\(first.formatted(.dateTime.month(.abbreviated).day())) – \(last.formatted(.dateTime.month(.abbreviated).day()))"
         case .calendar:

@@ -28,7 +28,6 @@ final class DragController {
     var context: ModelContext?
     var sortMode: TaskSortMode = .manual
     var completedToBottom = true
-    var reorderEnabled: Bool { sortMode == .manual }
 
     /// The live resolved drop target.
     private(set) var target: ReorderTarget?
@@ -100,8 +99,22 @@ final class DragController {
             // Abort (don't renumber) if the destination siblings can't be fetched:
             // proceeding with an empty list would collide the moved task at sortIndex 0.
             guard let siblings = try? siblingTasks(for: target.container, context: context) else { return }
-            let beforeID = ReorderGeometry.effectiveBeforeID(target, manual: reorderEnabled)
-            try? service.dropTask(draggingID, into: location, before: beforeID, siblings: siblings)
+            // A drop back into the SOURCE container is a manual-ordering action; a
+            // move ACROSS containers is not. Decide before the drop mutates state.
+            let isWithinContainer = previewTask.map { taskIsIn($0, target.container) } ?? false
+            do {
+                try service.dropTask(draggingID, into: location, before: target.beforeID, siblings: siblings)
+            } catch {
+                return  // DataService rolled the move back — leave the sort mode alone.
+            }
+            // Only a within-container reorder needs manual sort so the dropped
+            // position survives the view's re-sort; otherwise a time/priority sort
+            // re-sorts it away (the "reordering within a day/list does nothing"
+            // report). Cross-container moves keep the user's chosen sort mode.
+            if isWithinContainer && sortMode != .manual {
+                UserDefaults.standard.set(TaskSortMode.manual.rawValue, forKey: "taskSortMode")
+                sortMode = .manual
+            }
         case .listCard:
             guard case .listsRow = target.container else { return }
             let lists = (try? context.fetch(FetchDescriptor<CustomList>(sortBy: [SortDescriptor(\.sortIndex)]))) ?? []
@@ -128,6 +141,19 @@ final class DragController {
 
     private func fetchList(_ id: UUID, _ context: ModelContext) -> CustomList? {
         (try? context.fetch(FetchDescriptor<CustomList>(predicate: #Predicate { $0.id == id })))?.first
+    }
+
+    /// Whether `task` currently lives in `container` — i.e. dropping it there is a
+    /// within-container reorder rather than a move to a different day/list.
+    private func taskIsIn(_ task: TaskItem, _ container: ReorderContainer) -> Bool {
+        switch container {
+        case .weekDay(let k), .monthDay(let k), .agendaDay(let k):
+            return task.dayKey == k
+        case .list(let id):
+            return task.customList?.id == id
+        case .listsRow:
+            return false
+        }
     }
 
     // MARK: - Insertion indicator (drawn by DragOverlayView)

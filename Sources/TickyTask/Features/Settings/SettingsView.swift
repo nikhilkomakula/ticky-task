@@ -31,6 +31,7 @@ private struct AppearanceSettingsView: View {
     @AppStorage("appTheme") private var appTheme = "system"
     @AppStorage("calendarColumns") private var calendarColumns = 5
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
+    @AppStorage("showWeekends") private var showWeekends = false
     @AppStorage("compactView") private var compactView = false
 
     var body: some View {
@@ -42,6 +43,7 @@ private struct AppearanceSettingsView: View {
             }
             Stepper("Week columns: \(calendarColumns)", value: $calendarColumns, in: 1...12)
             Toggle("Start the week on Monday", isOn: $weekStartsMonday)
+            Toggle("Show weekends", isOn: $showWeekends)
             Toggle("Compact rows (hide times)", isOn: $compactView)
         }
         .formStyle(.grouped)
