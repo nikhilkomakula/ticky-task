@@ -35,7 +35,7 @@ Requires **macOS 15+** on **Apple Silicon**. Because the build isn't signed/nota
 - **Software updates** — checks the project's GitHub Releases for a newer version, manually or automatically (**Settings › General**).
 - **About & Help** — app version, GitHub/issue links, license, and quick tips (**Settings › About**).
 - **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
-- **Adaptive app icon** — light and dark variants that follow the system appearance on **macOS 26 (Tahoe)** (a single static icon on earlier macOS); first-run sample data.
+- Clean gradient calendar app icon; first-run sample data.
 
 ## How it works
 
