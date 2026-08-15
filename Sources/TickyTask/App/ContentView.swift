@@ -17,19 +17,32 @@ struct ContentView: View {
     @AppStorage("autoCheckUpdates") private var autoCheckUpdates = true
     @AppStorage("autoDeleteCompletedEnabled") private var autoDeleteEnabled = false
     @AppStorage("autoDeleteCompletedDays") private var autoDeleteDays = 7
+    @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
+    @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
+
+    /// The main window's drag-to-reorder controller. Rows/containers publish their
+    /// frames into it; the overlay draws the lifted preview + insertion line.
+    @State private var dragController = DragController()
 
     var body: some View {
         @Bindable var app = app
-        VStack(spacing: 0) {
-            TopToolbar(onSearch: { app.isSearchPresented = true })
-            Divider()
-            switch app.viewMode {
-            case .week:
-                WeekView()
-            case .calendar:
-                CalendarMonthView()
+        ZStack {
+            VStack(spacing: 0) {
+                TopToolbar(onSearch: { app.isSearchPresented = true })
+                Divider()
+                switch app.viewMode {
+                case .week:
+                    WeekView()
+                case .calendar:
+                    CalendarMonthView()
+                }
             }
+            DragOverlayView(controller: dragController)
         }
+        .coordinateSpace(.named("planner"))
+        .environment(dragController)
+        .onPreferenceChange(RowFramesKey.self) { dragController.rowFrames = $0 }
+        .onPreferenceChange(ContainerFramesKey.self) { dragController.containerFrames = $0 }
         .frame(minWidth: 900, minHeight: 600)
         .background(WindowConfigurator(configure: maximize))
         .preferredColorScheme(preferredColorScheme)
@@ -37,12 +50,22 @@ struct ContentView: View {
         .onAppear {
             GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow)
             applyActivationPolicy()
+            syncDragConfig()
         }
         .onChange(of: menuBarOnly) { _, _ in applyActivationPolicy() }
+        .onChange(of: sortModeRaw) { _, _ in syncDragConfig() }
+        .onChange(of: moveCompletedToBottom) { _, _ in syncDragConfig() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await runLaunchTasks() } }
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
+    }
+
+    /// Keep the drag controller's persistence context + sort config current.
+    private func syncDragConfig() {
+        dragController.context = context
+        dragController.sortMode = TaskSortMode(rawValue: sortModeRaw) ?? .manual
+        dragController.completedToBottom = moveCompletedToBottom
     }
 
     private var preferredColorScheme: ColorScheme? {

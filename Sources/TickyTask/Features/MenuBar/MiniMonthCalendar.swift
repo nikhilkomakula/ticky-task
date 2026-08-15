@@ -11,6 +11,7 @@ struct MiniMonthCalendar: View {
     /// can default to today on each open without moving the main window.
     @Binding var selectedDayKey: String
     @Environment(\.modelContext) private var context
+    @Environment(DragController.self) private var drag
     @Query(sort: [SortDescriptor(\TaskItem.sortIndex)]) private var allTasks: [TaskItem]
     @State private var monthAnchor = Date()
 
@@ -65,36 +66,26 @@ struct MiniMonthCalendar: View {
         let isToday = key == todayKey
         let weekend = isWeekend(day)
 
-        return Button {
-            selectedDayKey = key
-        } label: {
-            Text("\(Calendar.current.component(.day, from: day))")
-                .font(.callout)
-                .frame(maxWidth: .infinity, minHeight: 26)
-                .background(
-                    isSelected
-                        ? Color.accentColor.opacity(0.25)
-                        : (weekend ? Color.red.opacity(0.08) : Color.clear),
-                    in: RoundedRectangle(cornerRadius: 5)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(isToday ? Color.accentColor : .clear, lineWidth: 1)
-                )
-                .foregroundStyle(inMonth ? (isToday ? Color.accentColor : .primary) : .secondary)
-        }
-        .buttonStyle(.plain)
-        // Drop a task onto a day to move it there (menu-bar cross-day move).
-        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, into: key) }
-    }
-
-    /// Move a dropped task onto a day in the mini calendar (appends to that day).
-    @discardableResult
-    private func dropTask(_ items: [DraggedItem], into dayKey: String) -> Bool {
-        guard let item = items.first, item.kind == .task else { return false }
-        let siblings = allTasks.filter { $0.dayKey == dayKey }
-        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: nil, siblings: siblings)
-        return true
+        // Selection is a tap gesture (not a Button) so it coexists with the drag
+        // engine; the cell is an append drop target for cross-day moves in the popover.
+        return Text("\(Calendar.current.component(.day, from: day))")
+            .font(.callout)
+            .frame(maxWidth: .infinity, minHeight: 26)
+            .background(
+                isSelected
+                    ? Color.accentColor.opacity(0.25)
+                    : (weekend ? Color.red.opacity(0.08) : Color.clear),
+                in: RoundedRectangle(cornerRadius: 5)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(isToday ? Color.accentColor : .clear, lineWidth: 1)
+            )
+            .foregroundStyle(inMonth ? (isToday ? Color.accentColor : .primary) : .secondary)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedDayKey = key }
+            .publishContainerFrame(.monthDay(key), accepts: .task, axis: .vertical,
+                                   isEmpty: allTasks.filter { $0.dayKey == key }.isEmpty)
     }
 
     /// Saturday (7) or Sunday (1) in the Gregorian calendar — independent of the

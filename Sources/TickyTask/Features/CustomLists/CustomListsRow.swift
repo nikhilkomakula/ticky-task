@@ -19,7 +19,7 @@ struct CustomListsRow: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     HStack(alignment: .top, spacing: 8) {
                         ForEach(lists) { list in
-                            CustomListColumn(list: list, onEditTask: onEditTask, onReorderList: reorderLists)
+                            CustomListColumn(list: list, onEditTask: onEditTask)
                                 .frame(width: cardWidth)
                                 .id(list.id)
                         }
@@ -28,6 +28,7 @@ struct CustomListsRow: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
                     .frame(minWidth: geo.size.width, alignment: .leading)
+                    .publishContainerFrame(.listsRow, accepts: .listCard, axis: .horizontal, isEmpty: lists.isEmpty)
                 }
                 .onChange(of: app.highlightedTaskID) { _, id in scrollToOwningList(id, proxy: proxy) }
                 .onAppear { scrollToOwningList(app.highlightedTaskID, proxy: proxy) }
@@ -72,11 +73,5 @@ struct CustomListsRow: View {
         } catch {
             // Surfacing save errors in the UI is tracked as a P13 hardening item.
         }
-    }
-
-    /// Persist a manual reorder after a list card is dropped onto another card.
-    private func reorderLists(_ draggedID: UUID, before beforeID: UUID?) {
-        let newOrder = BehaviorService.reordered(lists, moving: draggedID, before: beforeID)
-        try? DataService(context).reorderLists(newOrder)
     }
 }

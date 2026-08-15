@@ -10,6 +10,7 @@ struct DayAgendaView: View {
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
     let dayKey: String
+    let dragController: DragController
     var showsHeader: Bool
     var insets: CGFloat
     /// When false (menu bar), render every task without a scroll view so the
@@ -20,8 +21,9 @@ struct DayAgendaView: View {
     @State private var newTitle = ""
     @State private var editingTask: TaskItem?
 
-    init(dayKey: String, showsHeader: Bool = true, insets: CGFloat = 8, scrolls: Bool = true) {
+    init(dayKey: String, dragController: DragController, showsHeader: Bool = true, insets: CGFloat = 8, scrolls: Bool = true) {
         self.dayKey = dayKey
+        self.dragController = dragController
         self.showsHeader = showsHeader
         self.insets = insets
         self.scrolls = scrolls
@@ -54,8 +56,7 @@ struct DayAgendaView: View {
                             ForEach(orderedTasks) { task in
                                 TaskRowView(task: task) { editingTask = task }
                                     .id(task.id)
-                                    .draggable(DraggedItem(id: task.id, kind: .task))
-                                    .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
+                                    .reorderableRow(id: task.id, kind: .task, container: .agendaDay(dayKey), controller: dragController, task: task)
                             }
                         }
                     }
@@ -67,8 +68,7 @@ struct DayAgendaView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(orderedTasks) { task in
                         TaskRowView(task: task) { editingTask = task }
-                            .draggable(DraggedItem(id: task.id, kind: .task))
-                            .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: task.id) }
+                            .reorderableRow(id: task.id, kind: .task, container: .agendaDay(dayKey), controller: dragController, task: task)
                     }
                 }
             }
@@ -76,18 +76,10 @@ struct DayAgendaView: View {
             QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
         }
         .padding(insets)
-        .dropDestination(for: DraggedItem.self) { items, _ in dropTask(items, before: nil) }
+        .publishContainerFrame(.agendaDay(dayKey), accepts: .task, axis: .vertical, isEmpty: orderedTasks.isEmpty)
         .sheet(item: $editingTask) { task in
             TaskEditorView(task: task)
         }
-    }
-
-    /// Move/reorder a dropped task into this day, before `beforeID` (append if nil).
-    @discardableResult
-    private func dropTask(_ items: [DraggedItem], before beforeID: UUID?) -> Bool {
-        guard let item = items.first, item.kind == .task else { return false }
-        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: beforeID, siblings: orderedTasks)
-        return true
     }
 
     /// Center + flash a searched-for task if it's in this day's agenda (used when

@@ -30,57 +30,62 @@ struct TaskRowView: View {
             .buttonStyle(.plain)
             .frame(width: 20, height: 20)
 
-            HStack(spacing: 3) {
-                if task.isCritical {
-                    Image(systemName: "flag.fill")
-                        .foregroundStyle(.red)
-                        .accessibilityLabel("Critical")
+            // The priority glyphs, title, and trailing metadata share the title's
+            // first-line baseline, so the smaller Critical flag + priority icons sit
+            // ON the first line of the (possibly wrapping) title instead of being
+            // top-pinned and floating above it.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(spacing: 3) {
+                    if task.isCritical {
+                        Image(systemName: "flag.fill")
+                            .foregroundStyle(.red)
+                            .accessibilityLabel("Critical")
+                    }
+                    Image(systemName: task.priorityLevel.symbol)
+                        .foregroundStyle(task.priorityLevel.tint)
+                        .accessibilityLabel("\(task.priorityLevel.label) priority")
                 }
-                Image(systemName: task.priorityLevel.symbol)
-                    .foregroundStyle(task.priorityLevel.tint)
-                    .accessibilityLabel("\(task.priorityLevel.label) priority")
-            }
-            .font(.system(size: 11))
+                .font(.system(size: 11))
 
-            Text(task.title.isEmpty ? "Untitled" : task.title)
-                .font(.system(size: 13))
-                .strikethrough(task.isDone)
-                .foregroundStyle(task.isDone ? .secondary : .primary)
-                // Always wrap to the available column width (week columns, day agenda,
-                // and custom lists all use this row) — including compact mode, which the
-                // user asked for; compact still hides the time and tightens row padding.
-                // `maxWidth` bounds the width so the title wraps instead of claiming its
-                // full single-line width; `fixedSize(vertical:)` lets the wrapped title
-                // grow the row height instead of being clipped to one line.
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(task.title.isEmpty ? "Untitled" : task.title)
+                    .font(.system(size: 13))
+                    .strikethrough(task.isDone)
+                    .foregroundStyle(task.isDone ? .secondary : .primary)
+                    // Always wrap to the available column width (week columns, day
+                    // agenda, and custom lists all use this row). `maxWidth` bounds the
+                    // width so the title wraps instead of claiming its full single-line
+                    // width; `fixedSize(vertical:)` lets the wrapped title grow the row
+                    // height instead of being clipped to one line.
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            if !task.subtasks.isEmpty {
-                let done = task.subtasks.filter(\.isDone).count
-                Text("\(done)/\(task.subtasks.count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
-                    .fixedSize(horizontal: true, vertical: false)
-            }
+                if !task.subtasks.isEmpty {
+                    let done = task.subtasks.filter(\.isDone).count
+                    Text("\(done)/\(task.subtasks.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
+                        .fixedSize(horizontal: true, vertical: false)
+                }
 
-            if task.alarmEnabled {
-                Image(systemName: "bell.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
+                if task.alarmEnabled {
+                    Image(systemName: "bell.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
 
-            if let minutes = task.timeMinutes, !compactView {
-                Text(Self.timeLabel(minutes))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    // Keep the time at its intrinsic width so it never compresses
-                    // and wraps vertically; the title (layoutPriority 1) wraps instead.
-                    .fixedSize(horizontal: true, vertical: false)
+                if let minutes = task.timeMinutes, !compactView {
+                    Text(Self.timeLabel(minutes))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        // Keep the time at its intrinsic width so it never compresses
+                        // and wraps vertically; the title (layoutPriority 1) wraps instead.
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
         }
         .padding(.horizontal, 8)

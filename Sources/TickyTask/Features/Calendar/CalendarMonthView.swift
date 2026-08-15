@@ -7,6 +7,7 @@ import SwiftData
 struct CalendarMonthView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
+    @Environment(DragController.self) private var drag
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @Query(sort: [SortDescriptor(\TaskItem.sortIndex)]) private var allTasks: [TaskItem]
 
@@ -24,7 +25,7 @@ struct CalendarMonthView: View {
 
             Divider()
 
-            DayAgendaView(dayKey: app.selectedDayKey)
+            DayAgendaView(dayKey: app.selectedDayKey, dragController: drag)
                 .frame(width: 300)
         }
     }
@@ -51,35 +52,28 @@ struct CalendarMonthView: View {
                 HStack(spacing: 4) {
                     ForEach(week, id: \.self) { day in
                         let key = WeekMath.dayKey(for: day)
-                        Button { app.select(day: day) } label: {
-                            CalendarDayCell(
-                                date: day,
-                                inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
-                                isToday: key == todayKey,
-                                isSelected: key == app.selectedDayKey,
-                                tasks: tasksByDay[key] ?? []
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        CalendarDayCell(
+                            date: day,
+                            inCurrentMonth: WeekMath.isSameMonth(day, as: app.weekAnchor),
+                            isToday: key == todayKey,
+                            isSelected: key == app.selectedDayKey,
+                            tasks: tasksByDay[key] ?? [],
+                            controller: drag
+                        )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        // Drop a task onto a day to move it there (appends to that day).
-                        .dropDestination(for: DraggedItem.self) { items, _ in
-                            dropTask(items, into: key, siblings: tasksByDay[key] ?? [])
-                        }
+                        // A plain button would swallow the drag of a task preview, so
+                        // selection is a tap gesture. The cell is a drop target for
+                        // tasks moved onto this day.
+                        .contentShape(Rectangle())
+                        .onTapGesture { app.select(day: day) }
+                        .publishContainerFrame(.monthDay(key), accepts: .task, axis: .vertical,
+                                               isEmpty: (tasksByDay[key] ?? []).isEmpty)
                     }
                 }
                 .frame(maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// Move a dropped task onto a day in the grid (appends to that day).
-    @discardableResult
-    private func dropTask(_ items: [DraggedItem], into dayKey: String, siblings: [TaskItem]) -> Bool {
-        guard let item = items.first, item.kind == .task else { return false }
-        try? DataService(context).dropTask(item.id, into: .day(dayKey), before: nil, siblings: siblings)
-        return true
     }
 }
 
@@ -91,8 +85,10 @@ private struct CalendarDayCell: View {
     let isToday: Bool
     let isSelected: Bool
     let tasks: [TaskItem]
+    let controller: DragController
 
     private var dayNumber: Int { Calendar.current.component(.day, from: date) }
+    private var dayKey: String { WeekMath.dayKey(for: date) }
 
     @State private var isHovering = false
     private var cellFill: Color {
@@ -134,7 +130,7 @@ private struct CalendarDayCell: View {
                         .foregroundStyle(task.isDone ? .secondary : .primary)
                 }
                 .contentShape(Rectangle())
-                .draggable(DraggedItem(id: task.id, kind: .task))
+                .reorderableRow(id: task.id, kind: .task, container: .monthDay(dayKey), controller: controller, task: task)
             }
 
             if tasks.count > 3 {
