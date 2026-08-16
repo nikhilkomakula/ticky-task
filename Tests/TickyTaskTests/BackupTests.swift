@@ -30,7 +30,10 @@ struct BackupTests {
                             colorHex: "#ff0000", priority: 3, sortIndex: 1, alarmEnabled: true,
                             createdAt: t0, updatedAt: t0.addingTimeInterval(100),
                             recurrence: recurrence, tagIds: [tagId],
-                            needsImmediateAttention: true),
+                            needsImmediateAttention: true,
+                            notesRich: try? NotesCodec.encode(NotesDocument(blocks: [
+                                NotesBlock(kind: .checkbox, checked: true, runs: [NotesRun(text: "done")])
+                            ]))),
                 TaskItemDTO(id: listTaskId, title: "Buy milk", notes: "", isDone: true,
                             dayKey: nil, customListId: listId, timeMinutes: nil, colorHex: nil,
                             priority: 0, sortIndex: 2, alarmEnabled: false,
@@ -174,6 +177,30 @@ struct BackupTests {
         let decoded = try service.readFile(try service.makeFile(store: fixture, passphrase: nil), passphrase: nil)
         let dayTask = try #require(decoded.data.taskItems.first { $0.dayKey != nil })
         #expect(dayTask.needsImmediateAttention == true)
+    }
+
+    @Test("notesRich round-trips through a plaintext backup")
+    func notesRichRoundTrips() throws {
+        let fixture = makeFixture()
+        let decoded = try service.readFile(try service.makeFile(store: fixture, passphrase: nil), passphrase: nil)
+        let dayTask = try #require(decoded.data.taskItems.first { $0.dayKey != nil })
+        let data = try #require(dayTask.notesRich)
+        let doc = try NotesCodec.decode(data)
+        #expect(doc.blocks.first?.kind == .checkbox)
+        #expect(doc.blocks.first?.checked == true)
+    }
+
+    @Test("A pre-0.1.9 backup without notesRich decodes with notesRich == nil")
+    func notesRichOptionalOnOldBackups() throws {
+        // A TaskItemDTO JSON that predates the notesRich key must still decode.
+        let json = """
+        {"id":"\(UUID().uuidString)","title":"legacy","notes":"plain","isDone":false,\
+        "priority":0,"sortIndex":0,"alarmEnabled":false,\
+        "createdAt":"2023-11-14T22:13:20Z","updatedAt":"2023-11-14T22:13:20Z","tagIds":[]}
+        """
+        let dto = try BackupCoding.decoder().decode(TaskItemDTO.self, from: Data(json.utf8))
+        #expect(dto.notesRich == nil)
+        #expect(dto.notes == "plain")
     }
 
     @Test("A malicious iteration count is rejected, not executed")

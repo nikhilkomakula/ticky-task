@@ -9,14 +9,13 @@ struct TaskEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskItem
 
-    @State private var notesMode: NotesMode = .edit
+    @State private var notesText = AttributedString()
+    /// The notes exactly as loaded, so we only persist on a REAL edit — assigning
+    /// `notesText` in `onAppear` triggers `onChange`, and without this guard merely
+    /// opening a task would overwrite `task.notes` (losing the legacy Markdown
+    /// source) and bump `updatedAt` with no user edit.
+    @State private var loadedNotes = AttributedString()
     @State private var newSubtask = ""
-
-    enum NotesMode: String, CaseIterable, Identifiable {
-        case edit = "Edit"
-        case preview = "Preview"
-        var id: String { rawValue }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +30,22 @@ struct TaskEditorView: View {
             .formStyle(.grouped)
         }
         .frame(minWidth: 560, minHeight: 580)
+        .onAppear {
+            let resolved = NotesAttributedString.attributedString(
+                from: NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
+            )
+            notesText = resolved
+            loadedNotes = resolved
+        }
+        .onChange(of: notesText) { _, newValue in
+            // Skip the load-induced change (and any no-op) so opening a task never
+            // rewrites its notes or timestamp — only genuine edits persist.
+            guard newValue != loadedNotes else { return }
+            let document = NotesAttributedString.document(from: newValue)
+            task.notesRich = try? NotesCodec.encode(document)
+            task.notes = document.plainText
+            task.updatedAt = Date()
+        }
     }
 
     private var header: some View {
@@ -63,31 +78,7 @@ struct TaskEditorView: View {
 
     private var notesSection: some View {
         Section("Details") {
-            Picker("Notes mode", selection: $notesMode) {
-                ForEach(NotesMode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 180)
-
-            if notesMode == .edit {
-                TextEditor(text: $task.notes)
-                    .font(.body)
-                    .frame(minHeight: 120)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.08))
-                    }
-                Text("Markdown supported — **bold**, *italic*, `code`, [links](https://…)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                MarkdownText(task.notes)
-                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-            }
+            RichNotesEditor(text: $notesText)
         }
     }
 

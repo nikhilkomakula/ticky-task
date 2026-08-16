@@ -11,6 +11,10 @@ import AppKit
 @main
 struct TickyTaskApp: App {
     @State private var appState = AppState()
+    /// User-chosen menu-bar icon (SF Symbol name); defaults to a calendar+task glyph.
+    /// Configurable in Settings › Appearance. SwiftUI re-evaluates the scene when
+    /// this changes, so the icon updates live.
+    @AppStorage("menuBarIcon") private var menuBarIcon = "calendar.badge.checkmark"
     private let containerResult: Result<ModelContainer, Error>
 
     init() {
@@ -35,7 +39,7 @@ struct TickyTaskApp: App {
             }
         }
 
-        MenuBarExtra("TickyTask", systemImage: "checklist") {
+        MenuBarExtra("TickyTask", systemImage: menuBarIcon) {
             ContainerGate(containerResult: containerResult) { MenuBarContentView() }
                 .environment(appState)
         }

@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 
 /// End-to-end verification that a REAL drag reorders tasks. Launches the app with
 /// `-uitest` (isolated in-memory store seeded with Alpha/Bravo/Charlie in the first
@@ -38,18 +39,32 @@ final class DragReorderUITests: XCTestCase {
         let app = launchedApp()
         let alpha = row(app, "Alpha")
         XCTAssertTrue(alpha.waitForExistence(timeout: 20), "Alpha should exist before dragging")
-        let mondayColumn = app.descendants(matching: .any).matching(identifier: "dayColumn-20260810").firstMatch
-        XCTAssertTrue(mondayColumn.waitForExistence(timeout: 5), "Monday column should be visible")
+
+        // The seed puts Alpha in TODAY. Target a *different* visible column, computed
+        // relative to today (Monday-start, 7 columns) so this isn't tied to a fixed
+        // calendar date: the far end of the week from today.
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday
+        let today = Date()
+        let monday = cal.dateInterval(of: .weekOfYear, for: today)!.start
+        let sunday = cal.date(byAdding: .day, value: 6, to: monday)!
+        let fmt = DateFormatter()
+        fmt.calendar = cal; fmt.timeZone = cal.timeZone; fmt.dateFormat = "yyyyMMdd"
+        let todayKey = fmt.string(from: today)
+        let targetKey = (todayKey == fmt.string(from: monday)) ? fmt.string(from: sunday) : fmt.string(from: monday)
+
+        let targetColumn = app.descendants(matching: .any).matching(identifier: "dayColumn-\(targetKey)").firstMatch
+        XCTAssertTrue(targetColumn.waitForExistence(timeout: 5), "target day column \(targetKey) should be visible")
 
         let alphaStartX = alpha.frame.midX
-        // Drag Alpha from today's column onto Monday's (empty) column body.
+        // Drag Alpha from today's column into the (empty) target day column.
         let start = alpha.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let dest = mondayColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 2.0))
+        let dest = targetColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.35, thenDragTo: dest)
         Thread.sleep(forTimeInterval: 1.2)
 
         let alphaEndX = row(app, "Alpha").frame.midX
-        XCTAssertLessThan(alphaEndX, alphaStartX - 150, "Alpha moved left into a different day column")
+        XCTAssertGreaterThan(abs(alphaEndX - alphaStartX), 150, "Alpha moved into a different day column")
     }
 
     /// Sanity: the seeded rows show up in the expected initial order.

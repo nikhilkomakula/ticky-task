@@ -144,6 +144,7 @@ enum BackupStore {
                 alarmEnabled: dto.alarmEnabled, recurrence: dto.recurrence
             )
             task.notes = dto.notes
+            task.notesRich = dto.notesRich
             task.isDone = dto.isDone
             task.isCritical = dto.needsImmediateAttention ?? false
             task.completedAt = dto.completedAt

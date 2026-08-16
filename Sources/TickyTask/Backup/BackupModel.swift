@@ -108,6 +108,9 @@ struct TaskItemDTO: Codable, Equatable, Sendable {
     /// When the task was completed (`nil` if open). Optional so older backups
     /// without the key still decode.
     var completedAt: Date? = nil
+    /// Encoded rich notes (`NotesDocument` JSON as Data). Optional so older backups
+    /// that omit the key decode to nil; the plain-text `notes` key is unchanged.
+    var notesRich: Data? = nil
 }
 
 struct SubtaskDTO: Codable, Equatable, Sendable {
@@ -225,7 +228,8 @@ extension TaskItemDTO {
             recurrence: task.recurrence,
             tagIds: task.tags.map(\.id).sorted { $0.uuidString < $1.uuidString },
             needsImmediateAttention: task.isCritical,
-            completedAt: task.completedAt
+            completedAt: task.completedAt,
+            notesRich: task.notesRich
         )
     }
 }

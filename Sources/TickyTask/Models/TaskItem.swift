@@ -10,7 +10,8 @@ import SwiftData
 final class TaskItem {
     var id: UUID = UUID()
     var title: String = ""
-    /// Markdown source for the task's notes/description.
+    /// Plain-text projection of `notesRich` (drives search, snippets, and backups).
+    /// Also the legacy Markdown source for tasks not yet opened in the rich editor.
     var notes: String = ""
     var isDone: Bool = false
 
@@ -36,6 +37,11 @@ final class TaskItem {
     /// When the task was marked done (`nil` while open). Drives optional
     /// auto-deletion of long-completed tasks; additive, so older stores read nil.
     var completedAt: Date?
+    /// Rich notes payload: a Codable `NotesDocument` encoded to JSON. `nil` for
+    /// legacy / never-edited tasks — those render from the Markdown `notes`
+    /// projection until first edit. Additive-optional so older stores lightweight-
+    /// migrate (read nil), same pattern as `completedAt`.
+    var notesRich: Data?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 

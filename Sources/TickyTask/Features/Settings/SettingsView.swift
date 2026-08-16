@@ -33,6 +33,7 @@ private struct AppearanceSettingsView: View {
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("showWeekends") private var showWeekends = false
     @AppStorage("compactView") private var compactView = false
+    @AppStorage("menuBarIcon") private var menuBarIcon = "calendar.badge.checkmark"
 
     var body: some View {
         Form {
@@ -45,6 +46,14 @@ private struct AppearanceSettingsView: View {
             Toggle("Start the week on Monday", isOn: $weekStartsMonday)
             Toggle("Show weekends", isOn: $showWeekends)
             Toggle("Compact rows (hide times)", isOn: $compactView)
+            Picker("Menu-bar icon", selection: $menuBarIcon) {
+                Label("Calendar + checkmark", systemImage: "calendar.badge.checkmark").tag("calendar.badge.checkmark")
+                Label("Checklist", systemImage: "checklist").tag("checklist")
+                Label("Day timeline", systemImage: "calendar.day.timeline.left").tag("calendar.day.timeline.left")
+                Label("Checkmark", systemImage: "checkmark.circle").tag("checkmark.circle")
+                Label("Calendar", systemImage: "calendar").tag("calendar")
+                Label("List", systemImage: "list.bullet.rectangle").tag("list.bullet.rectangle")
+            }
         }
         .formStyle(.grouped)
         .padding()

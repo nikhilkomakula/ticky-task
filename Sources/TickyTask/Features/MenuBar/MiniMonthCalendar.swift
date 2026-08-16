@@ -47,16 +47,31 @@ struct MiniMonthCalendar: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
             Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.borderless)
             Spacer()
             Text(monthAnchor.formatted(.dateTime.month(.wide).year()))
                 .font(.subheadline.weight(.semibold))
+            Button(action: goToToday) {
+                Text("Today").font(.caption2.weight(.semibold))
+            }
+            .buttonStyle(.borderless)
+            .help("Jump to today")
             Spacer()
             Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.borderless)
         }
+    }
+
+    /// Jump the popover's selection and visible month back to today. Sets
+    /// `monthAnchor` directly too, because if today is already the selection the
+    /// `selectedDayKey` change wouldn't fire `alignMonthToSelection()` (so a user
+    /// who navigated months away could otherwise get stuck).
+    private func goToToday() {
+        let today = Date()
+        selectedDayKey = WeekMath.dayKey(for: today)
+        monthAnchor = today
     }
 
     private func dayCell(_ day: Date, todayKey: String) -> some View {
