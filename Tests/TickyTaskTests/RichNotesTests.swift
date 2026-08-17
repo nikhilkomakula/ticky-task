@@ -10,7 +10,7 @@ struct RichNotesTests {
         ModelContext(ModelContainerProvider.makeInMemoryContainer())
     }
 
-    /// A representative document exercising every block kind and inline style.
+    /// A representative document exercising supported block kinds and inline styles.
     private func sampleDocument() -> NotesDocument {
         NotesDocument(blocks: [
             NotesBlock(kind: .paragraph, runs: [
@@ -26,9 +26,7 @@ struct RichNotesTests {
                 NotesRun(text: "link", link: URL(string: "https://example.com"))
             ]),
             NotesBlock(kind: .bullet, runs: [NotesRun(text: "a bullet")]),
-            NotesBlock(kind: .numbered, runs: [NotesRun(text: "first")]),
-            NotesBlock(kind: .checkbox, checked: false, runs: [NotesRun(text: "todo")]),
-            NotesBlock(kind: .checkbox, checked: true, runs: [NotesRun(text: "done")])
+            NotesBlock(kind: .numbered, runs: [NotesRun(text: "first")])
         ])
     }
 
@@ -43,19 +41,13 @@ struct RichNotesTests {
 
     // MARK: AttributedString round-trip (the editor's on-screen representation)
 
-    @Test("attributedString ⇄ document preserves kinds, checked state, and inline styles")
+    @Test("attributedString ⇄ document preserves supported kinds and inline styles")
     func attributedRoundTrip() {
         let doc = sampleDocument()
         let attributed = NotesAttributedString.attributedString(from: doc)
         let back = NotesAttributedString.document(from: attributed)
 
-        #expect(back.blocks.map(\.kind) == [.paragraph, .bullet, .numbered, .checkbox, .checkbox])
-        #expect(back.blocks.map(\.checked) == [false, false, false, false, true])
-
-        // The checkbox block ids survive (carried in the toggle link) so toggles
-        // target the right item after a round-trip.
-        #expect(back.blocks[3].id == doc.blocks[3].id)
-        #expect(back.blocks[4].id == doc.blocks[4].id)
+        #expect(back.blocks.map(\.kind) == [.paragraph, .bullet, .numbered])
 
         // Inline styles on the first block round-trip.
         let firstRuns = back.blocks[0].runs
@@ -67,7 +59,6 @@ struct RichNotesTests {
 
         // Block text is preserved without markers/glyphs.
         #expect(back.blocks[1].text == "a bullet")
-        #expect(back.blocks[3].text == "todo")
     }
 
     // MARK: Legacy Markdown import
@@ -75,22 +66,22 @@ struct RichNotesTests {
     @Test("Markdown import maps line prefixes to block kinds and inline emphasis")
     func markdownImport() {
         let doc = NotesCodec.document(fromMarkdown: "- [ ] todo\n- [x] done\n- bullet\n1. numbered\n**bold** rest")
-        #expect(doc.blocks.map(\.kind) == [.checkbox, .checkbox, .bullet, .numbered, .paragraph])
-        #expect(doc.blocks.map(\.checked) == [false, true, false, false, false])
+        #expect(doc.blocks.map(\.kind) == [.bullet, .bullet, .bullet, .numbered, .paragraph])
+        #expect(doc.blocks[0].text == "todo")
+        #expect(doc.blocks[1].text == "done")
         #expect(doc.blocks[4].runs.contains { $0.text == "bold" && $0.bold })
     }
 
     // MARK: Plain-text projection (search)
 
-    @Test("plainText is marker-free and searchable inside checklist items")
+    @Test("plainText is marker-free and searchable")
     func plainTextProjection() {
         let doc = sampleDocument()
         let text = doc.plainText
         #expect(!text.contains("☐"))
         #expect(!text.contains("☑"))
         #expect(!text.contains("•"))
-        // A word inside a checkbox block is findable, so SearchService keeps working.
-        #expect(text.localizedCaseInsensitiveContains("done"))
+        #expect(text.localizedCaseInsensitiveContains("bullet"))
         #expect(text.localizedCaseInsensitiveContains("bold"))
     }
 
@@ -116,8 +107,7 @@ struct RichNotesTests {
     func resolvedFallsBackToMarkdown() {
         let doc = NotesCodec.resolved(fromRich: nil, markdown: "- [x] shipped")
         #expect(doc.blocks.count == 1)
-        #expect(doc.blocks[0].kind == .checkbox)
-        #expect(doc.blocks[0].checked)
+        #expect(doc.blocks[0].kind == .bullet)
         #expect(doc.blocks[0].text == "shipped")
     }
 
@@ -127,5 +117,16 @@ struct RichNotesTests {
         let rich = try NotesCodec.encode(source)
         let doc = NotesCodec.resolved(fromRich: rich, markdown: "ignored markdown")
         #expect(doc == source)
+    }
+
+    @Test("Legacy checkbox JSON decodes and renders back as a bullet")
+    func legacyCheckboxRendersAsBullet() throws {
+        let legacy = NotesDocument(blocks: [NotesBlock(kind: .checkbox, checked: true, runs: [NotesRun(text: "legacy")])])
+        let decoded = try NotesCodec.decode(NotesCodec.encode(legacy))
+        #expect(decoded.blocks[0].kind == .checkbox)
+        let rendered = NotesAttributedString.attributedString(from: decoded)
+        let reparsed = NotesAttributedString.document(from: rendered)
+        #expect(reparsed.blocks[0].kind == .bullet)
+        #expect(reparsed.blocks[0].text == "legacy")
     }
 }

@@ -32,7 +32,7 @@ struct BackupTests {
                             recurrence: recurrence, tagIds: [tagId],
                             needsImmediateAttention: true,
                             notesRich: try? NotesCodec.encode(NotesDocument(blocks: [
-                                NotesBlock(kind: .checkbox, checked: true, runs: [NotesRun(text: "done")])
+                                NotesBlock(kind: .bullet, runs: [NotesRun(text: "done")])
                             ]))),
                 TaskItemDTO(id: listTaskId, title: "Buy milk", notes: "", isDone: true,
                             dayKey: nil, customListId: listId, timeMinutes: nil, colorHex: nil,
@@ -186,8 +186,8 @@ struct BackupTests {
         let dayTask = try #require(decoded.data.taskItems.first { $0.dayKey != nil })
         let data = try #require(dayTask.notesRich)
         let doc = try NotesCodec.decode(data)
-        #expect(doc.blocks.first?.kind == .checkbox)
-        #expect(doc.blocks.first?.checked == true)
+        #expect(doc.blocks.first?.kind == .bullet)
+        #expect(doc.blocks.first?.text == "done")
     }
 
     @Test("A pre-0.1.9 backup without notesRich decodes with notesRich == nil")

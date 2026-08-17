@@ -31,7 +31,7 @@ enum NotesCodec {
     // MARK: Legacy Markdown import
 
     /// Convert a legacy Markdown notes string into a `NotesDocument`. Line-level
-    /// prefixes become block kinds (`- [ ]`/`- [x]` → checkbox, `-`/`*` → bullet,
+    /// prefixes become block kinds (`- [ ]`/`- [x]` and `-`/`*` → bullet,
     /// `1.` → numbered); inline `**bold**`/`*italic*`/`~~strike~~`/`[link](url)`
     /// become styled runs via `AttributedString(markdown:)`'s inline intents.
     static func document(fromMarkdown markdown: String) -> NotesDocument {
@@ -41,13 +41,9 @@ enum NotesCodec {
         for rawLine in lines {
             var line = rawLine
             var kind: NotesBlock.Kind = .paragraph
-            var checked = false
-
-            // Checkbox must be tested before the plain-bullet rule ("- [ ]" also
-            // starts with "- ").
+            // Legacy Markdown task-list markers import as ordinary bullets.
             if let m = line.range(of: #"^\s*[-*] \[[ xX]\]\s?"#, options: .regularExpression) {
-                checked = line[m].contains("x") || line[m].contains("X")
-                kind = .checkbox
+                kind = .bullet
                 line.removeSubrange(m)
             } else if let m = line.range(of: #"^\s*[-*]\s+"#, options: .regularExpression) {
                 kind = .bullet
@@ -57,7 +53,7 @@ enum NotesCodec {
                 line.removeSubrange(m)
             }
 
-            blocks.append(NotesBlock(kind: kind, checked: checked, runs: runs(fromInlineMarkdown: line)))
+            blocks.append(NotesBlock(kind: kind, runs: runs(fromInlineMarkdown: line)))
         }
         return NotesDocument(blocks: blocks)
     }

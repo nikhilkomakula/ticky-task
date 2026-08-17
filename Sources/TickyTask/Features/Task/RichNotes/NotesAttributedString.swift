@@ -25,9 +25,9 @@ enum NotesAttributedString {
             case .numbered:
                 result.append(AttributedString("\(number(for: blockIndex, in: document.blocks)). "))
             case .checkbox:
-                var marker = AttributedString(block.checked ? "☑ " : "☐ ")
-                marker.link = URL(string: "tickytask://toggle/\(block.id.uuidString)")
-                result.append(marker)
+                // v0.1.9 checkbox blocks remain decodable, but are presented as
+                // ordinary bullets now that checklist editing has been removed.
+                result.append(AttributedString("• "))
             }
 
             for run in block.runs {
@@ -57,11 +57,7 @@ enum NotesAttributedString {
 
         for lineSlice in lines {
             let rawLine = String(lineSlice)
-            var marker = marker(in: rawLine)
-            if marker.kind == .checkbox, rawLine.utf16.count > 0,
-               let url = nsString.attribute(.link, at: utf16Offset, effectiveRange: nil) as? URL {
-                marker.id = UUID(uuidString: url.lastPathComponent)
-            }
+            let marker = marker(in: rawLine)
             let content = String(rawLine.dropFirst(marker.length))
             let contentUTF16Length = content.utf16.count
             let nsRange = NSRange(location: utf16Offset + String(rawLine.prefix(marker.length)).utf16.count,
@@ -91,7 +87,7 @@ enum NotesAttributedString {
                 ))
             }
 
-            blocks.append(NotesBlock(id: marker.id ?? UUID(), kind: marker.kind,
+            blocks.append(NotesBlock(kind: marker.kind,
                                      checked: marker.checked, runs: runs))
             utf16Offset += rawLine.utf16.count + 1
             characterOffset += rawLine.count + 1
@@ -107,15 +103,12 @@ enum NotesAttributedString {
         return value
     }
 
-    private static func marker(in line: String) -> (kind: NotesBlock.Kind, checked: Bool, length: Int, id: UUID?) {
-        if line.hasPrefix("• ") { return (.bullet, false, 2, nil) }
+    private static func marker(in line: String) -> (kind: NotesBlock.Kind, checked: Bool, length: Int) {
+        if line.hasPrefix("• ") { return (.bullet, false, 2) }
         if let range = line.range(of: #"^\d+\. "#, options: .regularExpression) {
-            return (.numbered, false, line.distance(from: line.startIndex, to: range.upperBound), nil)
+            return (.numbered, false, line.distance(from: line.startIndex, to: range.upperBound))
         }
-        if line.hasPrefix("☐ ") || line.hasPrefix("☑ ") {
-            return (.checkbox, line.hasPrefix("☑ "), 2, nil)
-        }
-        return (.paragraph, false, 0, nil)
+        return (.paragraph, false, 0)
     }
 
 }

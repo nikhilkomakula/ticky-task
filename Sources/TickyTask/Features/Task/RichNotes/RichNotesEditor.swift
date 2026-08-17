@@ -10,23 +10,20 @@ struct RichNotesEditor: View {
     /// target an empty/stale range.
     @State private var linkSelection = AttributedTextSelection()
 
-    /// Checkbox blocks extracted from the current document.
-    @State private var checkboxBlocks: [(n: Int, id: UUID, checked: Bool)] = []
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                formatButton("Bold", systemImage: "bold", id: "notes-bold") { a in
+                formatButton("Bold", systemImage: "bold", id: "notes-bold", shortcut: "b") { a in
                     let bold = !(a[NotesBoldAttribute.self] ?? false)
                     a[NotesBoldAttribute.self] = bold
                     a.font = Self.font(bold: bold, italic: a[NotesItalicAttribute.self] ?? false)
                 }
-                formatButton("Italic", systemImage: "italic", id: "notes-italic") { a in
+                formatButton("Italic", systemImage: "italic", id: "notes-italic", shortcut: "i") { a in
                     let italic = !(a[NotesItalicAttribute.self] ?? false)
                     a[NotesItalicAttribute.self] = italic
                     a.font = Self.font(bold: a[NotesBoldAttribute.self] ?? false, italic: italic)
                 }
-                formatButton("Underline", systemImage: "underline", id: "notes-underline") { a in
+                formatButton("Underline", systemImage: "underline", id: "notes-underline", shortcut: "u") { a in
                     a.underlineStyle = a.underlineStyle == nil ? .single : nil
                 }
                 formatButton("Strikethrough", systemImage: "strikethrough", id: "notes-strike") { a in
@@ -40,72 +37,36 @@ struct RichNotesEditor: View {
                     showingLinkPrompt = true
                 } label: { Image(systemName: "link") }
                     .help("Link").accessibilityLabel("Link").accessibilityIdentifier("notes-link")
-                listButton("Checklist", systemImage: "checklist", id: "notes-checklist", kind: .checkbox)
             }
             .buttonStyle(.borderless)
-
-            checkboxToggles
 
             TextEditor(text: $text, selection: $selection)
                 .font(.body)
                 .frame(minHeight: 120)
                 .accessibilityIdentifier("editor-notes")
-                .environment(\.openURL, OpenURLAction { url in
-                    guard url.scheme == "tickytask", url.host == "toggle",
-                          let id = UUID(uuidString: url.lastPathComponent) else { return .systemAction }
-                    var document = NotesAttributedString.document(from: text)
-                    guard let index = document.blocks.firstIndex(where: { $0.id == id }) else { return .discarded }
-                    document.blocks[index].checked.toggle()
-                    text = NotesAttributedString.attributedString(from: document)
-                    return .handled
-                })
+                .onKeyPress(.return) { continueList() }
         }
         .alert("Add Link", isPresented: $showingLinkPrompt) {
             TextField("https://example.com", text: $linkText)
             Button("Apply") { applyLink() }
             Button("Cancel", role: .cancel) {}
         }
-        .onChange(of: text, initial: true) { _, newValue in
-            let doc = NotesAttributedString.document(from: newValue)
-            checkboxBlocks = doc.blocks
-                .filter { $0.kind == .checkbox }
-                .enumerated()
-                .map { (n: $0, id: $1.id, checked: $1.checked) }
-        }
     }
 
-    /// Accessible toggle buttons for each checkbox block.
-    /// macOS 26 TextEditor link-tap does not fire openURL in edit mode;
-    /// these buttons are the reliable toggle surface.
     @ViewBuilder
-    var checkboxToggles: some View {
-        if !checkboxBlocks.isEmpty {
-            HStack(spacing: 6) {
-                Text("Toggle:").font(.caption).foregroundStyle(.secondary)
-                ForEach(checkboxBlocks, id: \.id) { item in
-                    Button(item.checked ? "\u{2611}" : "\u{2610}") {
-                        var doc = NotesAttributedString.document(from: text)
-                        if let idx = doc.blocks.firstIndex(where: { $0.id == item.id }) {
-                            doc.blocks[idx].checked.toggle()
-                            text = NotesAttributedString.attributedString(from: doc)
-                        }
-                    }
-                    .accessibilityIdentifier("notes-checkbox-\(item.n)")
-                    .accessibilityLabel(item.checked ? "Uncheck item \(item.n + 1)" : "Check item \(item.n + 1)")
-                    .buttonStyle(.borderless)
-                    .font(.body)
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
     private func formatButton(_ title: String, systemImage: String, id: String,
+                              shortcut: KeyEquivalent? = nil,
                               action: @escaping (inout AttributeContainer) -> Void) -> some View {
-        Button {
+        let button = Button {
             text.transformAttributes(in: &selection, body: action)
         } label: { Image(systemName: systemImage) }
         .help(title).accessibilityLabel(title).accessibilityIdentifier(id)
+        .accessibilityValue(isFormatActive(title) ? "On" : "Off")
+        if let shortcut {
+            button.keyboardShortcut(shortcut, modifiers: .command)
+        } else {
+            button
+        }
     }
 
     private func listButton(_ title: String, systemImage: String, id: String,
@@ -120,16 +81,79 @@ struct RichNotesEditor: View {
             let allAlready = document.blocks.allSatisfy { $0.kind == kind }
             for index in document.blocks.indices {
                 document.blocks[index].kind = allAlready ? .paragraph : kind
-                if document.blocks[index].kind != .checkbox { document.blocks[index].checked = false }
+                document.blocks[index].checked = false
             }
             text = NotesAttributedString.attributedString(from: document)
+            selection = AttributedTextSelection(insertionPoint: text.endIndex)
         } label: { Image(systemName: systemImage) }
         .help(title).accessibilityLabel(title).accessibilityIdentifier(id)
     }
 
     private func applyLink() {
-        guard let url = URL(string: linkText), url.scheme != nil else { return }
+        // Only allow web links — never file:, javascript:, or other schemes that
+        // could be opened from the notes view.
+        guard let url = URL(string: linkText),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
         text.transformAttributes(in: &linkSelection) { attributes in attributes.link = url }
+    }
+
+    /// On Return inside a list: continue the list with a new empty item of the same
+    /// kind (numbered markers renumber automatically on re-render), or — if the
+    /// current item is empty — end the list by turning it into a paragraph. All
+    /// indexing is clamped/guarded so this can never crash the editor. Only the
+    /// common "Return at the end of a line" flow moves the caret; text after a
+    /// mid-line caret simply stays on the current item.
+    private func continueList() -> KeyPress.Result {
+        guard case let .insertionPoint(caret) = selection.indices(in: text) else { return .ignored }
+        let caretOffset = text.characters.distance(from: text.startIndex, to: caret)
+        var document = NotesAttributedString.document(from: text)
+        let blockIndex = String(text.characters.prefix(caretOffset)).filter { $0 == "\n" }.count
+        guard document.blocks.indices.contains(blockIndex) else { return .ignored }
+        let kind = document.blocks[blockIndex].kind
+        guard kind == .bullet || kind == .numbered else { return .ignored }
+
+        let targetBlock: Int
+        if document.blocks[blockIndex].text.isEmpty {
+            document.blocks[blockIndex].kind = .paragraph   // empty item → end the list
+            targetBlock = blockIndex
+        } else {
+            document.blocks.insert(NotesBlock(kind: kind, runs: []), at: blockIndex + 1)
+            targetBlock = blockIndex + 1
+        }
+
+        text = NotesAttributedString.attributedString(from: document)
+        moveCaretToContentStart(ofBlock: targetBlock, in: document)
+        return .handled
+    }
+
+    /// Place the caret just after the marker of `document.blocks[index]`, computed
+    /// against the freshly-assigned `text` with fully-guarded indexing.
+    private func moveCaretToContentStart(ofBlock index: Int, in document: NotesDocument) {
+        let lines = String(text.characters).components(separatedBy: "\n")
+        guard index < lines.count, document.blocks.indices.contains(index) else {
+            selection = AttributedTextSelection(insertionPoint: text.endIndex)
+            return
+        }
+        var offset = 0
+        for i in 0..<index { offset += lines[i].count + 1 }   // +1 for each joining newline
+        offset += max(0, lines[index].count - document.blocks[index].text.count) // skip the marker
+        offset = min(max(0, offset), text.characters.count)
+        let caret = text.characters.index(text.startIndex, offsetBy: offset)
+        selection = AttributedTextSelection(insertionPoint: caret)
+    }
+
+    private func isFormatActive(_ title: String) -> Bool {
+        let attributes = Array(selection.attributes(in: text))
+        guard !attributes.isEmpty else { return false }
+        return attributes.allSatisfy { attributes in
+            switch title {
+            case "Bold": attributes[NotesBoldAttribute.self] == true
+            case "Italic": attributes[NotesItalicAttribute.self] == true
+            case "Underline": attributes.underlineStyle != nil
+            case "Strikethrough": attributes.strikethroughStyle != nil
+            default: false
+            }
+        }
     }
 
     /// A body font with the requested combination of bold/italic traits, so
