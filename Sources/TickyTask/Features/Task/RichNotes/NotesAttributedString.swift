@@ -14,20 +14,27 @@ struct NotesItalicAttribute: CodableAttributedStringKey {
 enum NotesAttributedString {
     static func attributedString(from document: NotesDocument) -> AttributedString {
         var result = AttributedString()
-        for (blockIndex, block) in document.blocks.enumerated() {
-            if blockIndex > 0 { result.append(AttributedString("\n")) }
+        var numberedCounts: [Int: Int] = [:]
+        var previousWasNumbered = false
 
+        for (index, block) in document.blocks.enumerated() {
+            if index > 0 { result.append(AttributedString("\n")) }
+            let start = result.endIndex
+            let spaces = String(repeating: " ", count: max(0, block.indent) * 2)
             switch block.kind {
             case .paragraph:
-                break
-            case .bullet:
-                result.append(AttributedString("• "))
+                previousWasNumbered = false
+            case .bullet, .checkbox:
+                previousWasNumbered = false
+                result.append(AttributedString(spaces + "• "))
             case .numbered:
-                result.append(AttributedString("\(number(for: blockIndex, in: document.blocks)). "))
-            case .checkbox:
-                // v0.1.9 checkbox blocks remain decodable, but are presented as
-                // ordinary bullets now that checklist editing has been removed.
-                result.append(AttributedString("• "))
+                if !previousWasNumbered { numberedCounts.removeAll() }
+                // Returning to a shallower level restarts any deeper sub-list numbering.
+                numberedCounts = numberedCounts.filter { $0.key <= block.indent }
+                let ordinal = (numberedCounts[block.indent] ?? 0) + 1
+                numberedCounts[block.indent] = ordinal
+                previousWasNumbered = true
+                result.append(AttributedString(spaces + "\(ordinal). "))
             }
 
             for run in block.runs {
@@ -43,72 +50,64 @@ enum NotesAttributedString {
                 rendered.link = run.link
                 result.append(rendered)
             }
+            let end = result.endIndex
+            if start < end {
+                result[start..<end][NotesBlockIDKey.self] = block.id
+                result[start..<end][NotesBlockKindKey.self] = block.kind.rawValue
+                result[start..<end][NotesBlockIndentKey.self] = block.indent
+                result[start..<end][NotesBlockCheckedKey.self] = block.checked
+            }
         }
         return result
     }
 
     static func document(from string: AttributedString) -> NotesDocument {
+        guard !string.characters.isEmpty else { return NotesDocument() }
         let nsString = NSAttributedString(string)
-        let fullText = String(string.characters)
-        let lines = fullText.split(separator: "\n", omittingEmptySubsequences: false)
         var blocks: [NotesBlock] = []
-        var utf16Offset = 0
-        var characterOffset = 0
+        var lineStart = string.startIndex
 
-        for lineSlice in lines {
-            let rawLine = String(lineSlice)
-            let marker = marker(in: rawLine)
-            let content = String(rawLine.dropFirst(marker.length))
-            let contentUTF16Length = content.utf16.count
-            let nsRange = NSRange(location: utf16Offset + String(rawLine.prefix(marker.length)).utf16.count,
-                                  length: contentUTF16Length)
-            let lineStart = string.characters.index(string.startIndex, offsetBy: characterOffset)
-            let contentStart = string.characters.index(lineStart, offsetBy: marker.length)
-            let contentEnd = string.characters.index(contentStart, offsetBy: content.count)
-            let attributedLine = AttributedString(string[contentStart..<contentEnd])
-            var runs: [NotesRun] = []
-
-            for run in attributedLine.runs {
-                let text = String(attributedLine[run.range].characters)
-                guard !text.isEmpty else { continue }
-                let localStart = attributedLine.characters.distance(from: attributedLine.startIndex, to: run.range.lowerBound)
-                let fallbackRange = NSRange(location: nsRange.location + String(content.prefix(localStart)).utf16.count,
-                                            length: text.utf16.count)
-                let traits = (fallbackRange.length > 0
-                    ? nsString.attribute(.font, at: fallbackRange.location, effectiveRange: nil) as? NSFont
-                    : nil)?.fontDescriptor.symbolicTraits ?? []
-                runs.append(NotesRun(
-                    text: text,
-                    bold: run[NotesBoldAttribute.self] == true || traits.contains(.bold),
-                    italic: run[NotesItalicAttribute.self] == true || traits.contains(.italic),
-                    underline: run.underlineStyle != nil,
-                    strikethrough: run.strikethroughStyle != nil,
-                    link: run.link
-                ))
+        while true {
+            let newline = string.characters[lineStart...].firstIndex(of: "\n")
+            let lineEnd = newline ?? string.endIndex
+            let line = AttributedString(string[lineStart..<lineEnd])
+            let firstRun = line.runs.first
+            let rawKind = firstRun?[NotesBlockKindKey.self]
+            let kind = rawKind.flatMap(NotesBlock.Kind.init(rawValue:)) ?? .paragraph
+            let id = firstRun?[NotesBlockIDKey.self] ?? UUID()
+            let indent = firstRun?[NotesBlockIndentKey.self] ?? 0
+            let checked = firstRun?[NotesBlockCheckedKey.self] ?? false
+            let hasMetadata = rawKind != nil
+            let rawText = String(line.characters)
+            var markerLength = 0
+            if hasMetadata, kind != .paragraph,
+               let markerRange = rawText.range(of: #"^ *(• |\d+\. )"#, options: .regularExpression) {
+                markerLength = rawText.distance(from: rawText.startIndex, to: markerRange.upperBound)
             }
-
-            blocks.append(NotesBlock(kind: marker.kind,
-                                     checked: marker.checked, runs: runs))
-            utf16Offset += rawLine.utf16.count + 1
-            characterOffset += rawLine.count + 1
+            let contentStart = line.characters.index(line.startIndex, offsetBy: markerLength)
+            let content = AttributedString(line[contentStart..<line.endIndex])
+            let lineUTF16Start = String(string.characters[..<lineStart]).utf16.count
+            let markerUTF16 = String(rawText.prefix(markerLength)).utf16.count
+            var runs: [NotesRun] = []
+            for run in content.runs {
+                let text = String(content[run.range].characters)
+                guard !text.isEmpty else { continue }
+                let local = content.characters.distance(from: content.startIndex, to: run.range.lowerBound)
+                let fallback = lineUTF16Start + markerUTF16 + String(content.characters.prefix(local)).utf16.count
+                let traits = fallback < nsString.length
+                    ? (nsString.attribute(.font, at: fallback, effectiveRange: nil) as? NSFont)?.fontDescriptor.symbolicTraits ?? []
+                    : []
+                runs.append(NotesRun(text: text,
+                                     bold: run[NotesBoldAttribute.self] == true || traits.contains(.bold),
+                                     italic: run[NotesItalicAttribute.self] == true || traits.contains(.italic),
+                                     underline: run.underlineStyle != nil,
+                                     strikethrough: run.strikethroughStyle != nil,
+                                     link: run.link))
+            }
+            blocks.append(NotesBlock(id: id, kind: kind, checked: checked, indent: indent, runs: runs))
+            guard let newline else { break }
+            lineStart = string.characters.index(after: newline)
         }
         return NotesDocument(blocks: blocks)
     }
-
-    private static func number(for index: Int, in blocks: [NotesBlock]) -> Int {
-        var value = 0
-        for block in blocks.prefix(index + 1) {
-            value = block.kind == .numbered ? value + 1 : 0
-        }
-        return value
-    }
-
-    private static func marker(in line: String) -> (kind: NotesBlock.Kind, checked: Bool, length: Int) {
-        if line.hasPrefix("• ") { return (.bullet, false, 2) }
-        if let range = line.range(of: #"^\d+\. "#, options: .regularExpression) {
-            return (.numbered, false, line.distance(from: line.startIndex, to: range.upperBound))
-        }
-        return (.paragraph, false, 0)
-    }
-
 }

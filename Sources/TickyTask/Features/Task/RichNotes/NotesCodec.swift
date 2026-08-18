@@ -22,9 +22,7 @@ enum NotesCodec {
     /// string (so pre-0.1.9 tasks keep rendering until first edit). Takes the raw
     /// fields (not the model) to stay pure and testable.
     static func resolved(fromRich data: Data?, markdown: String) -> NotesDocument {
-        if let data, !data.isEmpty, let doc = try? decode(data), !doc.blocks.isEmpty {
-            return doc
-        }
+        if let data, !data.isEmpty, let doc = try? decode(data) { return doc }
         return document(fromMarkdown: markdown)
     }
 
@@ -41,9 +39,11 @@ enum NotesCodec {
         for rawLine in lines {
             var line = rawLine
             var kind: NotesBlock.Kind = .paragraph
+            var checked = false
             // Legacy Markdown task-list markers import as ordinary bullets.
             if let m = line.range(of: #"^\s*[-*] \[[ xX]\]\s?"#, options: .regularExpression) {
                 kind = .bullet
+                checked = line[m].localizedCaseInsensitiveContains("x")
                 line.removeSubrange(m)
             } else if let m = line.range(of: #"^\s*[-*]\s+"#, options: .regularExpression) {
                 kind = .bullet
@@ -53,7 +53,7 @@ enum NotesCodec {
                 line.removeSubrange(m)
             }
 
-            blocks.append(NotesBlock(kind: kind, runs: runs(fromInlineMarkdown: line)))
+            blocks.append(NotesBlock(kind: kind, checked: checked, runs: runs(fromInlineMarkdown: line)))
         }
         return NotesDocument(blocks: blocks)
     }

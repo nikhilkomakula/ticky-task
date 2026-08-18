@@ -10,25 +10,16 @@ struct RichNotesEditor: View {
     /// target an empty/stale range.
     @State private var linkSelection = AttributedTextSelection()
 
+    private var document: NotesDocument { NotesEditingEngine.parseEditorRepresentation(text) }
+    private var renderedDocument: AttributedString { NotesEditingEngine.render(document) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
-                formatButton("Bold", systemImage: "bold", id: "notes-bold", shortcut: "b") { a in
-                    let bold = !(a[NotesBoldAttribute.self] ?? false)
-                    a[NotesBoldAttribute.self] = bold
-                    a.font = Self.font(bold: bold, italic: a[NotesItalicAttribute.self] ?? false)
-                }
-                formatButton("Italic", systemImage: "italic", id: "notes-italic", shortcut: "i") { a in
-                    let italic = !(a[NotesItalicAttribute.self] ?? false)
-                    a[NotesItalicAttribute.self] = italic
-                    a.font = Self.font(bold: a[NotesBoldAttribute.self] ?? false, italic: italic)
-                }
-                formatButton("Underline", systemImage: "underline", id: "notes-underline", shortcut: "u") { a in
-                    a.underlineStyle = a.underlineStyle == nil ? .single : nil
-                }
-                formatButton("Strikethrough", systemImage: "strikethrough", id: "notes-strike") { a in
-                    a.strikethroughStyle = a.strikethroughStyle == nil ? .single : nil
-                }
+                formatButton("Bold", systemImage: "bold", id: "notes-bold", shortcut: "b", format: .bold)
+                formatButton("Italic", systemImage: "italic", id: "notes-italic", shortcut: "i", format: .italic)
+                formatButton("Underline", systemImage: "underline", id: "notes-underline", shortcut: "u", format: .underline)
+                formatButton("Strikethrough", systemImage: "strikethrough", id: "notes-strike", format: .strikethrough)
                 listButton("Bulleted list", systemImage: "list.bullet", id: "notes-bullet", kind: .bullet)
                 listButton("Numbered list", systemImage: "list.number", id: "notes-numbered", kind: .numbered)
                 Button {
@@ -45,6 +36,9 @@ struct RichNotesEditor: View {
                 .frame(minHeight: 120)
                 .accessibilityIdentifier("editor-notes")
                 .onKeyPress(.return) { continueList() }
+                .onKeyPress(.tab, phases: .down) { keyPress in
+                    adjustIndent(outdent: keyPress.modifiers.contains(.shift))
+                }
         }
         .alert("Add Link", isPresented: $showingLinkPrompt) {
             TextField("https://example.com", text: $linkText)
@@ -56,9 +50,11 @@ struct RichNotesEditor: View {
     @ViewBuilder
     private func formatButton(_ title: String, systemImage: String, id: String,
                               shortcut: KeyEquivalent? = nil,
-                              action: @escaping (inout AttributeContainer) -> Void) -> some View {
+                              format: NotesInlineFormat) -> some View {
         let button = Button {
-            text.transformAttributes(in: &selection, body: action)
+            let range = nsRange(from: selection, in: text)
+            let result = NotesEditingEngine.toggleInlineFormat(format, in: document, selection: range)
+            apply(result)
         } label: { Image(systemName: systemImage) }
         .help(title).accessibilityLabel(title).accessibilityIdentifier(id)
         .accessibilityValue(isFormatActive(title) ? "On" : "Off")
@@ -72,29 +68,19 @@ struct RichNotesEditor: View {
     private func listButton(_ title: String, systemImage: String, id: String,
                             kind: NotesBlock.Kind) -> some View {
         Button {
-            var document = NotesAttributedString.document(from: text)
-            if document.blocks.isEmpty { document.blocks = [NotesBlock()] }
-            // Toggle across the note: if every block is already this kind, revert to
-            // plain paragraphs; otherwise convert them all. (v1 applies to the whole
-            // note; per-paragraph targeting is a planned enhancement — it needs the
-            // macOS 26 selection-range API, whose bare-cursor behavior is unverified.)
-            let allAlready = document.blocks.allSatisfy { $0.kind == kind }
-            for index in document.blocks.indices {
-                document.blocks[index].kind = allAlready ? .paragraph : kind
-                document.blocks[index].checked = false
-            }
-            text = NotesAttributedString.attributedString(from: document)
-            selection = AttributedTextSelection(insertionPoint: text.endIndex)
+            let result = NotesEditingEngine.toggleList(kind: kind, in: document,
+                                                       selection: nsRange(from: selection, in: text))
+            apply(result)
         } label: { Image(systemName: systemImage) }
         .help(title).accessibilityLabel(title).accessibilityIdentifier(id)
     }
 
     private func applyLink() {
-        // Only allow web links — never file:, javascript:, or other schemes that
-        // could be opened from the notes view.
-        guard let url = URL(string: linkText),
-              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
-        text.transformAttributes(in: &linkSelection) { attributes in attributes.link = url }
+        // applyLink validates the URL (http/https + host) and returns nil for
+        // anything it rejects, so no separate pre-check is needed.
+        let range = nsRange(from: linkSelection, in: text)
+        guard let result = NotesEditingEngine.applyLink(linkText, in: document, selection: range) else { return }
+        apply(result)
     }
 
     /// On Return inside a list: continue the list with a new empty item of the same
@@ -104,42 +90,57 @@ struct RichNotesEditor: View {
     /// common "Return at the end of a line" flow moves the caret; text after a
     /// mid-line caret simply stays on the current item.
     private func continueList() -> KeyPress.Result {
-        guard case let .insertionPoint(caret) = selection.indices(in: text) else { return .ignored }
-        let caretOffset = text.characters.distance(from: text.startIndex, to: caret)
-        var document = NotesAttributedString.document(from: text)
-        let blockIndex = String(text.characters.prefix(caretOffset)).filter { $0 == "\n" }.count
-        guard document.blocks.indices.contains(blockIndex) else { return .ignored }
-        let kind = document.blocks[blockIndex].kind
-        guard kind == .bullet || kind == .numbered else { return .ignored }
-
-        let targetBlock: Int
-        if document.blocks[blockIndex].text.isEmpty {
-            document.blocks[blockIndex].kind = .paragraph   // empty item → end the list
-            targetBlock = blockIndex
-        } else {
-            document.blocks.insert(NotesBlock(kind: kind, runs: []), at: blockIndex + 1)
-            targetBlock = blockIndex + 1
-        }
-
-        text = NotesAttributedString.attributedString(from: document)
-        moveCaretToContentStart(ofBlock: targetBlock, in: document)
+        let range = nsRange(from: selection, in: text)
+        guard range.length == 0,
+              let result = NotesEditingEngine.continueList(in: document,
+                  caretOffsetInRendered: range.location, rendered: renderedDocument) else { return .ignored }
+        apply(result)
         return .handled
     }
 
-    /// Place the caret just after the marker of `document.blocks[index]`, computed
-    /// against the freshly-assigned `text` with fully-guarded indexing.
-    private func moveCaretToContentStart(ofBlock index: Int, in document: NotesDocument) {
-        let lines = String(text.characters).components(separatedBy: "\n")
-        guard index < lines.count, document.blocks.indices.contains(index) else {
-            selection = AttributedTextSelection(insertionPoint: text.endIndex)
+    private func adjustIndent(outdent: Bool) -> KeyPress.Result {
+        let range = nsRange(from: selection, in: text)
+        // Consume Tab within the notes body (never a stray tab char or focus jump).
+        // Tab indents/nests a list item (or promotes a paragraph to a bullet);
+        // Shift-Tab outdents; both are no-ops the engine leaves unchanged elsewhere.
+        guard let index = NotesEditingEngine.blockIndex(atUTF16Offset: range.location, in: text),
+              document.blocks.indices.contains(index) else { return .ignored }
+        let result = outdent
+            ? NotesEditingEngine.outdentBlocks(in: document, selection: range)
+            : NotesEditingEngine.indentBlocks(in: document, selection: range)
+        apply(result)
+        return .handled
+    }
+
+    private func nsRange(from selection: AttributedTextSelection, in attributed: AttributedString) -> NSRange {
+        switch selection.indices(in: attributed) {
+        case let .insertionPoint(index):
+            return NSRange(location: String(attributed.characters[..<index]).utf16.count, length: 0)
+        case let .ranges(ranges):
+            guard let first = ranges.ranges.first, let last = ranges.ranges.last else {
+                return NSRange(location: 0, length: 0)
+            }
+            let location = String(attributed.characters[..<first.lowerBound]).utf16.count
+            let end = String(attributed.characters[..<last.upperBound]).utf16.count
+            return NSRange(location: location, length: end - location)
+        }
+    }
+
+    private func apply(_ result: NotesEditingResult) {
+        text = NotesEditingEngine.render(result.document)
+        let ns = String(text.characters) as NSString
+        let location = min(max(0, result.selection.location), ns.length)
+        let plain = String(text.characters)
+        let stringIndex = String.Index(utf16Offset: location, in: plain)
+        guard let index = AttributedString.Index(stringIndex, within: text) else { return }
+        let endLocation = min(location + result.selection.length, ns.length)
+        guard endLocation > location else {
+            selection = AttributedTextSelection(insertionPoint: index)
             return
         }
-        var offset = 0
-        for i in 0..<index { offset += lines[i].count + 1 }   // +1 for each joining newline
-        offset += max(0, lines[index].count - document.blocks[index].text.count) // skip the marker
-        offset = min(max(0, offset), text.characters.count)
-        let caret = text.characters.index(text.startIndex, offsetBy: offset)
-        selection = AttributedTextSelection(insertionPoint: caret)
+        let endStringIndex = String.Index(utf16Offset: endLocation, in: plain)
+        guard let endIndex = AttributedString.Index(endStringIndex, within: text) else { return }
+        selection = AttributedTextSelection(range: index..<endIndex)
     }
 
     private func isFormatActive(_ title: String) -> Bool {
@@ -156,12 +157,4 @@ struct RichNotesEditor: View {
         }
     }
 
-    /// A body font with the requested combination of bold/italic traits, so
-    /// toggling one style never drops the other from the on-screen font.
-    private static func font(bold: Bool, italic: Bool) -> Font {
-        var font = Font.body
-        if bold { font = font.bold() }
-        if italic { font = font.italic() }
-        return font
-    }
 }

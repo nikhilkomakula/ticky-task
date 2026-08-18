@@ -126,7 +126,68 @@ struct RichNotesTests {
         #expect(decoded.blocks[0].kind == .checkbox)
         let rendered = NotesAttributedString.attributedString(from: decoded)
         let reparsed = NotesAttributedString.document(from: rendered)
-        #expect(reparsed.blocks[0].kind == .bullet)
+        #expect(reparsed.blocks[0].kind == .checkbox)
         #expect(reparsed.blocks[0].text == "legacy")
+    }
+
+    @Test("Bold and italic combine without dropping either trait")
+    func inlineBoldItalicCombination() {
+        let doc = NotesDocument(blocks: [NotesBlock(runs: [NotesRun(text: "both", bold: true, italic: true)])])
+        let back = NotesAttributedString.document(from: NotesAttributedString.attributedString(from: doc))
+        #expect(back.blocks[0].runs[0].bold && back.blocks[0].runs[0].italic)
+    }
+
+    @Test("Formatting a cross-run selection preserves the text")
+    func crossRunSelectionFormatting() {
+        let doc = NotesDocument(blocks: [NotesBlock(runs: [NotesRun(text: "ab"), NotesRun(text: "cd", italic: true)])])
+        let result = NotesEditingEngine.toggleInlineFormat(.bold, in: doc, selection: NSRange(location: 1, length: 2))
+        #expect(result.document.plainText == "abcd")
+        #expect(result.document.blocks[0].runs.filter(\.bold).map(\.text).joined() == "bc")
+    }
+
+    @Test("Link scheme allowlist rejects non-web schemes")
+    func linkSchemeAllowlist() {
+        #expect(NotesEditingEngine.validateWebURL("file:///tmp/a") == nil)
+        #expect(NotesEditingEngine.validateWebURL("javascript:alert(1)") == nil)
+        #expect(NotesEditingEngine.validateWebURL("mailto:a@example.com") == nil)
+    }
+
+    @Test("Numbered lists renumber after an item is deleted")
+    func numberedListRenumberAfterDelete() {
+        var doc = NotesDocument(blocks: (1...3).map { NotesBlock(kind: .numbered, runs: [NotesRun(text: "item\($0)")]) })
+        doc.blocks.remove(at: 1)
+        #expect(String(NotesAttributedString.attributedString(from: doc).characters) == "1. item1\n2. item3")
+    }
+
+    @Test("A paragraph boundary restarts numbered ordinals")
+    func paragraphBoundaryRestartsNumberedOrdinals() {
+        let doc = NotesDocument(blocks: [
+            NotesBlock(kind: .numbered, runs: [NotesRun(text: "one")]),
+            NotesBlock(runs: [NotesRun(text: "break")]),
+            NotesBlock(kind: .numbered, runs: [NotesRun(text: "again")])
+        ])
+        #expect(String(NotesAttributedString.attributedString(from: doc).characters) == "1. one\nbreak\n1. again")
+    }
+
+    @Test("Markdown checkbox state is retained on bullet blocks")
+    func markdownCheckboxImport() {
+        let doc = NotesCodec.document(fromMarkdown: "- [ ] open\n- [x] done")
+        #expect(doc.blocks.map(\.kind) == [.bullet, .bullet])
+        #expect(doc.blocks.map(\.checked) == [false, true])
+    }
+
+    @Test("Whitespace-only notes survive rich persistence")
+    func whitespaceOnlyPersistence() throws {
+        let doc = NotesDocument(blocks: [NotesBlock(runs: [NotesRun(text: "   ")])])
+        #expect(try NotesCodec.decode(NotesCodec.encode(doc)) == doc)
+    }
+
+    @Test("Resolving notes for display does not mutate updatedAt")
+    func noEditGuard() {
+        let task = TaskItem(title: "No edit", dayKey: "20260818")
+        let original = Date(timeIntervalSince1970: 1234)
+        task.updatedAt = original
+        _ = NotesAttributedString.attributedString(from: NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes))
+        #expect(task.updatedAt == original)
     }
 }
