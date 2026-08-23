@@ -60,4 +60,28 @@ struct BehaviorTests {
         #expect(tasks.first { $0.title == "old-open" }?.dayKey == "20260814")
         #expect(tasks.first { $0.title == "old-done" }?.dayKey == "20260101")
     }
+
+    @Test("Carry-forward lands tasks after today's, oldest past day first")
+    func carryForwardOrder() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        // An existing today task seeds the starting sortIndex; two past days.
+        let today = try service.addTask(title: "today", location: .day("20260814"))
+        today.sortIndex = 10
+        _ = try service.addTask(title: "newer-past", location: .day("20260813"))
+        _ = try service.addTask(title: "older-past", location: .day("20260101"))
+        try service.save()
+
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        #expect(moved == 2)
+
+        let tasks = try context.fetch(FetchDescriptor<TaskItem>())
+        let older = tasks.first { $0.title == "older-past" }
+        let newer = tasks.first { $0.title == "newer-past" }
+        #expect(older?.dayKey == "20260814")
+        #expect(newer?.dayKey == "20260814")
+        // Both land after today's existing task (sortIndex 10), oldest day first.
+        #expect((older?.sortIndex ?? 0) > 10)
+        #expect((older?.sortIndex ?? 0) < (newer?.sortIndex ?? 0))
+    }
 }

@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
 
-> **v0.1.11** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.12** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.11-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.12-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -22,9 +22,9 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 - **Week view** (the default) — configurable 1–12 day columns, Monday/Sunday start, an optional **show weekends** toggle (off by default, so weekends are hidden and the columns show only weekdays — **Settings › Appearance**), and previous/next/today navigation.
 - **Month view** — a calendar grid showing every day's tasks, with a selected-day agenda panel; toggle between **Week** and **Month**.
 - **Task editor** — title (grows to fit long titles that wrap to multiple lines), **rich-text notes** with a formatting toolbar and keyboard shortcuts — **⌘B / ⌘I / ⌘U** for bold / italic / underline, plus strikethrough, links, and **bulleted & numbered lists that continue on Enter and nest with Tab / Shift-Tab (sub-lists)** — optional time (off by default), **priority** (Low/Medium/High) that color-codes the task (green → orange → red), an optional **Critical** flag (off by default) that adds a red flag *before* the priority — independent of the priority level — and **subtasks** (a per-task checklist).
-- **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split.
+- **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split. Add a list with **+ Add list**, rename it inline, and delete it from the **⋯ menu** in its header (or right-click) — confirmed first, since deleting a list also removes its tasks.
 - **Drag & drop** — smooth, cursor-tracking reordering: drag a task to reorder it within a day or list, or move it **across days and across lists**, in the **Week** and **Month** views *and* the menu-bar popover — a lifted preview follows the cursor and an accent line shows exactly where it will land. Drop a task onto any day in the calendar grid (or the menu-bar mini-calendar) to move it there, and reorder the custom-list cards by dragging a card's grip handle.
-- **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, automatically carry unfinished tasks forward to today, and optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
+- **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, **automatically carry unfinished tasks forward to today** (on by default — runs when the app opens, becomes active, or the day rolls over while it's left open; completed and recurring tasks stay put), and optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
 - **Menu-bar app** — a **configurable** menu-bar icon (pick from several in **Settings › Appearance**; defaults to a calendar-with-checkmark) opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today**, with a **Today** button to jump back after browsing other months, and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TickyTask, capture a new task for today, and **toggle the menu-bar popover** — from any app (**Settings › Shortcuts**).
@@ -103,7 +103,7 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
 
 ```bash
-git tag v0.1.11 && git push origin v0.1.11   # → CI builds the DMG and creates the release
+git tag v0.1.12 && git push origin v0.1.12   # → CI builds the DMG and creates the release
 ```
 
 ## Roadmap

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import Combine
 
 /// Root content: a single top toolbar (centered ‹ Today › nav + the current
 /// week/month label, with the Week/Month switcher far-right) above the selected
@@ -11,7 +12,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
     @AppStorage("appTheme") private var appTheme = "system"
-    @AppStorage("autoCarryForward") private var autoCarryForward = false
+    @AppStorage("autoCarryForward") private var autoCarryForward = true
     @AppStorage("endOfDayReminderEnabled") private var endOfDayEnabled = false
     @AppStorage("endOfDayReminderMinutes") private var endOfDayMinutes = 18 * 60
     @AppStorage("menuBarOnly") private var menuBarOnly = false
@@ -24,6 +25,11 @@ struct ContentView: View {
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
     @State private var dragController = DragController()
+
+    /// The day key carry-forward last ran for. Lets a day rolling over while the
+    /// app stays open (past midnight, without a relaunch or refocus) still trigger
+    /// carry-forward via the minute timer below.
+    @State private var lastCarryDayKey = WeekMath.dayKey(for: Date())
 
     var body: some View {
         @Bindable var app = app
@@ -58,6 +64,15 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await runLaunchTasks() } }
         }
+        // Enabling the setting mid-session should catch up the current day at once.
+        .onChange(of: autoCarryForward) { _, isOn in
+            if isOn { runCarryForward() }
+        }
+        // Catch the date rolling over while the app is left open, so unfinished
+        // tasks still carry forward at midnight without a relaunch or refocus.
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            carryForwardIfDayChanged()
+        }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
     }
 
@@ -89,14 +104,36 @@ struct ContentView: View {
         } else {
             SampleData.seedIfEmpty(context)
         }
-        if autoCarryForward {
-            try? BehaviorService.carryForwardIncomplete(context: context)
-        }
+        runCarryForward()
         AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes)
         await maybeCheckForUpdates()
+    }
+
+    /// Carry unfinished past-day tasks onto today when enabled, recording the day
+    /// it ran for. Errors are logged rather than silently discarded.
+    @MainActor
+    private func runCarryForward() {
+        guard autoCarryForward else { return }
+        let todayKey = WeekMath.dayKey(for: Date())
+        do {
+            try BehaviorService.carryForwardIncomplete(context: context, todayKey: todayKey)
+            // Advance only after a successful run, so a transient fetch/save error
+            // is retried on the next timer tick or launch rather than skipped.
+            lastCarryDayKey = todayKey
+        } catch {
+            NSLog("TickyTask: carry-forward failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Timer-driven: when the calendar day advances while the app stays open,
+    /// run carry-forward for the new day (idempotent; a no-op when disabled).
+    @MainActor
+    private func carryForwardIfDayChanged() {
+        guard autoCarryForward, WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
+        runCarryForward()
     }
 
     /// Automatic update check, at most once per day, feeding Settings › General.

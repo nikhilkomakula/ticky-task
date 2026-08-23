@@ -11,6 +11,7 @@ struct CustomListColumn: View {
     var onEditTask: (TaskItem) -> Void
 
     @State private var newTitle = ""
+    @State private var confirmingDelete = false
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
 
@@ -32,6 +33,21 @@ struct CustomListColumn: View {
                     .font(.system(size: 13, weight: .semibold))
                     .textFieldStyle(.plain)
                     .onSubmit { try? context.save() }
+                Menu {
+                    Button("Delete List", role: .destructive) { confirmingDelete = true }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("List options")
+                .accessibilityIdentifier("list-menu")
             }
             .frame(minHeight: 30)
 
@@ -63,8 +79,25 @@ struct CustomListColumn: View {
         .publishContainerFrame(.list(list.id), accepts: .task, axis: .vertical, isEmpty: sortedTasks.isEmpty)
         .reorderableListCard(id: list.id, controller: drag)
         .contextMenu {
-            Button("Delete List", role: .destructive) { deleteList() }
+            Button("Delete List", role: .destructive) { confirmingDelete = true }
         }
+        .confirmationDialog(deleteConfirmTitle, isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button(deleteConfirmButton, role: .destructive) { deleteList() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can’t be undone.")
+        }
+    }
+
+    private var deleteConfirmTitle: String {
+        let name = list.name.trimmingCharacters(in: .whitespaces)
+        return "Delete “\(name.isEmpty ? "Untitled List" : name)”?"
+    }
+
+    private var deleteConfirmButton: String {
+        let count = list.tasks.count
+        guard count > 0 else { return "Delete List" }
+        return "Delete List and \(count) Task\(count == 1 ? "" : "s")"
     }
 
     /// Center + flash a searched-for task if it lives in this list.

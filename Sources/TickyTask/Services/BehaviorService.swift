@@ -49,11 +49,20 @@ enum BehaviorService {
     static func carryForwardIncomplete(context: ModelContext,
                                        todayKey: String = WeekMath.dayKey(for: Date())) throws -> Int {
         let all = try context.fetch(FetchDescriptor<TaskItem>())
+        // Carry past-day tasks in a stable, chronological order (oldest day first,
+        // then their in-day order) so multiple carried tasks don't land under today
+        // in an arbitrary fetch order.
+        let ordered = all.sorted { lhs, rhs in
+            let lk = lhs.dayKey ?? "", rk = rhs.dayKey ?? ""
+            if lk != rk { return lk < rk }
+            if lhs.sortIndex != rhs.sortIndex { return lhs.sortIndex < rhs.sortIndex }
+            return lhs.id.uuidString < rhs.id.uuidString   // stable, total order on ties
+        }
         // Place carried-forward tasks after today's existing tasks so manual
         // ordering stays unambiguous (no sortIndex collisions).
         var nextIndex = all.filter { $0.dayKey == todayKey }.map(\.sortIndex).max() ?? 0
         var moved = 0
-        for task in all {
+        for task in ordered {
             guard let key = task.dayKey,
                   task.recurrence == nil,
                   !task.isDone,

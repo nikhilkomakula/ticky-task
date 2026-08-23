@@ -63,7 +63,7 @@ private struct AppearanceSettingsView: View {
 private struct BehaviorSettingsView: View {
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
-    @AppStorage("autoCarryForward") private var autoCarryForward = false
+    @AppStorage("autoCarryForward") private var autoCarryForward = true
     @AppStorage("autoDeleteCompletedEnabled") private var autoDeleteEnabled = false
     @AppStorage("autoDeleteCompletedDays") private var autoDeleteDays = 7
 
@@ -74,7 +74,7 @@ private struct BehaviorSettingsView: View {
             }
             Toggle("Move completed tasks to the bottom", isOn: $moveCompletedToBottom)
             Toggle("Automatically move unfinished tasks to today", isOn: $autoCarryForward)
-            Text("When the app opens, unfinished tasks from past days are carried forward to today.")
+            Text("On by default. Unfinished tasks from past days are carried forward to today when TickyTask opens, becomes active, or the day rolls over while it's open. Completed and recurring tasks stay put.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
