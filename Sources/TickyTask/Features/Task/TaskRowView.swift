@@ -11,6 +11,8 @@ struct TaskRowView: View {
     var onEdit: (() -> Void)? = nil
 
     @State private var isHovering = false
+    /// Shown when deleting a recurring task, to pick this occurrence vs the series.
+    @State private var isConfirmingDelete = false
 
     /// Flashed briefly when a search result jumps to this row.
     private var isHighlighted: Bool { app.highlightedTaskID == task.id }
@@ -44,6 +46,11 @@ struct TaskRowView: View {
                     Image(systemName: task.priorityLevel.symbol)
                         .foregroundStyle(task.priorityLevel.tint)
                         .accessibilityLabel("\(task.priorityLevel.label) priority")
+                    if task.isRecurring {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Repeats")
+                    }
                 }
                 .font(.system(size: 11))
 
@@ -109,8 +116,9 @@ struct TaskRowView: View {
                 HStack(spacing: 2) {
                     Button { onEdit?() } label: { Image(systemName: "pencil") }
                         .help("Edit task")
-                    Button(role: .destructive, action: delete) { Image(systemName: "trash") }
+                    Button(role: .destructive, action: requestDelete) { Image(systemName: "trash") }
                         .help("Delete task")
+                        .accessibilityIdentifier("row-delete")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -130,7 +138,15 @@ struct TaskRowView: View {
             Button(task.isDone ? "Mark as not done" : "Mark as done", action: toggleDone)
             if onEdit != nil { Button("Edit…") { onEdit?() } }
             Divider()
-            Button("Delete", role: .destructive, action: delete)
+            Button("Delete", role: .destructive, action: requestDelete)
+                .accessibilityIdentifier("context-delete")
+        }
+        .confirmationDialog("This task repeats.", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete This Occurrence", role: .destructive) { deleteThisOccurrence() }
+            Button("Delete the Whole Series", role: .destructive) { deleteSeries() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete just this day, or every occurrence of the series?")
         }
         .accessibilityIdentifier("taskRow-\(task.title.isEmpty ? "Untitled" : task.title)")
     }
@@ -141,9 +157,28 @@ struct TaskRowView: View {
         Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
     }
 
-    private func delete() {
-        context.delete(task)
-        try? context.save()
+    /// Recurring tasks ask this-occurrence vs whole-series; others delete at once.
+    private func requestDelete() {
+        if task.isRecurring {
+            isConfirmingDelete = true
+        } else {
+            context.delete(task)
+            try? context.save()
+            resyncReminders()
+        }
+    }
+
+    private func deleteThisOccurrence() {
+        try? RecurrenceMaterializer.deleteOccurrence(task, context: context)
+        resyncReminders()
+    }
+
+    private func deleteSeries() {
+        try? RecurrenceMaterializer.deleteSeries(task, context: context)
+        resyncReminders()
+    }
+
+    private func resyncReminders() {
         Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
     }
 

@@ -58,6 +58,43 @@ struct BackupTests {
                                            customLists: [], taskOccurrences: []))
     }
 
+    /// A plain day task with the given id, and an optional `templateId`, for
+    /// exercising referential-integrity validation.
+    private func plainTask(_ id: UUID, dayKey: String = "20260101",
+                           recurrence: RecurrenceRule? = nil, templateId: UUID? = nil) -> TaskItemDTO {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        return TaskItemDTO(id: id, title: "t", notes: "", isDone: false, dayKey: dayKey,
+                           customListId: nil, timeMinutes: nil, colorHex: nil, priority: 0,
+                           sortIndex: 1, alarmEnabled: false, createdAt: t0, updatedAt: t0,
+                           recurrence: recurrence, tagIds: [], templateId: templateId)
+    }
+
+    @Test("Validation rejects a task that references itself as its template")
+    func rejectsSelfTemplateReference() throws {
+        let id = UUID()
+        var store = emptyStore()
+        store.data.taskItems = [plainTask(id, templateId: id)]
+        #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
+    }
+
+    @Test("Validation rejects a templateId pointing to a non-recurring task")
+    func rejectsNonTemplateReference() throws {
+        let plainId = UUID(), childId = UUID()
+        var store = emptyStore()
+        store.data.taskItems = [plainTask(plainId), plainTask(childId, dayKey: "20260102", templateId: plainId)]
+        #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
+    }
+
+    @Test("Validation accepts an occurrence linked to a real recurring template")
+    func acceptsValidTemplateReference() throws {
+        let templateId = UUID(), childId = UUID()
+        let rule = RecurrenceRule(frequency: .daily, startDate: Date(timeIntervalSince1970: 1_700_000_000))
+        var store = emptyStore()
+        store.data.taskItems = [plainTask(templateId, recurrence: rule),
+                                plainTask(childId, dayKey: "20260102", templateId: templateId)]
+        try BackupValidator.validate(store)   // must not throw
+    }
+
     // MARK: Pure codec
 
     @Test("Plaintext round-trip preserves every field")
@@ -371,6 +408,41 @@ struct BackupRestoreTests {
         let data = try BackupService().makeFile(store: snapshot, passphrase: nil)
         let decoded = try BackupService().readFile(data, passphrase: nil)
         #expect(decoded.data == snapshot.data)
+    }
+
+    @Test("A materialized occurrence's templateID survives snapshot + restore")
+    func templateIdRoundTrip() throws {
+        let context = makeContext()
+        let template = TaskItem(title: "Standup", dayKey: "20260101")
+        template.recurrence = RecurrenceRule(frequency: .daily,
+                                             startDate: Date(timeIntervalSince1970: 1_700_000_000))
+        context.insert(template)
+        let occurrence = TaskItem(title: "Standup", dayKey: "20260102")
+        occurrence.templateID = template.id
+        context.insert(occurrence)
+        try context.save()
+
+        let snapshot = try BackupStore.makeSnapshot(context: context)
+        let fresh = makeContext()
+        try BackupStore.restore(snapshot, context: fresh)
+
+        let tasks = try fresh.fetch(FetchDescriptor<TaskItem>())
+        let restoredOccurrence = try #require(tasks.first { $0.templateID != nil })
+        #expect(restoredOccurrence.templateID == template.id)
+        #expect(tasks.contains { $0.id == template.id && $0.recurrence != nil })
+    }
+
+    @Test("Restore posts the store-restored signal so occurrences can regenerate")
+    func restorePostsRestoredNotification() throws {
+        let context = makeContext()
+        var received = false
+        let token = NotificationCenter.default.addObserver(
+            forName: .tickyTaskStoreRestored, object: nil, queue: nil
+        ) { _ in received = true }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        try BackupStore.restore(fixture(), context: context)
+        #expect(received)
     }
 
     @Test("Diff preview counts adds and removes")

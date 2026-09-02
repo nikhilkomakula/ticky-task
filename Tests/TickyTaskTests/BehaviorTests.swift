@@ -84,4 +84,27 @@ struct BehaviorTests {
         #expect((older?.sortIndex ?? 0) > 10)
         #expect((older?.sortIndex ?? 0) < (newer?.sortIndex ?? 0))
     }
+
+    @Test("Carry-forward leaves recurring templates and their occurrences in place")
+    func carryForwardSkipsRecurring() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        // A recurring template on a past day.
+        let template = try service.addTask(title: "template", location: .day("20260101"))
+        template.recurrence = RecurrenceRule(frequency: .daily, startDate: Date())
+        // A materialized occurrence on a past day (links back to the template).
+        let occurrence = try service.addTask(title: "occurrence", location: .day("20260102"))
+        occurrence.templateID = template.id
+        // A plain past task that SHOULD move.
+        _ = try service.addTask(title: "plain", location: .day("20260103"))
+        try service.save()
+
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        #expect(moved == 1)
+
+        let tasks = try context.fetch(FetchDescriptor<TaskItem>())
+        #expect(tasks.first { $0.title == "template" }?.dayKey == "20260101")
+        #expect(tasks.first { $0.title == "occurrence" }?.dayKey == "20260102")
+        #expect(tasks.first { $0.title == "plain" }?.dayKey == "20260814")
+    }
 }

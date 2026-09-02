@@ -46,8 +46,16 @@ final class TaskItem {
     var updatedAt: Date = Date()
 
     /// Recurrence rule for a repeating template; `nil` = one-off task. Stored as
-    /// a single Codable attribute — occurrences are computed by `RecurrenceEngine`.
+    /// a single Codable attribute — occurrences are materialized as child rows by
+    /// `RecurrenceMaterializer`.
     var recurrence: RecurrenceRule?
+
+    /// Links a materialized occurrence back to its recurring template's `id`.
+    /// `nil` for one-off tasks and for the template itself. Additive-optional so
+    /// older stores lightweight-migrate (read nil), same pattern as `completedAt`.
+    /// A scalar UUID (not a `@Relationship`) so series deletion is explicit and the
+    /// backup can rebuild the link from ids, matching the other projected relations.
+    var templateID: UUID?
 
     @Relationship(deleteRule: .cascade, inverse: \Subtask.parent)
     var subtasks: [Subtask] = []
@@ -97,6 +105,13 @@ extension TaskItem {
     }
 
     var isRecurringTemplate: Bool { recurrence != nil }
+
+    /// A row generated from a recurring template (not the template itself).
+    var isMaterializedOccurrence: Bool { templateID != nil }
+
+    /// Part of a recurring series — either the template or one of its occurrences.
+    /// Drives the row's repeat glyph and the series-aware delete prompt.
+    var isRecurring: Bool { recurrence != nil || templateID != nil }
 }
 
 extension TaskItem {

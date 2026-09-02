@@ -43,6 +43,8 @@ enum BehaviorService {
 
     /// Move non-recurring, unfinished tasks from past days onto today. Idempotent:
     /// once moved, a task's `dayKey` equals today's, so re-running is a no-op.
+    /// Recurring templates *and* their materialized occurrences are left in place —
+    /// a missed recurring instance stays on its day; a fresh one appears next period.
     /// Returns the number of tasks moved.
     @MainActor
     @discardableResult
@@ -65,6 +67,7 @@ enum BehaviorService {
         for task in ordered {
             guard let key = task.dayKey,
                   task.recurrence == nil,
+                  task.templateID == nil,
                   !task.isDone,
                   key < todayKey else { continue }
             nextIndex += 1

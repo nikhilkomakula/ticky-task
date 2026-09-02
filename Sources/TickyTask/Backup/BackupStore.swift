@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+extension Notification.Name {
+    /// Posted after a backup restore replaces the entire store, so views can reset
+    /// session-scoped caches (e.g. the recurrence materialization horizon) and
+    /// regenerate derived rows.
+    static let tickyTaskStoreRestored = Notification.Name("TickyTaskStoreRestored")
+}
+
 /// Per-entity add/update/remove counts for the restore preview.
 struct EntityDiff: Equatable, Sendable {
     let added: Int
@@ -95,6 +102,10 @@ enum BackupStore {
             context.rollback()
             throw error
         }
+        // The store was replaced wholesale — tell the app so it can regenerate any
+        // recurring occurrences now due (the running session's materialization
+        // horizon may otherwise suppress them until a relaunch or navigation).
+        NotificationCenter.default.post(name: .tickyTaskStoreRestored, object: nil)
         // Apply the backed-up preferences once the data restore has succeeded.
         store.settings?.apply()
         // Settings live in UserDefaults; reschedule the end-of-day reminder now so
@@ -148,6 +159,7 @@ enum BackupStore {
             task.isDone = dto.isDone
             task.isCritical = dto.needsImmediateAttention ?? false
             task.completedAt = dto.completedAt
+            task.templateID = dto.templateId
             task.createdAt = dto.createdAt
             task.updatedAt = dto.updatedAt
             task.tags = dto.tagIds.compactMap { tagMap[$0] }

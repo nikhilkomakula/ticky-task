@@ -111,6 +111,9 @@ struct TaskItemDTO: Codable, Equatable, Sendable {
     /// Encoded rich notes (`NotesDocument` JSON as Data). Optional so older backups
     /// that omit the key decode to nil; the plain-text `notes` key is unchanged.
     var notesRich: Data? = nil
+    /// Links a materialized occurrence back to its recurring template's id (`nil`
+    /// for one-off tasks and templates). Optional new key so older backups decode.
+    var templateId: UUID? = nil
 }
 
 struct SubtaskDTO: Codable, Equatable, Sendable {
@@ -229,7 +232,8 @@ extension TaskItemDTO {
             tagIds: task.tags.map(\.id).sorted { $0.uuidString < $1.uuidString },
             needsImmediateAttention: task.isCritical,
             completedAt: task.completedAt,
-            notesRich: task.notesRich
+            notesRich: task.notesRich,
+            templateId: task.templateID
         )
     }
 }

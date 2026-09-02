@@ -5,7 +5,7 @@ import Foundation
 /// The raw values map 1:1 to the 7 legacy WeekToDo recurrence "type" integers
 /// (see the Electron app's `repeatingEvent.vue`) so imported data round-trips
 /// exactly.
-enum RecurrenceFrequency: Int, Codable, CaseIterable, Sendable {
+enum RecurrenceFrequency: Int, Codable, CaseIterable, Identifiable, Sendable {
     case yearly = 0
     case monthly = 1
     case weekly = 2
@@ -13,6 +13,8 @@ enum RecurrenceFrequency: Int, Codable, CaseIterable, Sendable {
     case weekdays = 4          // Monday–Friday
     case customWeekdays = 5    // user-selected weekdays
     case daysOfMonth = 6       // specific day numbers, e.g. the 1st & 15th
+
+    var id: Int { rawValue }
 }
 
 /// When a recurrence stops repeating.

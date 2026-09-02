@@ -31,6 +31,11 @@ struct ContentView: View {
     /// carry-forward via the minute timer below.
     @State private var lastCarryDayKey = WeekMath.dayKey(for: Date())
 
+    /// The furthest day key recurring occurrences have been materialized through
+    /// this session. Navigating forward extends it; it guards against re-scanning
+    /// templates on every week/month step (materialize itself is idempotent).
+    @State private var materializedThroughKey = ""
+
     var body: some View {
         @Bindable var app = app
         ZStack {
@@ -68,8 +73,19 @@ struct ContentView: View {
         .onChange(of: autoCarryForward) { _, isOn in
             if isOn { runCarryForward() }
         }
+        // Generate upcoming occurrences when navigating toward/into a future range
+        // so a recurring task shows on every due day the user scrolls to.
+        .onChange(of: app.weekAnchor) { _, _ in runMaterialize(through: navigationHorizon) }
+        // A restore replaced the whole store: reset the session horizon and
+        // regenerate, so restored recurring templates show occurrences at once.
+        .onReceive(NotificationCenter.default.publisher(for: .tickyTaskStoreRestored)) { _ in
+            materializedThroughKey = ""
+            runMaterialize(through: defaultHorizon)
+            runCarryForward()
+        }
         // Catch the date rolling over while the app is left open, so unfinished
-        // tasks still carry forward at midnight without a relaunch or refocus.
+        // tasks still carry forward — and new occurrences appear — at midnight
+        // without a relaunch or refocus.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             carryForwardIfDayChanged()
         }
@@ -104,6 +120,7 @@ struct ContentView: View {
         } else {
             SampleData.seedIfEmpty(context)
         }
+        runMaterialize(through: defaultHorizon)   // before carry-forward + reminders so they see occurrences
         runCarryForward()
         AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
         LoginItemService.applyFirstRunDefaultIfNeeded()
@@ -129,11 +146,39 @@ struct ContentView: View {
     }
 
     /// Timer-driven: when the calendar day advances while the app stays open,
-    /// run carry-forward for the new day (idempotent; a no-op when disabled).
+    /// slide the occurrence window forward and run carry-forward for the new day
+    /// (both idempotent; carry-forward is a no-op when disabled).
     @MainActor
     private func carryForwardIfDayChanged() {
-        guard autoCarryForward, WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
+        guard WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
+        runMaterialize(through: defaultHorizon)
         runCarryForward()
+    }
+
+    /// The default rolling horizon: today plus the materializer's look-ahead window.
+    private var defaultHorizon: Date {
+        Calendar.current.date(byAdding: .day, value: RecurrenceMaterializer.defaultHorizonDays, to: Date()) ?? Date()
+    }
+
+    /// A horizon that comfortably covers the currently navigated range (a week or a
+    /// full month grid is at most ~42 days from the anchor).
+    private var navigationHorizon: Date {
+        Calendar.current.date(byAdding: .day, value: 45, to: app.weekAnchor) ?? app.weekAnchor
+    }
+
+    /// Materialize recurring occurrences through `horizon`, advancing only when it
+    /// extends past what this session already generated. Errors are logged, not
+    /// thrown, so a transient failure never blocks the UI.
+    @MainActor
+    private func runMaterialize(through horizon: Date) {
+        let key = WeekMath.dayKey(for: horizon)
+        guard key > materializedThroughKey else { return }
+        do {
+            try RecurrenceMaterializer.materialize(context: context, through: horizon)
+            materializedThroughKey = key
+        } catch {
+            NSLog("TickyTask: recurrence materialize failed: \(error.localizedDescription)")
+        }
     }
 
     /// Automatic update check, at most once per day, feeding Settings › General.

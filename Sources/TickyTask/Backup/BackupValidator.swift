@@ -23,6 +23,9 @@ enum BackupValidator {
         let taskIds = Set(data.taskItems.map(\.id))
         let listIds = Set(data.customLists.map(\.id))
         let tagIds = Set(data.taskTags.map(\.id))
+        // A materialized occurrence's `templateId` must point to a real recurring
+        // template (a task carrying a rule) — never itself or a plain task.
+        let templateIds = Set(data.taskItems.filter { $0.recurrence != nil }.map(\.id))
 
         for task in data.taskItems {
             guard task.dayKey == nil || task.customListId == nil else {
@@ -47,6 +50,17 @@ enum BackupValidator {
             }
             for tagId in task.tagIds where !tagIds.contains(tagId) {
                 throw BackupError.invalidReference(entity: "TaskTag", id: tagId)
+            }
+            if let templateId = task.templateId {
+                guard templateId != task.id else {
+                    throw BackupError.validationFailed(reason: "Task \(task.id) references itself as its template")
+                }
+                guard taskIds.contains(templateId) else {
+                    throw BackupError.invalidReference(entity: "TaskItem", id: templateId)
+                }
+                guard templateIds.contains(templateId) else {
+                    throw BackupError.validationFailed(reason: "Task \(task.id)'s template \(templateId) is not a recurring template")
+                }
             }
             if let rule = task.recurrence {
                 guard rule.interval >= 1,
