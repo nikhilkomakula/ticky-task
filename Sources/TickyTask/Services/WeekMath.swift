@@ -24,6 +24,15 @@ enum WeekMath {
         return calendar.date(from: comps)
     }
 
+    /// Whether `date` is Saturday or Sunday in `calendar`'s time zone. This is
+    /// intentionally independent of the calendar locale: TickyTask's weekend
+    /// setting always means the two named weekend columns, even in regions where
+    /// Foundation's localized weekend is Friday/Saturday or Sunday-only.
+    static func isSaturdayOrSunday(_ date: Date, calendar: Calendar = .current) -> Bool {
+        let weekday = calendar.component(.weekday, from: date)
+        return weekday == 1 || weekday == 7
+    }
+
     /// Start-of-week (at start of day) containing `date`, honoring the user's
     /// week-start preference (Monday vs Sunday).
     static func startOfWeek(containing date: Date,

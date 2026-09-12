@@ -93,7 +93,10 @@ enum RecurrenceEngine {
 
         case .weekdays:   // Mon–Fri, every week; interval is not meaningful here.
             guard let date = calendar.date(byAdding: .day, value: period, to: anchor) else { return nil }
-            return Period(reference: date, dates: calendar.isDateInWeekend(date) ? [] : [date])
+            return Period(
+                reference: date,
+                dates: WeekMath.isSaturdayOrSunday(date, calendar: calendar) ? [] : [date]
+            )
 
         case .weekly, .customWeekdays:
             // Both walk week-blocks; plain weekly is the single-weekday case.

@@ -97,19 +97,19 @@ final class AppState {
         beginHighlight(task.id)
     }
 
-    /// Whether `date` falls within the week view's configured columns (which may
-    /// be fewer than 7, so weekend days can be off-screen at narrower widths). A
-    /// weekend day is never "visible" here when weekends are hidden, so search
-    /// reveal falls back to the month view (whose agenda shows any day).
+    /// Whether `date` falls among the week view's actual columns for the current
+    /// settings (fewer than 7 when weekends are hidden, so a weekend day is
+    /// off-screen). Derived from the same `weekDays` the grid renders, so search
+    /// reveal falls back to the month view exactly when the day isn't a column.
+    /// Assumes `weekAnchor` is already the week containing `date` (reveal sets it).
     private func isDayVisibleInWeek(_ date: Date) -> Bool {
         let defaults = UserDefaults.standard
         let columns = max(1, min(12, defaults.object(forKey: "calendarColumns") as? Int ?? 5))
         let mondayStart = defaults.object(forKey: "weekStartsMonday") as? Bool ?? true
         let showWeekends = defaults.object(forKey: "showWeekends") as? Bool ?? false
-        if !showWeekends && calendar.isDateInWeekend(date) { return false }
-        let start = WeekMath.startOfWeek(containing: date, weekStartsMonday: mondayStart, calendar: calendar)
-        let offset = calendar.dateComponents([.day], from: start, to: calendar.startOfDay(for: date)).day ?? 0
-        return (0..<columns).contains(offset)
+        let key = WeekMath.dayKey(for: date, calendar: calendar)
+        return weekDays(columns: columns, weekStartsMonday: mondayStart, showWeekends: showWeekends)
+            .contains { WeekMath.dayKey(for: $0, calendar: calendar) == key }
     }
 
     /// Flash the highlight for ~2s, using a generation token so a newer reveal's
@@ -124,27 +124,35 @@ final class AppState {
         }
     }
 
-    /// The days to render as columns in the week view. When `showWeekends` is
-    /// false, Saturday/Sunday are dropped from the generated window (so a 7-column
-    /// week shows Mon–Fri), keeping the planner focused on workdays by default.
+    /// The days to render as columns in the week view.
+    ///
+    /// - `showWeekends == true`: the **full 7-day week** (Sat & Sun included), so
+    ///   the toggle visibly reveals the weekend regardless of `columns`.
+    /// - `showWeekends == false`: `columns` **weekday** columns only, skipping
+    ///   Sat/Sun (spilling into the next week's weekdays for wider counts, so the
+    ///   visible count stays stable and is never empty). This keeps the planner
+    ///   focused on workdays by default; `columns` sizes how many weekdays show.
     func weekDays(columns: Int, weekStartsMonday: Bool, showWeekends: Bool = true) -> [Date] {
         let start = WeekMath.startOfWeek(
             containing: weekAnchor, weekStartsMonday: weekStartsMonday, calendar: calendar
         )
-        guard !showWeekends else {
-            return WeekMath.weekDates(startingFrom: start, count: columns, calendar: calendar)
+        if showWeekends {
+            return WeekMath.weekDates(startingFrom: start, count: 7, calendar: calendar)
         }
-        // Hiding weekends: walk forward from the week start collecting `columns`
-        // weekdays, skipping Sat/Sun — so the visible count stays stable and is
-        // never empty (a plain filter of a fixed window could yield zero columns
-        // for some week-start / column combinations).
         var days: [Date] = []
         var cursor = calendar.startOfDay(for: start)
         while days.count < columns {
-            if !calendar.isDateInWeekend(cursor) { days.append(cursor) }
+            if !WeekMath.isSaturdayOrSunday(cursor, calendar: calendar) { days.append(cursor) }
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
         }
         return days
+    }
+
+    /// How many day columns the week view actually shows for the given settings:
+    /// the full week (7) when weekends are shown, otherwise the weekday count. The
+    /// custom-lists row uses this to size its cards to line up under the columns.
+    static func visibleColumnCount(columns: Int, showWeekends: Bool) -> Int {
+        showWeekends ? 7 : max(1, min(12, columns))
     }
 }

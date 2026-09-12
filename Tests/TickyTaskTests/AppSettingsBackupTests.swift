@@ -13,6 +13,7 @@ struct AppSettingsBackupTests {
         let d = suite()
         d.set("dark", forKey: "appTheme")
         d.set(3, forKey: "calendarColumns")
+        d.set(true, forKey: "showWeekends")
         d.set(true, forKey: "autoDeleteCompletedEnabled")
         d.set(14, forKey: "autoDeleteCompletedDays")
 
@@ -20,6 +21,7 @@ struct AppSettingsBackupTests {
 
         #expect(dto.appTheme == "dark")
         #expect(dto.calendarColumns == 3)
+        #expect(dto.showWeekends == true)
         #expect(dto.autoDeleteCompletedEnabled == true)
         #expect(dto.autoDeleteCompletedDays == 14)
         #expect(dto.weekStartsMonday == nil)   // never set → omitted from the backup
@@ -29,6 +31,7 @@ struct AppSettingsBackupTests {
     func applyReproducesBackup() {
         let d = suite()
         d.set(false, forKey: "weekStartsMonday")   // an explicit value on the target
+        d.set(true, forKey: "showWeekends")
 
         var dto = AppSettingsDTO()
         dto.appTheme = "light"
@@ -40,12 +43,14 @@ struct AppSettingsBackupTests {
         // weekStartsMonday wasn't in the backup → reset (removed) so the destination
         // reproduces the source's effective settings, not a stale local override.
         #expect(d.object(forKey: "weekStartsMonday") == nil)
+        #expect(d.object(forKey: "showWeekends") == nil)
     }
 
     @Test("Settings survive a plaintext backup round-trip")
     func roundTripsThroughBackup() throws {
         var settings = AppSettingsDTO()
         settings.appTheme = "dark"
+        settings.showWeekends = true
         settings.autoDeleteCompletedDays = 30
         settings.menuBarOnly = true
         let store = BackupStoreDTO(
@@ -58,6 +63,7 @@ struct AppSettingsBackupTests {
         let service = BackupService()
         let decoded = try service.readFile(service.makeFile(store: store, passphrase: nil), passphrase: nil)
         #expect(decoded.settings?.appTheme == "dark")
+        #expect(decoded.settings?.showWeekends == true)
         #expect(decoded.settings?.autoDeleteCompletedDays == 30)
         #expect(decoded.settings?.menuBarOnly == true)
     }

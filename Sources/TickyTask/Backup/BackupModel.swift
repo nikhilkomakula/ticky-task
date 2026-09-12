@@ -155,6 +155,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     var appTheme: String? = nil
     var calendarColumns: Int? = nil
     var weekStartsMonday: Bool? = nil
+    var showWeekends: Bool? = nil
     var compactView: Bool? = nil
     var taskSortMode: String? = nil
     var moveCompletedToBottom: Bool? = nil
@@ -173,6 +174,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             appTheme: d.string(forKey: "appTheme"),
             calendarColumns: d.object(forKey: "calendarColumns") as? Int,
             weekStartsMonday: d.object(forKey: "weekStartsMonday") as? Bool,
+            showWeekends: d.object(forKey: "showWeekends") as? Bool,
             compactView: d.object(forKey: "compactView") as? Bool,
             taskSortMode: d.string(forKey: "taskSortMode"),
             moveCompletedToBottom: d.object(forKey: "moveCompletedToBottom") as? Bool,
@@ -190,7 +192,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     /// the destination reproduces the source's *effective* settings (a key the
     /// source left at its default clears any explicit value here, back to default).
     static let portableKeys = [
-        "appTheme", "calendarColumns", "weekStartsMonday", "compactView",
+        "appTheme", "calendarColumns", "weekStartsMonday", "showWeekends", "compactView",
         "taskSortMode", "moveCompletedToBottom", "autoCarryForward",
         "autoDeleteCompletedEnabled", "autoDeleteCompletedDays",
         "endOfDayReminderEnabled", "endOfDayReminderMinutes",
@@ -205,6 +207,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = appTheme { d.set(v, forKey: "appTheme") }
         if let v = calendarColumns { d.set(v, forKey: "calendarColumns") }
         if let v = weekStartsMonday { d.set(v, forKey: "weekStartsMonday") }
+        if let v = showWeekends { d.set(v, forKey: "showWeekends") }
         if let v = compactView { d.set(v, forKey: "compactView") }
         if let v = taskSortMode { d.set(v, forKey: "taskSortMode") }
         if let v = moveCompletedToBottom { d.set(v, forKey: "moveCompletedToBottom") }

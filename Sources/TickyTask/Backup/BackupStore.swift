@@ -102,12 +102,13 @@ enum BackupStore {
             context.rollback()
             throw error
         }
+        // Apply preferences before notifying the app: the restore handler runs
+        // behaviors such as carry-forward, which must use the restored settings.
+        store.settings?.apply()
         // The store was replaced wholesale — tell the app so it can regenerate any
         // recurring occurrences now due (the running session's materialization
         // horizon may otherwise suppress them until a relaunch or navigation).
         NotificationCenter.default.post(name: .tickyTaskStoreRestored, object: nil)
-        // Apply the backed-up preferences once the data restore has succeeded.
-        store.settings?.apply()
         // Settings live in UserDefaults; reschedule the end-of-day reminder now so
         // notification behavior matches the restored settings without a relaunch.
         let defaults = UserDefaults.standard

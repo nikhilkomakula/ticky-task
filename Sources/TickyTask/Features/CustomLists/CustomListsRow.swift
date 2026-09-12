@@ -9,6 +9,7 @@ struct CustomListsRow: View {
     @Environment(\.modelContext) private var context
     @Environment(AppState.self) private var app
     @AppStorage("calendarColumns") private var calendarColumns = 5
+    @AppStorage("showWeekends") private var showWeekends = false
     @Query(sort: [SortDescriptor(\CustomList.sortIndex)]) private var lists: [CustomList]
     var onEditTask: (TaskItem) -> Void
 
@@ -47,11 +48,11 @@ struct CustomListsRow: View {
     }
 
     /// Matches `WeekView`'s day-column width exactly: (width − 16pt outer padding
-    /// − 8pt gaps) ÷ column count. No minimum floor (WeekView has none), so the
-    /// cards track the day columns at every column count; `max(1, …)` only guards
-    /// against a transient zero-width layout pass.
+    /// − 8pt gaps) ÷ column count, using the SAME visible-column count the grid
+    /// renders (7 when weekends are shown), so the cards track the day columns at
+    /// every setting; `max(1, …)` only guards a transient zero-width layout pass.
     private func columnWidth(for totalWidth: CGFloat) -> CGFloat {
-        let cols = CGFloat(max(1, min(12, calendarColumns)))
+        let cols = CGFloat(AppState.visibleColumnCount(columns: calendarColumns, showWeekends: showWeekends))
         let usable = totalWidth - 16 - 8 * (cols - 1)
         return max(1, usable / cols)
     }

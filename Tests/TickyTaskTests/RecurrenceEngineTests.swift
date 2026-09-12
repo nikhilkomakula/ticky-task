@@ -43,7 +43,10 @@ struct RecurrenceEngineTests {
 
     @Test("Weekdays excludes Saturday and Sunday")
     func weekdays() {
-        let cal = calendar()
+        var cal = calendar()
+        // India considers only Sunday a localized weekend; the product's
+        // "weekdays" recurrence is explicitly Mon–Fri in every locale.
+        cal.locale = Locale(identifier: "en_IN")
         let start = date(2026, 1, 5, cal: cal)   // Monday
         let rule = RecurrenceRule(frequency: .weekdays, startDate: start)
         let result = keys(rule, start, date(2026, 1, 11, cal: cal), cal)   // Mon–Sun

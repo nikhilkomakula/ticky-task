@@ -73,8 +73,8 @@ private struct BehaviorSettingsView: View {
                 ForEach(TaskSortMode.allCases) { Text($0.label).tag($0.rawValue) }
             }
             Toggle("Move completed tasks to the bottom", isOn: $moveCompletedToBottom)
-            Toggle("Automatically move unfinished tasks to today", isOn: $autoCarryForward)
-            Text("On by default. Unfinished tasks from past days are carried forward to today when TickyTask opens, becomes active, or the day rolls over while it's open. Completed and recurring tasks stay put.")
+            Toggle("Automatically carry unfinished tasks forward", isOn: $autoCarryForward)
+            Text("On by default. Unfinished tasks from past days are carried to today when TickyTask opens, becomes active, or the day rolls over while it's open. When weekends are hidden, they skip Saturday and Sunday and land on Monday. Completed and recurring tasks stay put.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

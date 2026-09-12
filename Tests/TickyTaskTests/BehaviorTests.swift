@@ -53,7 +53,7 @@ struct BehaviorTests {
         _ = try service.addTask(title: "today", location: .day("20260814"))
         try service.save()
 
-        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, targetKey: "20260814")
         #expect(moved == 1)
 
         let tasks = try context.fetch(FetchDescriptor<TaskItem>())
@@ -72,7 +72,7 @@ struct BehaviorTests {
         _ = try service.addTask(title: "older-past", location: .day("20260101"))
         try service.save()
 
-        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, targetKey: "20260814")
         #expect(moved == 2)
 
         let tasks = try context.fetch(FetchDescriptor<TaskItem>())
@@ -99,12 +99,50 @@ struct BehaviorTests {
         _ = try service.addTask(title: "plain", location: .day("20260103"))
         try service.save()
 
-        let moved = try BehaviorService.carryForwardIncomplete(context: context, todayKey: "20260814")
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, targetKey: "20260814")
         #expect(moved == 1)
 
         let tasks = try context.fetch(FetchDescriptor<TaskItem>())
         #expect(tasks.first { $0.title == "template" }?.dayKey == "20260101")
         #expect(tasks.first { $0.title == "occurrence" }?.dayKey == "20260102")
         #expect(tasks.first { $0.title == "plain" }?.dayKey == "20260814")
+    }
+
+    /// A Gregorian calendar whose locale considers only Sunday a weekend. Product
+    /// behavior must still treat both named Saturday/Sunday columns as weekends.
+    /// 2026-01-01 is a Thursday, so Jan 2 = Fri, 3 = Sat, 4 = Sun, 5 = Mon.
+    private func weekendCalendar() -> Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        c.locale = Locale(identifier: "en_IN")
+        return c
+    }
+
+    @Test("Carry-forward target skips a hidden weekend to the next weekday")
+    func carryForwardTargetSkipsWeekend() {
+        let c = weekendCalendar()
+        // Weekends hidden: Saturday and Sunday both roll onto Monday.
+        #expect(BehaviorService.carryForwardTarget(todayKey: "20260103", showWeekends: false, calendar: c) == "20260105")
+        #expect(BehaviorService.carryForwardTarget(todayKey: "20260104", showWeekends: false, calendar: c) == "20260105")
+        // Weekends shown → today unchanged; a weekday → today unchanged.
+        #expect(BehaviorService.carryForwardTarget(todayKey: "20260103", showWeekends: true, calendar: c) == "20260103")
+        #expect(BehaviorService.carryForwardTarget(todayKey: "20260107", showWeekends: false, calendar: c) == "20260107")
+    }
+
+    @Test("With weekends hidden, a Friday's unfinished tasks carry onto Monday")
+    func carryForwardFridayToMonday() throws {
+        let context = makeContext()
+        let c = weekendCalendar()
+        let service = DataService(context)
+        _ = try service.addTask(title: "friday-open", location: .day("20260102"))   // Friday
+        try service.save()
+
+        // Today is Saturday with weekends hidden → target is Monday.
+        let target = BehaviorService.carryForwardTarget(todayKey: "20260103", showWeekends: false, calendar: c)
+        let moved = try BehaviorService.carryForwardIncomplete(context: context, targetKey: target)
+        #expect(moved == 1)
+
+        let tasks = try context.fetch(FetchDescriptor<TaskItem>())
+        #expect(tasks.first { $0.title == "friday-open" }?.dayKey == "20260105")   // Monday
     }
 }

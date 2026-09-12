@@ -41,37 +41,60 @@ enum BehaviorService {
         return order
     }
 
-    /// Move non-recurring, unfinished tasks from past days onto today. Idempotent:
-    /// once moved, a task's `dayKey` equals today's, so re-running is a no-op.
-    /// Recurring templates *and* their materialized occurrences are left in place —
-    /// a missed recurring instance stays on its day; a fresh one appears next period.
-    /// Returns the number of tasks moved.
+    /// The day incomplete past tasks should carry onto: today, unless weekends are
+    /// hidden **and** today is a weekend — then the next visible weekday, so a
+    /// previous Friday's (or a Saturday's) unfinished tasks land on Monday instead
+    /// of an off-screen weekend column. Returns `todayKey` unchanged when weekends
+    /// are shown or today is already a weekday.
+    static func carryForwardTarget(todayKey: String,
+                                   showWeekends: Bool,
+                                   calendar: Calendar = .current) -> String {
+        guard !showWeekends,
+              let today = WeekMath.date(fromDayKey: todayKey, calendar: calendar),
+              WeekMath.isSaturdayOrSunday(today, calendar: calendar) else { return todayKey }
+        var cursor = today
+        for _ in 0..<7 {   // bounded: the next weekday is at most 2 days away
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+            if !WeekMath.isSaturdayOrSunday(cursor, calendar: calendar) {
+                return WeekMath.dayKey(for: cursor, calendar: calendar)
+            }
+        }
+        return todayKey
+    }
+
+    /// Move non-recurring, unfinished tasks from days before `targetKey` onto it.
+    /// `targetKey` is normally today (see `carryForwardTarget`, which skips a hidden
+    /// weekend to the next weekday). Idempotent: once moved, a task's `dayKey`
+    /// equals `targetKey`, so re-running is a no-op. Recurring templates *and* their
+    /// materialized occurrences are left in place — a missed recurring instance
+    /// stays on its day; a fresh one appears next period. Returns the number moved.
     @MainActor
     @discardableResult
     static func carryForwardIncomplete(context: ModelContext,
-                                       todayKey: String = WeekMath.dayKey(for: Date())) throws -> Int {
+                                       targetKey: String = WeekMath.dayKey(for: Date())) throws -> Int {
         let all = try context.fetch(FetchDescriptor<TaskItem>())
-        // Carry past-day tasks in a stable, chronological order (oldest day first,
-        // then their in-day order) so multiple carried tasks don't land under today
-        // in an arbitrary fetch order.
+        // Carry earlier-day tasks in a stable, chronological order (oldest day
+        // first, then their in-day order) so multiple carried tasks don't land under
+        // the target day in an arbitrary fetch order.
         let ordered = all.sorted { lhs, rhs in
             let lk = lhs.dayKey ?? "", rk = rhs.dayKey ?? ""
             if lk != rk { return lk < rk }
             if lhs.sortIndex != rhs.sortIndex { return lhs.sortIndex < rhs.sortIndex }
             return lhs.id.uuidString < rhs.id.uuidString   // stable, total order on ties
         }
-        // Place carried-forward tasks after today's existing tasks so manual
-        // ordering stays unambiguous (no sortIndex collisions).
-        var nextIndex = all.filter { $0.dayKey == todayKey }.map(\.sortIndex).max() ?? 0
+        // Place carried-forward tasks after the target day's existing tasks so
+        // manual ordering stays unambiguous (no sortIndex collisions).
+        var nextIndex = all.filter { $0.dayKey == targetKey }.map(\.sortIndex).max() ?? 0
         var moved = 0
         for task in ordered {
             guard let key = task.dayKey,
                   task.recurrence == nil,
                   task.templateID == nil,
                   !task.isDone,
-                  key < todayKey else { continue }
+                  key < targetKey else { continue }
             nextIndex += 1
-            task.dayKey = todayKey
+            task.dayKey = targetKey
             task.sortIndex = nextIndex
             task.updatedAt = Date()
             moved += 1

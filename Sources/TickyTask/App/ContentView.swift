@@ -21,6 +21,7 @@ struct ContentView: View {
     @AppStorage("autoDeleteCompletedDays") private var autoDeleteDays = 7
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
+    @AppStorage("showWeekends") private var showWeekends = false
 
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
@@ -72,6 +73,12 @@ struct ContentView: View {
         // Enabling the setting mid-session should catch up the current day at once.
         .onChange(of: autoCarryForward) { _, isOn in
             if isOn { runCarryForward() }
+        }
+        // Hiding weekends can make today's Saturday/Sunday column disappear. Move
+        // its unfinished tasks to Monday immediately instead of waiting for another
+        // activation or day rollover.
+        .onChange(of: showWeekends) { _, isOn in
+            if !isOn { runCarryForward() }
         }
         // Generate upcoming occurrences when navigating toward/into a future range
         // so a recurring task shows on every due day the user scrolls to.
@@ -129,16 +136,26 @@ struct ContentView: View {
         await maybeCheckForUpdates()
     }
 
-    /// Carry unfinished past-day tasks onto today when enabled, recording the day
-    /// it ran for. Errors are logged rather than silently discarded.
+    /// Carry unfinished past-day tasks onto the next visible day when enabled,
+    /// recording the day it ran for. When weekends are hidden and today is a
+    /// weekend, tasks land on the next weekday (e.g. Friday's → Monday) instead of
+    /// an off-screen column. Errors are logged rather than silently discarded.
     @MainActor
     private func runCarryForward() {
-        guard autoCarryForward else { return }
+        // Read UserDefaults directly so restore-triggered runs see preferences that
+        // were applied immediately before the restore notification; @AppStorage's
+        // view update can arrive on a later render pass.
+        let defaults = UserDefaults.standard
+        let isEnabled = defaults.object(forKey: "autoCarryForward") as? Bool ?? true
+        guard isEnabled else { return }
         let todayKey = WeekMath.dayKey(for: Date())
+        let weekendsShown = defaults.object(forKey: "showWeekends") as? Bool ?? false
+        let targetKey = BehaviorService.carryForwardTarget(todayKey: todayKey, showWeekends: weekendsShown)
         do {
-            try BehaviorService.carryForwardIncomplete(context: context, todayKey: todayKey)
-            // Advance only after a successful run, so a transient fetch/save error
-            // is retried on the next timer tick or launch rather than skipped.
+            try BehaviorService.carryForwardIncomplete(context: context, targetKey: targetKey)
+            // Advance only after a successful run (tracked by actual today, not the
+            // target), so a transient fetch/save error is retried on the next timer
+            // tick or launch rather than skipped.
             lastCarryDayKey = todayKey
         } catch {
             NSLog("TickyTask: carry-forward failed: \(error.localizedDescription)")
