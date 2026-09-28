@@ -41,18 +41,19 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 
 ## How it works
 
-TickyTask is a single SwiftUI app with three scenes sharing one local SwiftData store and one `AppState`:
+TickyTask is a single SwiftUI app with four scenes sharing one local SwiftData store and one `AppState`:
 
 1. **Main window** — the Week/Month planner.
 2. **Menu-bar popover** — a compact calendar + today's agenda + quick-add.
 3. **Quick-capture window** — a tiny "new task for today" box opened by a global shortcut.
+4. **Settings** — app preferences and data management.
 
 Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Drag-and-drop reordering and cross-day/-list moves route through the same `DataService`, which re-derives sort indices and preserves the day-XOR-list rule. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
 
 ```mermaid
 flowchart TD
     subgraph Scenes
-        MW[Main Window\nWeek / Month] 
+        MW["Main Window<br/>Week / Month"]
         MB[Menu-bar Popover]
         QC[Quick-capture Window]
         ST[Settings]
@@ -61,14 +62,14 @@ flowchart TD
     MW & MB & QC --> DS[DataService]
     DS --> SD[(SwiftData store)]
     subgraph Services
-        BEH[BehaviorService\nsort · carry-forward]
-        NOT[NotificationService\nper-task · end-of-day]
-        WM[WeekMath / RecurrenceEngine]
+        BEH["BehaviorService<br/>sort · carry-forward"]
+        NOT["NotificationService<br/>per-task · end-of-day"]
+        WM["WeekMath · RecurrenceEngine · RecurrenceMaterializer"]
     end
     MW --> BEH
     MW --> NOT
     MW --> WM
-    ST -->|@AppStorage| MW
+    ST -->|"@AppStorage"| MW
 ```
 
 ## Build & run from source
@@ -101,10 +102,15 @@ Note: macOS delivers local notifications only for code-signed apps, so the remin
 
 ### Releasing
 
-Pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
+`main` is protected — direct pushes are rejected, so every change lands through a **pull request** (self-merge is fine; no approvals are required). Cutting a release is two steps: merge the change via a PR, then tag the merged commit. Tags aren't branch-protected, so pushing a **`vX.Y.Z`** tag triggers the [`Release` workflow](.github/workflows/release.yml): it builds the arm64 Release app (the version is stamped from the tag), packages `TickyTask-X.Y.Z-arm64.dmg`, and publishes it as a GitHub pre-release — releases are no longer built by hand.
 
 ```bash
-git tag v0.1.14 && git push origin v0.1.14   # → CI builds the DMG and creates the release
+git switch -c release/x.y.z                  # branch — main rejects direct pushes
+# …commit your changes (bump MARKETING_VERSION in project.yml, update this README)…
+gh pr create --fill --base main              # open the PR
+gh pr merge --squash --delete-branch         # self-merge once CI is green
+git switch main && git pull                  # fast-forward local main to the merge
+git tag vX.Y.Z && git push origin vX.Y.Z     # → CI builds the DMG and creates the release
 ```
 
 ## Roadmap
