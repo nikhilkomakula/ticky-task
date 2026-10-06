@@ -76,6 +76,30 @@ struct DataService {
         }
     }
 
+    /// Reorder one container's `tasks` by priority — incomplete tasks first (when
+    /// `completedToBottom`), then highest priority first — and persist the result as
+    /// manual `sortIndex` order. Callers switch the view to manual sort so the new
+    /// order is shown and sticks, matching how a within-container drag reorder
+    /// behaves. A no-op (no save) for fewer than two tasks.
+    @discardableResult
+    func sortByPriority(_ tasks: [TaskItem], completedToBottom: Bool) throws -> Bool {
+        guard tasks.count > 1 else { return false }
+        let ordered = BehaviorService.sorted(tasks, mode: .priority, completedToBottom: completedToBottom)
+        let now = Date()
+        for (index, task) in ordered.enumerated() {
+            task.sortIndex = Double(index)
+            task.updatedAt = now
+        }
+        do {
+            try context.save()
+        } catch {
+            // Never leave a half-applied renumber in the context if the save fails.
+            context.rollback()
+            throw error
+        }
+        return true
+    }
+
     /// Persist a manual reorder of the custom lists.
     func reorderLists(_ ordered: [CustomList]) throws {
         for (index, list) in ordered.enumerated() { list.sortIndex = Double(index) }

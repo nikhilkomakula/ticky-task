@@ -1,9 +1,10 @@
 import XCTest
 
-/// End-to-end check that a custom list is deletable from the *visible* ⋯ menu
-/// (not just the hidden right-click), and that deletion is confirmed first and
-/// cascades to the list's tasks. The `-uitest` seed provides one custom list,
-/// "Inbox", holding ListA / ListB / ListC.
+/// End-to-end check that a custom list is deletable from the *visible* trash
+/// icon in its header (not just the hidden right-click), that a sort icon sits
+/// alongside it, and that deletion is confirmed first and cascades to the list's
+/// tasks. The `-uitest` seed provides one custom list, "Inbox", holding
+/// ListA / ListB / ListC.
 final class DeleteListUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -26,15 +27,14 @@ final class DeleteListUITests: XCTestCase {
         let listTask = app.staticTexts["ListA"]
         XCTAssertTrue(listTask.waitForExistence(timeout: 20), "seeded custom-list task should render")
 
-        // The delete affordance is visible (no right-click needed). A SwiftUI Menu
-        // is exposed as a MenuButton on macOS (verified via the a11y hierarchy).
-        let menu = app.menuButtons["list-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 5), "the ⋯ list menu should be visible")
-        menu.click()
+        // With 3 tasks, both the sort and delete icons are visible in the header.
+        XCTAssertTrue(app.buttons["list-sort"].firstMatch.waitForExistence(timeout: 5),
+                      "the sort icon should be visible on a list with multiple tasks")
 
-        let deleteItem = app.menuItems["Delete List"].firstMatch
-        XCTAssertTrue(deleteItem.waitForExistence(timeout: 5), "Delete List should appear in the menu")
-        deleteItem.click()
+        // Delete via the visible trash icon (no right-click needed).
+        let deleteIcon = app.buttons["list-delete"].firstMatch
+        XCTAssertTrue(deleteIcon.waitForExistence(timeout: 5), "the delete (trash) icon should be visible")
+        deleteIcon.click()
 
         // Deletion is confirmed first, and the dialog names the cascade (3 tasks).
         // The confirmation renders as a sheet; scope to it so we click the on-screen
@@ -45,6 +45,6 @@ final class DeleteListUITests: XCTestCase {
 
         // The list and its tasks are gone; no custom lists remain.
         XCTAssertFalse(listTask.waitForExistence(timeout: 3), "the deleted list's tasks should disappear")
-        XCTAssertFalse(app.menuButtons["list-menu"].firstMatch.waitForExistence(timeout: 2), "no custom lists remain")
+        XCTAssertFalse(app.buttons["list-delete"].firstMatch.waitForExistence(timeout: 2), "no custom lists remain")
     }
 }

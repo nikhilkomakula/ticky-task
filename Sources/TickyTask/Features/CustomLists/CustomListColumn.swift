@@ -33,21 +33,11 @@ struct CustomListColumn: View {
                     .font(.system(size: 13, weight: .semibold))
                     .textFieldStyle(.plain)
                     .onSubmit { try? context.save() }
-                Menu {
-                    Button("Delete List", role: .destructive) { confirmingDelete = true }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+                if list.tasks.count > 1 {
+                    headerIcon("arrow.up.arrow.down", help: "Sort by priority",
+                               id: "list-sort", action: sortByPriority)
                 }
-                .menuStyle(.button)
-                .buttonStyle(.borderless)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("List options")
-                .accessibilityIdentifier("list-menu")
+                headerIcon("trash", help: "Delete list", id: "list-delete") { confirmingDelete = true }
             }
             .frame(minHeight: 30)
 
@@ -86,6 +76,32 @@ struct CustomListColumn: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This can’t be undone.")
+        }
+    }
+
+    /// A compact, borderless header action button shared by the sort and delete
+    /// affordances (matches the former ⋯-menu glyph size).
+    private func headerIcon(_ symbol: String, help: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityIdentifier(id)
+    }
+
+    private func sortByPriority() {
+        do {
+            if try DataService(context).sortByPriority(list.tasks, completedToBottom: moveCompletedToBottom) {
+                // Show and keep the new order (manual), like a within-container drag.
+                sortModeRaw = TaskSortMode.manual.rawValue
+            }
+        } catch {
+            // Surfacing save errors in the UI is tracked as a P13 hardening item.
         }
     }
 
