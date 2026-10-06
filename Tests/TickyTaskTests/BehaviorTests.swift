@@ -129,6 +129,37 @@ struct BehaviorTests {
         #expect(BehaviorService.carryForwardTarget(todayKey: "20260107", showWeekends: false, calendar: c) == "20260107")
     }
 
+    @Test("sortByPriority renumbers a container by priority, incomplete first")
+    func sortByPriorityRenumbers() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        // Insert out of priority order; a done high-priority task must sink.
+        let lowOpen = try service.addTask(title: "low-open", location: .day("20260814"));  lowOpen.priority = 1
+        let highOpen = try service.addTask(title: "high-open", location: .day("20260814")); highOpen.priority = 2
+        let midOpen = try service.addTask(title: "mid-open", location: .day("20260814"));   midOpen.priority = 1; midOpen.sortIndex = 99
+        let highDone = try service.addTask(title: "high-done", location: .day("20260814")); highDone.priority = 2; highDone.isDone = true
+        try service.save()
+
+        let changed = try service.sortByPriority([lowOpen, highOpen, midOpen, highDone], completedToBottom: true)
+        #expect(changed)
+
+        let ordered = [lowOpen, highOpen, midOpen, highDone].sorted { $0.sortIndex < $1.sortIndex }
+        #expect(ordered.first?.title == "high-open")          // highest-priority incomplete first
+        #expect(ordered.last?.title == "high-done")           // completed sinks to the bottom
+        #expect(ordered.map(\.sortIndex) == [0, 1, 2, 3])     // contiguous 0..n, no collisions
+    }
+
+    @Test("sortByPriority is a no-op for fewer than two tasks")
+    func sortByPriorityNoop() throws {
+        let context = makeContext()
+        let service = DataService(context)
+        let only = try service.addTask(title: "only", location: .day("20260814")); only.sortIndex = 7
+        try service.save()
+        let changed = try service.sortByPriority([only], completedToBottom: true)
+        #expect(!changed)
+        #expect(only.sortIndex == 7)   // untouched
+    }
+
     @Test("With weekends hidden, a Friday's unfinished tasks carry onto Monday")
     func carryForwardFridayToMonday() throws {
         let context = makeContext()

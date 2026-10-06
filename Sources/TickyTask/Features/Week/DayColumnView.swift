@@ -87,8 +87,31 @@ struct DayColumnView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
+            if orderedTasks.count > 1 {
+                Button(action: sortByPriority) {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Sort by priority")
+                .accessibilityIdentifier("daySort-\(dayKey)")
+            }
         }
         .frame(minHeight: 30)
+    }
+
+    private func sortByPriority() {
+        do {
+            if try DataService(context).sortByPriority(tasks, completedToBottom: moveCompletedToBottom) {
+                // Show and keep the new order (manual), like a within-container drag.
+                sortModeRaw = TaskSortMode.manual.rawValue
+            }
+        } catch {
+            // Surfacing save errors in the UI is tracked as a P13 hardening item.
+        }
     }
 
     /// Center + flash a searched-for task if it lives in this day.
