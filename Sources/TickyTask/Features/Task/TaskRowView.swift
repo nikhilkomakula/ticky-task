@@ -67,6 +67,15 @@ struct TaskRowView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
+                if task.hasNotes {
+                    Image(systemName: "note.text")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityLabel("Has notes")
+                        .accessibilityIdentifier("notesIcon")
+                }
+
                 if !task.subtasks.isEmpty {
                     let done = task.subtasks.filter(\.isDone).count
                     Text("\(done)/\(task.subtasks.count)")

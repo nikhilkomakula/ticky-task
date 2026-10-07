@@ -112,6 +112,15 @@ extension TaskItem {
     /// Part of a recurring series — either the template or one of its occurrences.
     /// Drives the row's repeat glyph and the series-aware delete prompt.
     var isRecurring: Bool { recurrence != nil || templateID != nil }
+
+    /// Match the editor's rich-document preference, falling back to legacy notes
+    /// when there is no readable rich document.
+    var hasNotes: Bool {
+        if let notesRich, !notesRich.isEmpty, let document = try? NotesCodec.decode(notesRich) {
+            return !document.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 extension TaskItem {

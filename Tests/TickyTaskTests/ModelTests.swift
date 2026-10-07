@@ -24,6 +24,29 @@ struct ModelTests {
         #expect(all.first?.isDone == false)
     }
 
+    @Test("hasNotes reflects non-blank notes content")
+    func hasNotesReflectsContent() {
+        let task = TaskItem(title: "t", dayKey: "20260814")
+        #expect(!task.hasNotes)                 // fresh task has no notes
+        task.notes = "   \n  "
+        #expect(!task.hasNotes)                 // whitespace-only is still "no notes"
+        task.notes = "remember the milk"
+        #expect(task.hasNotes)
+    }
+
+    @Test("hasNotes follows the rich document when its projection differs")
+    func hasNotesUsesRichDocument() throws {
+        let task = TaskItem(title: "t", dayKey: "20260814")
+        task.notesRich = try NotesCodec.encode(NotesDocument(blocks: [
+            NotesBlock(runs: [NotesRun(text: "rich content")])
+        ]))
+        #expect(task.hasNotes)
+
+        task.notes = "stale projection"
+        task.notesRich = try NotesCodec.encode(NotesDocument())
+        #expect(!task.hasNotes)
+    }
+
     @Test("Subtasks cascade-delete with their task")
     func cascadeSubtasks() throws {
         let context = makeContext()
