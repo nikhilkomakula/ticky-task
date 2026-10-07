@@ -10,11 +10,10 @@ struct TaskEditorView: View {
     @Bindable var task: TaskItem
 
     @State private var notesText = AttributedString()
-    /// The notes exactly as loaded, so we only persist on a REAL edit — assigning
-    /// `notesText` in `onAppear` triggers `onChange`, and without this guard merely
-    /// opening a task would overwrite `task.notes` (losing the legacy Markdown
-    /// source) and bump `updatedAt` with no user edit.
-    @State private var loadedNotes = AttributedString()
+    /// The last notes value loaded or persisted. Assigning `notesText` in
+    /// `onAppear` triggers `onChange`; this guard keeps opening a task from
+    /// rewriting its legacy Markdown source or bumping `updatedAt`.
+    @State private var persistedNotes = AttributedString()
     @State private var newSubtask = ""
 
     // Recurrence editing state — mirrors `task.recurrence`, applied on Done so the
@@ -47,17 +46,18 @@ struct TaskEditorView: View {
                 from: NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
             )
             notesText = resolved
-            loadedNotes = resolved
+            persistedNotes = resolved
             loadRecurrence()
         }
         .onChange(of: notesText) { _, newValue in
             // Skip the load-induced change (and any no-op) so opening a task never
             // rewrites its notes or timestamp — only genuine edits persist.
-            guard newValue != loadedNotes else { return }
+            guard newValue != persistedNotes else { return }
             let document = NotesAttributedString.document(from: newValue)
             task.notesRich = try? NotesCodec.encode(document)
             task.notes = document.plainText
             task.updatedAt = Date()
+            persistedNotes = newValue
         }
     }
 

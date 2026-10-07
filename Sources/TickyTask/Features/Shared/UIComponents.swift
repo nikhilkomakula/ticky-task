@@ -52,6 +52,10 @@ struct QuickAddField: View {
     let placeholder: String
     @Binding var text: String
     var onSubmit: () -> Void
+    /// Fired when the field gains or loses focus, so a container can claim the
+    /// active selection when the user starts adding to it. Optional (defaults to
+    /// a no-op) so existing call sites are unaffected.
+    var onFocusChange: (Bool) -> Void = { _ in }
 
     @FocusState private var focused: Bool
 
@@ -65,6 +69,7 @@ struct QuickAddField: View {
                 .focused($focused)
                 .onSubmit(onSubmit)
         }
+        .onChange(of: focused) { _, isFocused in onFocusChange(isFocused) }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

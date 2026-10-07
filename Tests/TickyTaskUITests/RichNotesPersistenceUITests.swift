@@ -71,4 +71,19 @@ final class RichNotesPersistenceUITests: XCTestCase {
         editor = openAlpha(app)
         XCTAssertTrue(editorValue(editor).contains("persist me"))
     }
+
+    func testReturningToOriginalEmptyNotesPersistsTheDeletion() throws {
+        let app = launchedApp()
+        var editor = openAlpha(app)
+        editor.click()
+        editor.typeText("temporary note")
+        XCTAssertTrue(editorValue(editor).contains("temporary note"))
+        editor.typeKey("a", modifierFlags: .command)
+        editor.typeKey(.delete, modifierFlags: [])
+        XCTAssertFalse(editorValue(editor).contains("temporary note"))
+        app.buttons["Done"].click()
+
+        editor = openAlpha(app)
+        XCTAssertFalse(editorValue(editor).contains("temporary note"))
+    }
 }

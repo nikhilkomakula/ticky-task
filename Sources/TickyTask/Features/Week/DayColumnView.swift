@@ -47,7 +47,7 @@ struct DayColumnView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(orderedTasks) { task in
-                                TaskRowView(task: task) { onEditTask(task) }
+                                TaskRowView(task: task) { focusDay(); onEditTask(task) }
                                     .id(task.id)
                                     .reorderableRow(id: task.id, kind: .task, container: .weekDay(dayKey), controller: drag, task: task)
                             }
@@ -57,7 +57,8 @@ struct DayColumnView: View {
                     .onAppear { scrollToHighlight(app.highlightedTaskID, proxy: proxy) }
                 }
             }
-            QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask)
+            QuickAddField(placeholder: "Add task", text: $newTitle, onSubmit: addTask,
+                          onFocusChange: { if $0 { focusDay() } })
         }
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -131,8 +132,15 @@ struct DayColumnView: View {
             try service.addTask(title: title, location: .day(dayKey))
             try service.save()
             newTitle = ""
+            focusDay()
         } catch {
             // Surfacing save errors in the UI is tracked as a P13 hardening item.
         }
+    }
+
+    /// Move the selection (the accent border) to this day — the user is working
+    /// here: adding, editing, or focusing this column's quick-add.
+    private func focusDay() {
+        if app.selectedDayKey != dayKey { app.selectedDayKey = dayKey }
     }
 }
