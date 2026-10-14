@@ -171,4 +171,16 @@ struct SummaryInputBuilderTests {
         #expect(SummaryTaskSnapshot(child).seriesID == template.id)
         #expect(SummaryTaskSnapshot(oneOff).seriesID == nil)
     }
+
+    @Test("Whitespace-only rich notes are blank, and never resurrect a stale legacy projection")
+    func whitespaceRichNotesAreBlank() throws {
+        let document = NotesDocument(blocks: [
+            NotesBlock(runs: [NotesRun(text: " \t ")]),
+            NotesBlock(runs: [NotesRun(text: "\n ")]),
+        ])
+        let encoded = try NotesCodec.encode(document)
+        let resolved = SummaryNotes.resolve(notesRich: encoded, notes: "stale legacy text")
+        #expect(!resolved.hasContent)
+        #expect(!resolved.plainText.contains("stale legacy text"))
+    }
 }

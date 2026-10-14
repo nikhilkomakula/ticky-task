@@ -323,3 +323,66 @@ private final class RequestBox: @unchecked Sendable {
     var request: URLRequest? { lock.lock(); defer { lock.unlock() }; return stored }
     func set(_ request: URLRequest) { lock.lock(); stored = request; lock.unlock() }
 }
+
+@Suite("Weekly Summary — catalog release review regressions")
+struct SummaryCatalogReleaseReviewTests {
+    @Test("Changing a local endpoint fetches that endpoint's models instead of reusing another host's cache")
+    func localCatalogFollowsEndpoint() async throws {
+        let catalog = SummaryModelCatalog(
+            runner: UnexpectedLocalCLIRunner(),
+            resolveExecutable: { URL(fileURLWithPath: "/unused/codex") },
+            environment: { _ in [:] },
+            fetch: { request in
+                let host = request.url?.host ?? "missing"
+                let data = try JSONSerialization.data(withJSONObject: ["data": [["id": host]]])
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200,
+                                               httpVersion: nil, headerFields: nil)!
+                return (data, response)
+            },
+            cacheDirectory: URL(fileURLWithPath: "/unused/local-catalog-cache")
+        )
+        let first = try await catalog.models(
+            for: .local(server: .ollama, baseURL: "http://first.example:11434/v1"), refresh: false)
+        #expect(first.models.map(\.id) == ["", "first.example"])
+
+        let second = try await catalog.models(
+            for: .local(server: .ollama, baseURL: "http://second.example:11434/v1"), refresh: false)
+        #expect(second.models.map(\.id) == ["", "second.example"])
+        #expect(second.sourceDescription.contains("second.example"))
+    }
+
+    @Test("A local catalog error and its presentation redact credentials embedded in the endpoint URL")
+    func localCatalogDiagnosticsRedactEndpointCredentials() async throws {
+        let secret = "release-review-credential"
+        let target = SummaryConnectionTarget.local(
+            server: .openAICompatible,
+            baseURL: "https://models.example/v1?token=\(secret)")
+        let catalog = SummaryModelCatalog(
+            runner: UnexpectedLocalCLIRunner(),
+            resolveExecutable: { URL(fileURLWithPath: "/unused/codex") },
+            environment: { _ in [:] },
+            fetch: { request in
+                let response = HTTPURLResponse(url: request.url!, statusCode: 401,
+                                               httpVersion: nil, headerFields: nil)!
+                return (Data(), response)
+            },
+            cacheDirectory: URL(fileURLWithPath: "/unused/local-catalog-cache")
+        )
+        do {
+            _ = try await catalog.models(for: target, refresh: true)
+            Issue.record("Expected the simulated server failure")
+        } catch let failure as WeeklySummaryError {
+            let detail = try #require(failure.detail)
+            #expect(!detail.message.contains(secret))
+            let presentation = SummaryErrorPresenter.present(failure, connection: target)
+            #expect(!(presentation.details ?? "").contains(secret))
+        }
+    }
+}
+
+private struct UnexpectedLocalCLIRunner: CLICommandRunning {
+    func run(_ invocation: CLIInvocation) async throws -> CLIProcessOutput {
+        Issue.record("Local catalog tests must use their injected HTTP transport exclusively")
+        return CLIProcessOutput(exitCode: 1, signal: nil, stdout: Data(), stderr: Data(), duration: .zero)
+    }
+}

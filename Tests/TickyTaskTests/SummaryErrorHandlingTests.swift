@@ -2,6 +2,137 @@ import Testing
 import Foundation
 @testable import TickyTask
 
+@Suite("Weekly Summary — release generator isolation")
+struct SummaryGeneratorReleaseReviewTests {
+    private func generator(runner: ReleaseGeneratorRunner, root: URL) -> LiveSummaryGenerator {
+        LiveSummaryGenerator(runner: runner,
+                             resolveExecutable: { URL(fileURLWithPath: "/synthetic/codex") },
+                             environment: { _ in ["PATH": "/usr/bin:/bin"] },
+                             localAPIKey: { "release-review-opaque-key" }, runRoot: root)
+    }
+
+    private func runRoot() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("summary-generator-review-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    @Test("Generation carries every isolation flag, private stdin and account override")
+    func successfulAccountGeneration() async throws {
+        let root = try runRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = ReleaseGeneratorRunner()
+        let live = generator(runner: runner, root: root)
+        let request = SummaryRequest(instructions: SummaryPrompt.instructions, payload: Data("{}".utf8),
+                                     config: SummaryRunConfig(modelID: nil, effort: nil))
+        let result = try await live.generate(request)
+        #expect(result.text == "Synthetic summary")
+        let calls = await runner.invocations
+        #expect(calls.map { Array($0.arguments.prefix(2)) } == [["--version"], ["mcp", "list"], ["debug", "prompt-input"], ["exec", "--json"]])
+        let exec = try #require(calls.last)
+        #expect(exec.arguments.contains(#"model_provider="openai""#))
+        for feature in CodexSummaryAdapter.disabledFeatures {
+            #expect(zip(exec.arguments, exec.arguments.dropFirst()).contains { $0 == "--disable" && $1 == feature })
+        }
+        #expect(exec.arguments.contains("mcp_servers.synthetic.enabled=false"))
+        #expect(exec.arguments.contains(#"web_search="disabled""#))
+        #expect(exec.arguments.contains("--ephemeral"))
+        #expect(zip(exec.arguments, exec.arguments.dropFirst()).contains { $0 == "-s" && $1 == "read-only" })
+        #expect(exec.stdin == SummaryPrompt.codexStdin(instructions: request.instructions, payload: request.payload))
+        #expect(exec.timeout == .seconds(300))
+        #expect(exec.environment[SummaryConnectionArguments.apiKeyVariable] == nil)
+        #expect((try FileManager.default.contentsOfDirectory(atPath: root.path)).isEmpty)
+    }
+
+    @Test("A failed isolation preflight never reaches exec")
+    func preflightFailureStopsExec() async throws {
+        let root = try runRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = ReleaseGeneratorRunner(preflightExit: 1)
+        do {
+            _ = try await generator(runner: runner, root: root).generate(
+                SummaryRequest(instructions: "instruction", payload: Data("{}".utf8), config: SummaryRunConfig(modelID: nil, effort: nil)))
+            Issue.record("Expected isolation preflight rejection")
+        } catch let failure as WeeklySummaryError {
+            if case .cliIncompatible = failure {} else { Issue.record("Unexpected failure: \(failure)") }
+        }
+        #expect(await runner.invocations.allSatisfy { $0.arguments.first != "exec" })
+        #expect((try FileManager.default.contentsOfDirectory(atPath: root.path)).isEmpty)
+    }
+
+    @Test("Malformed successful MCP output must fail closed before exec")
+    func malformedMCPEnumerationStopsExec() async throws {
+        let root = try runRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = ReleaseGeneratorRunner(mcpJSON: #"{"unexpected_schema":[{"name":"synthetic"}]}"#)
+        do {
+            _ = try await generator(runner: runner, root: root).generate(
+                SummaryRequest(instructions: "instruction", payload: Data("{}".utf8), config: SummaryRunConfig(modelID: nil, effort: nil)))
+            Issue.record("Malformed enumeration was accepted and a potentially unisolated exec launched")
+        } catch let failure as WeeklySummaryError {
+            if case .cliIncompatible = failure {} else { Issue.record("Unexpected failure: \(failure)") }
+        }
+        #expect(await runner.invocations.allSatisfy { $0.arguments.first != "exec" })
+    }
+
+    @Test("OpenAI-compatible credentials remain in child environment")
+    func localCredentialTransport() async throws {
+        let root = try runRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let runner = ReleaseGeneratorRunner()
+        let config = SummaryRunConfig(connection: .local(server: .openAICompatible, baseURL: "http://models.example/v1"), modelID: "model", effort: "high")
+        _ = try await generator(runner: runner, root: root).generate(SummaryRequest(instructions: "instruction", payload: Data("{}".utf8), config: config))
+        let calls = await runner.invocations
+        let exec = try #require(calls.last)
+        #expect(exec.environment[SummaryConnectionArguments.apiKeyVariable] == "release-review-opaque-key")
+        #expect(!exec.arguments.contains { $0.contains("release-review-opaque-key") })
+        #expect(exec.arguments.contains { $0.contains(#"env_key="TICKYTASK_LOCAL_API_KEY""#) })
+    }
+
+    @Test("Opaque API-key header values are redacted")
+    func opaqueAPIKeyHeaderIsRedacted() {
+        let redacted = SummaryRedactor.redact("HTTP 401 X-API-Key: release-review-opaque-key")
+        #expect(!redacted.contains("release-review-opaque-key"))
+    }
+
+    @Test("URL userinfo credentials are redacted")
+    func urlUserinfoIsRedacted() {
+        let redacted = SummaryRedactor.redact("Cannot connect to https://user:release-review-password@models.example/v1")
+        #expect(!redacted.contains("release-review-password"))
+    }
+}
+
+private actor ReleaseGeneratorRunner: CLICommandRunning {
+    private(set) var invocations: [CLIInvocation] = []
+    let mcpJSON: String
+    let preflightExit: Int32
+
+    init(mcpJSON: String = #"[{"name":"synthetic"}]"#, preflightExit: Int32 = 0) {
+        self.mcpJSON = mcpJSON
+        self.preflightExit = preflightExit
+    }
+
+    func run(_ invocation: CLIInvocation) async throws -> CLIProcessOutput {
+        invocations.append(invocation)
+        var stdout = ""
+        var stderr = ""
+        var exit: Int32 = 0
+        switch invocation.arguments.first {
+        case "--version": stdout = "codex-cli synthetic-review"
+        case "mcp": stdout = mcpJSON
+        case "debug":
+            exit = preflightExit
+            if exit != 0 { stderr = "Error: Unknown feature flag: shell_tool" }
+        case "exec":
+            let index = try #require(invocation.arguments.firstIndex(of: "-o"))
+            try "Synthetic summary".write(toFile: invocation.arguments[index + 1], atomically: true, encoding: .utf8)
+            stdout = #"{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2}}"#
+        default: Issue.record("Unexpected invocation")
+        }
+        return CLIProcessOutput(exitCode: exit, signal: nil, stdout: Data(stdout.utf8), stderr: Data(stderr.utf8), duration: .milliseconds(1))
+    }
+}
+
 /// Fixtures captured from the real Codex CLI on 2026-10-14 (codex
 /// 0.162.1, Databricks AI gateway). Anything marked SYNTHETIC is a documented
 /// error form we could not induce on that machine.

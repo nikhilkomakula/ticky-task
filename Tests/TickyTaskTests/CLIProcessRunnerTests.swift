@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import TickyTask
 
@@ -241,5 +242,207 @@ struct CLIProcessRunnerTests {
 
         #expect(results.allSatisfy { $0.exitCode == 0 })
         #expect(results.count == 5)
+    }
+
+    @Test func completedProcessDoesNotTimeOutDuringEOFGrace() async throws {
+        let graceRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(300))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "immediate_exit", "#!/bin/sh\nprintf done\n")
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .milliseconds(150)
+        )
+
+        let result = try await graceRunner.run(invocation)
+        #expect(result.exitCode == 0)
+        #expect(result.stdoutText == "done")
+    }
+
+    @Test func boundsDrainAfterMainProcessExit() async throws {
+        let graceRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "inherited_pipes", "#!/bin/sh\n/bin/sleep 1 &\nprintf done\nexit 0\n")
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(3)
+        )
+
+        let start = Date()
+        let result = try await graceRunner.run(invocation)
+        #expect(result.exitCode == 0)
+        #expect(result.stdoutText == "done")
+        #expect(Date().timeIntervalSince(start) < 0.6, "A descendant retaining the pipes must not outlive the EOF drain bound")
+    }
+
+    @Test func stdoutOverflowTerminatesProcessPromptly() async throws {
+        let limitedRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "overflow_then_sleep", "#!/bin/sh\nprintf '%0128d' 0\n/bin/sleep 1\n")
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(3),
+            stdoutLimit: 32
+        )
+
+        let start = Date()
+        do {
+            _ = try await limitedRunner.run(invocation)
+            Issue.record("Expected stdout overflow")
+        } catch CLIProcessError.outputTooLarge(let limit) {
+            #expect(limit == 32)
+            #expect(Date().timeIntervalSince(start) < 0.6, "Overflow must stop execution rather than wait for the command or timeout")
+        }
+    }
+
+    @Test func activeCancellationReturnsProcessCancellationError() async throws {
+        let cancellationRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "cancel_me", "#!/bin/sh\nprintf ready > ready\n/bin/sleep 3\n")
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(5)
+        )
+
+        let task = Task { try await cancellationRunner.run(invocation) }
+        let readyURL = tempDir.appendingPathComponent("ready")
+        for _ in 0 ..< 200 where !FileManager.default.fileExists(atPath: readyURL.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(FileManager.default.fileExists(atPath: readyURL.path))
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected process cancellation")
+        } catch {
+            #expect((error as? CLIProcessError) == .cancelled, "Active cancellation must honor the same error contract as pre-cancellation")
+        }
+    }
+
+    @Test func cancellationDoesNotBlockCallingThreadForKillGrace() async throws {
+        let cancellationRunner = CLIProcessRunner(killGrace: .seconds(1), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "cancel_without_blocking", "#!/bin/sh\nprintf ready > ready\n/bin/sleep 3\n")
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(5)
+        )
+
+        let task = Task { try await cancellationRunner.run(invocation) }
+        let readyURL = tempDir.appendingPathComponent("ready")
+        for _ in 0 ..< 200 where !FileManager.default.fileExists(atPath: readyURL.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(FileManager.default.fileExists(atPath: readyURL.path))
+
+        let start = Date()
+        task.cancel()
+        #expect(Date().timeIntervalSince(start) < 0.3, "Cancellation from a UI action must not sleep on its calling thread")
+        _ = try? await task.value
+    }
+
+    @Test func cancellationKillsDescendantInSeparateProcessGroup() async throws {
+        let cancellationRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "escaped_descendant", """
+        #!/bin/sh
+        /usr/bin/perl -MPOSIX -e 'POSIX::setpgid(0, 0); open my $file, ">", "child.pid" or die; print $file "$$\\n"; close $file; select undef, undef, undef, 0.3; open my $alive, ">", "survived" or die; print $alive "alive"; close $alive; sleep 3;' &
+        wait
+        """)
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(5)
+        )
+
+        let task = Task { try await cancellationRunner.run(invocation) }
+        let pidURL = tempDir.appendingPathComponent("child.pid")
+        var childPID: pid_t?
+        for _ in 0 ..< 200 {
+            if let contents = try? String(contentsOf: pidURL, encoding: .utf8),
+               let parsedPID = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)),
+               parsedPID > 0 {
+                childPID = parsedPID
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        defer { if let childPID { kill(childPID, SIGKILL) } }
+        task.cancel()
+        _ = try? await task.value
+
+        _ = try #require(childPID, "Fixture must create a descendant in its own process group")
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(!FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("survived").path),
+                "Cancellation must stop descendants that escaped the original process group from continuing execution")
+    }
+
+    @Test func fractionalKillGraceAllowsSignalCleanup() async throws {
+        let cancellationRunner = CLIProcessRunner(killGrace: .milliseconds(500), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let script = createScript(in: tempDir, name: "signal_cleanup", """
+        #!/usr/bin/perl
+        $SIG{TERM} = sub {
+            select undef, undef, undef, 0.1;
+            open my $file, ">", "cleanup" or die;
+            print $file "done";
+            close $file;
+            exit 0;
+        };
+        open my $ready, ">", "ready" or die;
+        print $ready "ready";
+        close $ready;
+        sleep 3;
+        """)
+        let invocation = CLIInvocation(
+            executableURL: script,
+            arguments: [],
+            workingDirectory: tempDir,
+            environment: [:],
+            timeout: .seconds(5)
+        )
+
+        let task = Task { try await cancellationRunner.run(invocation) }
+        let readyURL = tempDir.appendingPathComponent("ready")
+        for _ in 0 ..< 200 where !FileManager.default.fileExists(atPath: readyURL.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(FileManager.default.fileExists(atPath: readyURL.path))
+        task.cancel()
+        _ = try? await task.value
+
+        #expect(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("cleanup").path),
+                "A 500 ms kill grace must allow a 100 ms SIGTERM cleanup before SIGKILL")
     }
 }
