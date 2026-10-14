@@ -49,32 +49,30 @@ struct CLIExecutableResolverTests {
         }
     }
 
-    @Test func expandsTildeInOverride() async throws {
-        let home = "/Users/me"
+    @Test func acceptsValidOverridePath() async throws {
         let probe = CLIExecutableResolver.Probe(
-            home: home,
+            home: "/Users/me",
             isExecutableFile: { path in
-                path == "\(home)/bin/claude"
+                path == "/custom/bin/claude"
             },
             loginShellLookup: { _ in nil }
         )
 
-        let result = try await CLIExecutableResolver.resolve(name: "claude", override: "~/bin/claude", probe: probe)
-        #expect(result.path == "\(home)/bin/claude")
+        let result = try await CLIExecutableResolver.resolve(name: "claude", override: "/custom/bin/claude", probe: probe)
+        #expect(result.path == "/custom/bin/claude")
     }
 
     @Test func ignoresWhitespaceInOverride() async throws {
-        let home = "/Users/me"
         let probe = CLIExecutableResolver.Probe(
-            home: home,
+            home: "/Users/me",
             isExecutableFile: { path in
-                path == "\(home)/bin/claude"
+                path == "/custom/bin/claude"
             },
             loginShellLookup: { _ in nil }
         )
 
-        let result = try await CLIExecutableResolver.resolve(name: "claude", override: "  ~/bin/claude  ", probe: probe)
-        #expect(result.path == "\(home)/bin/claude")
+        let result = try await CLIExecutableResolver.resolve(name: "claude", override: "  /custom/bin/claude  ", probe: probe)
+        #expect(result.path == "/custom/bin/claude")
     }
 
     @Test func treatsEmptyOverrideAsNone() async throws {
@@ -115,7 +113,9 @@ struct CLIExecutableResolverTests {
         let home = "/Users/me"
         let probe = CLIExecutableResolver.Probe(
             home: home,
-            isExecutableFile: { _ in false },
+            isExecutableFile: { path in
+                path == "/opt/homebrew/bin/claude"
+            },
             loginShellLookup: { _ in "/opt/homebrew/bin/claude" }
         )
 

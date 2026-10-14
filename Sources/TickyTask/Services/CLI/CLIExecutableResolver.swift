@@ -109,14 +109,30 @@ enum CLIExecutableResolver {
         ]
 
         var pathComponents: [String] = []
-        pathComponents.append(exeDir)
-        if let nodeDir = nodeDirectory {
-            pathComponents.append(nodeDir)
-        }
-        pathComponents.append(contentsOf: standardDirs)
+        var seen = Set<String>()
 
+        // Add exe dir
+        if !seen.contains(exeDir) {
+            pathComponents.append(exeDir)
+            seen.insert(exeDir)
+        }
+
+        // Add node dir if provided
+        if let nodeDir = nodeDirectory, !seen.contains(nodeDir) {
+            pathComponents.append(nodeDir)
+            seen.insert(nodeDir)
+        }
+
+        // Add standard dirs
+        for dir in standardDirs {
+            if !seen.contains(dir) {
+                pathComponents.append(dir)
+                seen.insert(dir)
+            }
+        }
+
+        // Add inherited PATH entries
         let existingPath = (env["PATH"] ?? "").split(separator: ":").map(String.init)
-        var seen = Set(pathComponents)
         for p in existingPath {
             if !seen.contains(p) {
                 pathComponents.append(p)
