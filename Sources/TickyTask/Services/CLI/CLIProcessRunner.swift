@@ -286,27 +286,25 @@ struct CLIProcessRunner: CLICommandRunning {
         return await withCheckedContinuation { cont in
             let queue = DispatchQueue(label: "cli.waitpid")
             let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
-            let resumedFlag = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-            resumedFlag.initialize(to: false)
-            defer { resumedFlag.deallocate() }
+            let resumed = ResumedFlag()
 
-            source.setEventHandler {
-                guard !resumedFlag.pointee else { return }
+            source.setEventHandler { [resumed] in
+                guard !resumed.value else { return }
                 var status: Int32 = 0
                 let result = waitpid(pid, &status, 0)
 
                 if result >= 0 {
                     let exitCode: Int32? = (status & 0xff) == 0 ? Int32((status >> 8) & 0xff) : nil
                     let signal: Int32? = (status & 0x7f) != 0 ? Int32(status & 0x7f) : nil
-                    resumedFlag.pointee = true
+                    resumed.value = true
                     source.cancel()
                     cont.resume(returning: (exitCode, signal))
                 }
             }
 
-            source.setCancelHandler {
-                guard !resumedFlag.pointee else { return }
-                resumedFlag.pointee = true
+            source.setCancelHandler { [resumed] in
+                guard !resumed.value else { return }
+                resumed.value = true
                 source.setEventHandler {}
                 cont.resume(returning: (nil, nil))
             }
@@ -361,4 +359,10 @@ private final class ProcessStateBox {
         }
         lock.unlock()
     }
+}
+
+// MARK: - ResumedFlag
+
+private final class ResumedFlag {
+    var value: Bool = false
 }
