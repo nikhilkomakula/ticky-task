@@ -249,10 +249,11 @@ struct CLIProcessRunnerTests {
         let tempDir = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let script = createScript(in: tempDir, name: "immediate_exit", "#!/bin/sh\nprintf done\n")
+        // A system binary, not a freshly written script: endpoint-security scanning of
+        // a brand-new executable can itself take longer than this 150 ms timeout.
         let invocation = CLIInvocation(
-            executableURL: script,
-            arguments: [],
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf done"],
             workingDirectory: tempDir,
             environment: [:],
             timeout: .milliseconds(150)
