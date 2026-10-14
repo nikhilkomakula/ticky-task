@@ -22,9 +22,12 @@ enum CodexSummaryAdapter {
         return args
     }
 
-    static func arguments(config: SummaryRunConfig, lastMessagePath: String, mcpServerNames: [String]) -> [String] {
+    /// Throws when a local server's address is missing or unsafe to embed.
+    static func arguments(config: SummaryRunConfig, lastMessagePath: String, mcpServerNames: [String],
+                          hasAPIKey: Bool = false) throws -> [String] {
         var args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral",
                     "-s", "read-only", "--color", "never"]
+        args += try SummaryConnectionArguments.codexArguments(for: config.connection, hasAPIKey: hasAPIKey)
         args += isolationArguments(mcpServerNames: mcpServerNames)
         if let model = config.modelID?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
             args += ["-m", model]
@@ -76,7 +79,7 @@ enum CodexSummaryAdapter {
         }
         let message = events.turnFailure
             ?? events.lastError.map(stripReconnectWrapper)
-            ?? ClaudeSummaryAdapter.joined(output.stderrText, fallback: ClaudeSummaryAdapter.exitDescription(output))
+            ?? joined(output.stderrText, fallback: exitDescription(output))
         return .failure(SummaryErrorClassifier.classify(
             message: message, provider: .codex, model: config.modelID,
             exitCode: output.exitCode, cliVersion: cliVersion, executablePath: executablePath))
@@ -117,6 +120,19 @@ enum CodexSummaryAdapter {
         return String(message[message.index(after: open)..<message.index(before: message.endIndex)])
     }
 
+    static func exitDescription(_ output: CLIProcessOutput) -> String {
+        if let signal = output.signal { return "The CLI was terminated by signal \(signal)." }
+        return "The CLI exited with status \(output.exitCode.map(String.init) ?? "unknown")."
+    }
+
+    /// Non-empty trimmed parts joined by newlines, or `fallback` when all are empty.
+    static func joined(_ parts: String..., fallback: String) -> String {
+        let text = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return text.isEmpty ? fallback : text
+    }
+
     /// Values interpolated into `-c key=value` must be plain tokens.
     static func isSafeConfigToken(_ value: String) -> Bool {
         !value.isEmpty && value.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil
@@ -127,5 +143,20 @@ enum CodexSummaryAdapter {
         if name.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil { return name }
         let escaped = name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
+    }
+
+    static let loginStatusArguments = ["login", "status"]
+    static let loginArguments = ["login"]
+
+    /// `codex login status` prints e.g. "Logged in using ChatGPT" (exit 0) or
+    /// "Not logged in" (non-zero).
+    static func accountStatus(from output: CLIProcessOutput) -> SummaryAccountStatus {
+        let text = joined(output.stdoutText, output.stderrText, fallback: "")
+        let lower = text.lowercased()
+        if lower.contains("not logged in") || lower.contains("not signed in") { return .signedOut }
+        if output.succeeded, lower.contains("logged in") {
+            return .signedIn(text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text)
+        }
+        return output.succeeded ? .unknown : .signedOut
     }
 }

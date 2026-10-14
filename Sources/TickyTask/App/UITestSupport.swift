@@ -8,6 +8,15 @@ import SwiftData
 enum UITestSupport {
     static var isRunning: Bool { ProcessInfo.processInfo.arguments.contains("-uitest") }
 
+    /// A per-launch, emptied defaults suite for state the app persists itself
+    /// (e.g. Weekly Summary choices), so each test starts clean.
+    static let scratchDefaults: UserDefaults = {
+        let name = "com.tickytask.mac.uitest"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return defaults
+    }()
+
     static let seededTitles = ["Alpha", "Bravo", "Charlie"]
 
     /// The day key the seeded tasks live in: TODAY. The UI test forces the week
@@ -52,6 +61,14 @@ enum UITestSupport {
         _ = try service.addTask(title: "No-notes task", location: .day(seededDayKey))
     }
 
+    /// `-uitestSummaryDelay <seconds>` slows the stub generator (for the Cancel test).
+    static var summaryDelay: Duration {
+        let args = ProcessInfo.processInfo.arguments
+        guard let index = args.firstIndex(of: "-uitestSummaryDelay"), index + 1 < args.count,
+              let seconds = Double(args[index + 1]) else { return .milliseconds(600) }
+        return .milliseconds(Int(seconds * 1000))
+    }
+
     /// `-uitestSummaryFailure auth` makes the stub generator fail with a 401, to
     /// exercise the error banner without a real provider.
     static var summaryFailure: WeeklySummaryError? {
@@ -59,7 +76,7 @@ enum UITestSupport {
         guard let index = args.firstIndex(of: "-uitestSummaryFailure"), index + 1 < args.count else { return nil }
         switch args[index + 1] {
         case "auth":
-            return .authenticationRejected(.claude, SummaryErrorDetail(
+            return .authenticationRejected(.codex, SummaryErrorDetail(
                 message: "API Error: 401 authentication_error (stub)", exitCode: 1, httpStatus: 401, requestID: "req_stub123456"))
         default:
             return nil

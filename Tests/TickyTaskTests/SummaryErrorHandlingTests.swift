@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import TickyTask
 
-/// Fixtures captured from the real CLIs on 2026-10-14 (claude 2.1.299, codex
+/// Fixtures captured from the real Codex CLI on 2026-10-14 (codex
 /// 0.162.1, Databricks AI gateway). Anything marked SYNTHETIC is a documented
 /// error form we could not induce on that machine.
 private enum Fixture {
@@ -31,18 +31,6 @@ private enum Fixture {
 
     static let codexUnknownFeatureStderr = "Error: Unknown feature flag: not_a_real_feature\n"
 
-    static let claudeSuccess = #"""
-    {"type":"result","subtype":"success","is_error":false,"api_error_status":null,"result":"Summary\n\n- Shipped the retry fix.","usage":{"input_tokens":350,"output_tokens":12},"modelUsage":{"system.ai.claude-haiku-4-5":{"inputTokens":350}}}
-    """#
-
-    static let claudeBadModel = #"""
-    {"type":"result","subtype":"success","is_error":true,"result":"There's an issue with the selected model (not-a-real-model). It may not exist or you may not have access to it. Run --model to pick a different model."}
-    """#
-    static let claudeBadModelStderr = #"[claude-code:unrecognized_model] {"model":"not-a-real-model","query_source":"sdk"}"#
-
-    // SYNTHETIC — documented Claude auth failure shapes.
-    static let claudeInvalidKey = #"{"type":"result","subtype":"success","is_error":true,"api_error_status":401,"result":"Invalid API key · Please run /login"}"#
-    static let claudeForbidden = #"{"type":"result","subtype":"success","is_error":true,"api_error_status":403,"result":"API Error: 403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"Your organization does not have access\"}}"}"#
 }
 
 private func output(stdout: String, stderr: String = "", exit: Int32?) -> CLIProcessOutput {
@@ -50,8 +38,7 @@ private func output(stdout: String, stderr: String = "", exit: Int32?) -> CLIPro
                      duration: .seconds(3))
 }
 
-private let claudeConfig = SummaryRunConfig(provider: .claude, modelID: "haiku", effort: "low")
-private let codexConfig = SummaryRunConfig(provider: .codex, modelID: "gpt-5.5", effort: "low")
+private let codexConfig = SummaryRunConfig(connection: .chatGPTAccount, modelID: "gpt-5.5", effort: "low")
 
 @Suite("Weekly Summary — Codex adapter")
 struct CodexSummaryAdapterTests {
@@ -71,7 +58,7 @@ struct CodexSummaryAdapterTests {
     @Test("REAL 404: model does not exist → modelUnavailable (not five reconnect errors)")
     func real404() {
         let result = CodexSummaryAdapter.parse(output(stdout: Fixture.codex404, exit: 1), lastMessage: nil,
-                                               config: SummaryRunConfig(provider: .codex, modelID: "not-a-real-model", effort: nil),
+                                               config: SummaryRunConfig(connection: .cliConfiguration, modelID: "not-a-real-model", effort: nil),
                                                cliVersion: nil, executablePath: nil)
         guard case .failure(.modelUnavailable(.codex, let model, let detail)) = result else {
             Issue.record("expected modelUnavailable, got \(result)"); return
@@ -120,9 +107,9 @@ struct CodexSummaryAdapterTests {
     }
 
     @Test("Arguments: text-only isolation, MCP servers disabled, model/effort as single values, stdin prompt")
-    func arguments() {
-        let args = CodexSummaryAdapter.arguments(
-            config: SummaryRunConfig(provider: .codex, modelID: "gpt-6-sol; rm -rf ~", effort: "xhigh"),
+    func arguments() throws {
+        let args = try CodexSummaryAdapter.arguments(
+            config: SummaryRunConfig(connection: .cliConfiguration, modelID: "gpt-6-sol; rm -rf ~", effort: "xhigh"),
             lastMessagePath: "/tmp/run/last.txt", mcpServerNames: ["jira", "chrome-devtools", "odd name"]
         )
         #expect(Array(args.prefix(8)) == ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "--color", "never"])
@@ -142,12 +129,12 @@ struct CodexSummaryAdapterTests {
     }
 
     @Test("CLI-default model and effort omit their flags; unsafe effort tokens are dropped")
-    func defaultsOmitted() {
-        let args = CodexSummaryAdapter.arguments(config: SummaryRunConfig(provider: .codex, modelID: nil, effort: nil),
+    func defaultsOmitted() throws {
+        let args = try CodexSummaryAdapter.arguments(config: SummaryRunConfig(connection: .cliConfiguration, modelID: nil, effort: nil),
                                                  lastMessagePath: "/x", mcpServerNames: [])
         #expect(!args.contains("-m"))
         #expect(!args.contains { $0.hasPrefix("model_reasoning_effort") })
-        let unsafe = CodexSummaryAdapter.arguments(config: SummaryRunConfig(provider: .codex, modelID: nil, effort: #"high" evil="1"#),
+        let unsafe = try CodexSummaryAdapter.arguments(config: SummaryRunConfig(connection: .cliConfiguration, modelID: nil, effort: #"high" evil="1"#),
                                                    lastMessagePath: "/x", mcpServerNames: [])
         #expect(!unsafe.contains { $0.hasPrefix("model_reasoning_effort") })
     }
@@ -170,85 +157,9 @@ struct CodexSummaryAdapterTests {
     }
 }
 
-@Suite("Weekly Summary — Claude adapter")
-struct ClaudeSummaryAdapterTests {
-    @Test("REAL success envelope → text, resolved model, usage")
-    func realSuccess() {
-        let result = ClaudeSummaryAdapter.parse(output(stdout: Fixture.claudeSuccess, exit: 0), config: claudeConfig,
-                                                cliVersion: nil, executablePath: nil)
-        guard case .success(let summary) = result else { Issue.record("expected success, got \(result)"); return }
-        #expect(summary.text == "Summary\n\n- Shipped the retry fix.")
-        #expect(summary.resolvedModel == "system.ai.claude-haiku-4-5")
-        #expect(summary.usage?.inputTokens == 350)
-    }
-
-    @Test("REAL bad model (is_error + unrecognized_model tag) → modelUnavailable")
-    func realBadModel() {
-        let result = ClaudeSummaryAdapter.parse(output(stdout: Fixture.claudeBadModel, stderr: Fixture.claudeBadModelStderr, exit: 1),
-                                                config: SummaryRunConfig(provider: .claude, modelID: "not-a-real-model", effort: nil),
-                                                cliVersion: nil, executablePath: nil)
-        guard case .failure(.modelUnavailable(.claude, let model, _)) = result else {
-            Issue.record("expected modelUnavailable, got \(result)"); return
-        }
-        #expect(model == "not-a-real-model")
-    }
-
-    @Test("SYNTHETIC 401 / 403 envelopes use api_error_status")
-    func syntheticAuth() {
-        let rejected = ClaudeSummaryAdapter.parse(output(stdout: Fixture.claudeInvalidKey, exit: 1), config: claudeConfig,
-                                                  cliVersion: nil, executablePath: nil)
-        if case .failure(.authenticationRejected(.claude, let d)) = rejected { #expect(d.httpStatus == 401) }
-        else { Issue.record("expected authenticationRejected, got \(rejected)") }
-        let denied = ClaudeSummaryAdapter.parse(output(stdout: Fixture.claudeForbidden, exit: 1), config: claudeConfig,
-                                                cliVersion: nil, executablePath: nil)
-        if case .failure(.accessDenied(.claude, let d)) = denied { #expect(d.httpStatus == 403) }
-        else { Issue.record("expected accessDenied, got \(denied)") }
-    }
-
-    @Test("Non-zero exit with a plausible success envelope must fail")
-    func nonZeroExitFails() {
-        let result = ClaudeSummaryAdapter.parse(output(stdout: Fixture.claudeSuccess, stderr: "killed", exit: 137),
-                                                config: claudeConfig, cliVersion: nil, executablePath: nil)
-        if case .success = result { Issue.record("non-zero exit must not succeed") }
-    }
-
-    @Test("Unreadable output: exit 0 → invalidResponse; non-zero → classified stderr")
-    func unreadable() {
-        let a = ClaudeSummaryAdapter.parse(output(stdout: "not json", exit: 0), config: claudeConfig, cliVersion: nil, executablePath: nil)
-        if case .failure(.invalidResponse(.claude, _)) = a {} else { Issue.record("expected invalidResponse, got \(a)") }
-        let b = ClaudeSummaryAdapter.parse(output(stdout: "", stderr: "error: unknown option '--safe-mode'", exit: 1),
-                                           config: claudeConfig, cliVersion: nil, executablePath: nil)
-        if case .failure(.cliIncompatible(.claude, _)) = b {} else { Issue.record("expected cliIncompatible, got \(b)") }
-    }
-
-    @Test("Blank result on success → emptyResponse")
-    func blank() {
-        let json = #"{"type":"result","subtype":"success","is_error":false,"result":"  \n "}"#
-        #expect(ClaudeSummaryAdapter.parse(output(stdout: json, exit: 0), config: claudeConfig,
-                                           cliVersion: nil, executablePath: nil) == .failure(.emptyResponse(.claude)))
-    }
-
-    @Test("Arguments: safe mode, no tools, instructions as system prompt, optional model/effort")
-    func arguments() {
-        let args = ClaudeSummaryAdapter.arguments(config: claudeConfig, instructions: "INSTR")
-        for flag in ["-p", "--safe-mode", "--strict-mcp-config", "--no-session-persistence"] { #expect(args.contains(flag)) }
-        #expect(zip(args, args.dropFirst()).contains { $0 == "--tools" && $1 == "" })
-        #expect(zip(args, args.dropFirst()).contains { $0 == "--output-format" && $1 == "json" })
-        #expect(zip(args, args.dropFirst()).contains { $0 == "--system-prompt" && $1 == "INSTR" })
-        #expect(zip(args, args.dropFirst()).contains { $0 == "--model" && $1 == "haiku" })
-        #expect(zip(args, args.dropFirst()).contains { $0 == "--effort" && $1 == "low" })
-        let defaults = ClaudeSummaryAdapter.arguments(config: SummaryRunConfig(provider: .claude, modelID: "  ", effort: nil),
-                                                      instructions: "I")
-        #expect(!defaults.contains("--model"))
-        #expect(!defaults.contains("--effort"))
-        #expect(!defaults.contains("--setting-sources"))   // never strip settings — auth may live there
-        #expect(!defaults.contains("--bare"))              // --bare skips keychain/OAuth reads
-    }
-}
-
 @Suite("Weekly Summary — error classifier & presenter")
 struct SummaryErrorClassifierTests {
-    private func kind(_ message: String, _ provider: SummaryProvider = .claude) -> WeeklySummaryError {
+    private func kind(_ message: String, _ provider: SummaryProvider = .codex) -> WeeklySummaryError {
         SummaryErrorClassifier.classify(message: message, provider: provider, model: "m", exitCode: 1)
     }
 
@@ -306,52 +217,163 @@ struct SummaryErrorClassifierTests {
         #expect(detail.map { !$0.message.contains("hunter2") } == true)
     }
 
-    @Test("Auth remediation follows the CLI's setup")
+    @Test("Auth remediation follows the connection and setup")
     func authRemediation() {
         let error = WeeklySummaryError.authenticationRejected(.codex, SummaryErrorDetail(message: "401", httpStatus: 401))
         let gateway = SummaryErrorPresenter.present(error, authSetup: .customProvider(name: "Databricks"))
         #expect(gateway.title == "Codex authentication was rejected (401)")
-        #expect(gateway.message.contains("custom provider or credential helper (Databricks)"))
-        #expect(gateway.message.contains("may not fix it"))
+        #expect(gateway.message.contains("custom provider or credential helper from your Codex configuration (Databricks)"))
+        #expect(gateway.message.contains("ChatGPT account"))
         let account = SummaryErrorPresenter.present(error, authSetup: .accountLogin)
         #expect(account.message.contains("`codex login`"))
+        #expect(account.message.contains("Settings › AI"))
         #expect(!account.message.contains("custom provider"))
+        let local = SummaryErrorPresenter.present(error, connection: .local(server: .ollama, baseURL: nil))
+        #expect(local.message.contains("API key"))
+        let offline = SummaryErrorPresenter.present(.networkFailure(.codex, SummaryErrorDetail(message: "refused")),
+                                                    connection: .local(server: .lmStudio, baseURL: nil))
+        #expect(offline.message.contains("LM Studio is running"))
+        #expect(offline.message.contains("http://localhost:1234/v1"))
     }
 
     @Test("Every error has a title and remediation; details carry the diagnostics")
     func presentationCoverage() {
         let d = SummaryErrorDetail(message: "raw message", exitCode: 1, httpStatus: 500, requestID: "req_1", cliVersion: "1.0", executablePath: "/bin/x")
         let all: [WeeklySummaryError] = [
-            .cliNotFound(.claude), .invalidCLIPath(.codex, path: "/nope"), .launchFailed(.claude, d), .cancelled,
-            .timedOut(seconds: 300), .inputTooLarge(bytes: 300_000, limit: 262_144), .notSignedIn(.claude, d),
-            .authenticationRejected(.claude, d), .authHelperFailed(.claude, d), .accessDenied(.codex, d),
-            .modelUnavailable(.codex, model: "x", d), .configurationRejected(.codex, d), .rateLimited(.claude, d),
-            .providerUnavailable(.claude, d), .networkFailure(.codex, d), .cliIncompatible(.codex, d),
-            .invalidResponse(.claude, d), .emptyResponse(.codex), .cliFailed(.claude, d),
+            .cliNotFound(.codex), .invalidCLIPath(.codex, path: "/nope"), .launchFailed(.codex, d), .cancelled,
+            .timedOut(seconds: 300), .inputTooLarge(bytes: 300_000, limit: 262_144), .notSignedIn(.codex, d),
+            .authenticationRejected(.codex, d), .authHelperFailed(.codex, d), .accessDenied(.codex, d),
+            .modelUnavailable(.codex, model: "x", d), .configurationRejected(.codex, d), .rateLimited(.codex, d),
+            .providerUnavailable(.codex, d), .networkFailure(.codex, d), .cliIncompatible(.codex, d),
+            .invalidResponse(.codex, d), .emptyResponse(.codex), .cliFailed(.codex, d),
         ]
         for error in all {
             let p = SummaryErrorPresenter.present(error)
             #expect(!p.title.isEmpty && !p.message.isEmpty, "\(error)")
         }
-        let details = SummaryErrorPresenter.present(.cliFailed(.claude, d)).details ?? ""
+        let details = SummaryErrorPresenter.present(.cliFailed(.codex, d)).details ?? ""
         for piece in ["raw message", "HTTP status: 500", "Request ID: req_1", "Exit code: 1", "CLI version: 1.0", "Executable: /bin/x"] {
             #expect(details.contains(piece))
         }
         #expect(SummaryErrorPresenter.present(.cliNotFound(.codex)).message.contains("Settings › AI"))
     }
 
-    @Test("Auth setup detection for both CLIs")
+    @Test("Codex auth setup detection from config.toml")
     func authSetup() {
-        let helper = Data(#"{"loggedIn":true,"authMethod":"api_key_helper","apiProvider":"firstParty"}"#.utf8)
-        #expect(SummaryAuthSetup.claude(authStatusJSON: helper, baseURL: "https://dbc.example.com/ai-gateway/anthropic")
-                == .customProvider(name: "dbc.example.com"))
-        let oauth = Data(#"{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}"#.utf8)
-        #expect(SummaryAuthSetup.claude(authStatusJSON: oauth, baseURL: nil) == .accountLogin)
-        #expect(SummaryAuthSetup.claude(authStatusJSON: nil, baseURL: nil) == .unknown)
         #expect(SummaryAuthSetup.codex(configTOML: "model = \"x\"\nmodel_provider = \"Databricks\"\n[model_providers.Databricks]\n")
                 == .customProvider(name: "Databricks"))
         #expect(SummaryAuthSetup.codex(configTOML: "model_provider = \"openai\"") == .accountLogin)
         #expect(SummaryAuthSetup.codex(configTOML: "[profiles.x]\nmodel_provider = \"Other\"") == .accountLogin)
         #expect(SummaryAuthSetup.codex(configTOML: nil) == .unknown)
+    }
+}
+
+@Suite("Weekly Summary — Codex connections")
+struct SummaryConnectionTests {
+    @Test("ChatGPT account overrides the provider; CLI configuration adds nothing")
+    func accountAndCLI() throws {
+        #expect(try SummaryConnectionArguments.codexArguments(for: .chatGPTAccount, hasAPIKey: false)
+                == ["-c", #"model_provider="openai""#])
+        #expect(try SummaryConnectionArguments.codexArguments(for: .cliConfiguration, hasAPIKey: false).isEmpty)
+    }
+
+    @Test("Ollama / LM Studio use Codex's built-in local providers")
+    func builtInLocal() throws {
+        #expect(try SummaryConnectionArguments.codexArguments(for: .local(server: .ollama, baseURL: nil), hasAPIKey: false)
+                == ["--oss", "--local-provider", "ollama"])
+        #expect(try SummaryConnectionArguments.codexArguments(for: .local(server: .lmStudio, baseURL: "http://box:1234/v1"), hasAPIKey: true)
+                == ["--oss", "--local-provider", "lmstudio"])
+    }
+
+    @Test("A custom base URL reaches the built-in providers via CODEX_OSS_BASE_URL; the default doesn't")
+    func ossBaseURL() {
+        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: nil), apiKey: nil).isEmpty)
+        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: "http://localhost:11434/v1"), apiKey: nil).isEmpty)
+        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: "http://gpu-box:11434/v1"), apiKey: nil)
+                == ["CODEX_OSS_BASE_URL": "http://gpu-box:11434/v1"])
+        #expect(SummaryConnectionArguments.environment(for: .chatGPTAccount, apiKey: "ignored").isEmpty)
+    }
+
+    @Test("OpenAI-compatible server: per-run provider table with the Responses wire API; the key travels in the environment")
+    func openAICompatible() throws {
+        let target = SummaryConnectionTarget.local(server: .openAICompatible, baseURL: "https://llm.internal:8443/v1")
+        let args = try SummaryConnectionArguments.codexArguments(for: target, hasAPIKey: true)
+        #expect(args[0...1] == ["-c", #"model_provider="tickytask_local""#])
+        let table = try #require(args.last)
+        #expect(table.hasPrefix("model_providers.tickytask_local={"))
+        #expect(table.contains(#"base_url="https://llm.internal:8443/v1""#))
+        #expect(table.contains(#"wire_api="responses""#))
+        #expect(table.contains(#"env_key="TICKYTASK_LOCAL_API_KEY""#))
+        #expect(!args.joined().contains("sk-secret"))
+        #expect(SummaryConnectionArguments.environment(for: target, apiKey: "sk-secret") == ["TICKYTASK_LOCAL_API_KEY": "sk-secret"])
+        let keyless = try SummaryConnectionArguments.codexArguments(for: target, hasAPIKey: false)
+        #expect(!(keyless.last ?? "").contains("env_key"))
+    }
+
+    @Test("Unsafe or missing local URLs are rejected before reaching Codex")
+    func urlValidation() {
+        #expect(throws: SummaryConnectionArguments.ValidationError.self) {
+            try SummaryConnectionArguments.codexArguments(for: .local(server: .openAICompatible, baseURL: nil), hasAPIKey: false)
+        }
+        for bad in [#"http://x" , evil="1"#, "file:///etc/passwd", "ftp://host/v1", "http:///v1", "javascript:alert(1)", "http://a b/v1"] {
+            #expect(throws: SummaryConnectionArguments.ValidationError.self, "\(bad)") {
+                try SummaryConnectionArguments.codexArguments(for: .local(server: .openAICompatible, baseURL: bad), hasAPIKey: false)
+            }
+        }
+        #expect((try? SummaryConnectionArguments.validatedBaseURL("http://127.0.0.1:8000/v1")) == "http://127.0.0.1:8000/v1")
+    }
+
+    @Test("The full exec command for each connection keeps every isolation flag")
+    func execIsolationPerConnection() throws {
+        let targets: [SummaryConnectionTarget] = [.chatGPTAccount, .cliConfiguration,
+                                                  .local(server: .ollama, baseURL: nil),
+                                                  .local(server: .openAICompatible, baseURL: "http://localhost:8000/v1")]
+        for target in targets {
+            let args = try CodexSummaryAdapter.arguments(config: SummaryRunConfig(connection: target, modelID: "m", effort: nil),
+                                                         lastMessagePath: "/r/last.txt", mcpServerNames: ["jira"])
+            for feature in CodexSummaryAdapter.disabledFeatures {
+                let present = zip(args, args.dropFirst()).contains { $0 == "--disable" && $1 == feature }
+                #expect(present, "\(target): missing --disable \(feature)")
+            }
+            #expect(args.contains(#"web_search="disabled""#))
+            #expect(args.contains("mcp_servers.jira.enabled=false"))
+            #expect(Array(args.suffix(3)) == ["-o", "/r/last.txt", "-"])
+        }
+    }
+
+    @Test("Local model listing parses /v1/models and builds the request")
+    func localListing() throws {
+        let ids = try LocalModelListing.parse(Data(#"{"data":[{"id":"a"},{"id":""},{"id":"b"},{"id":"a"}]}"#.utf8))
+        #expect(ids == ["a", "b"])
+        #expect(throws: (any Error).self) { try LocalModelListing.parse(Data("[]".utf8)) }
+        let request = try LocalModelListing.request(baseURL: "http://localhost:1234/v1/", apiKey: nil)
+        #expect(request.url?.absoluteString == "http://localhost:1234/v1/models")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
+    @Test("`codex login status` parsing")
+    func loginStatus() {
+        func out(_ text: String, _ code: Int32) -> CLIProcessOutput {
+            CLIProcessOutput(exitCode: code, signal: nil, stdout: Data(text.utf8), stderr: Data(), duration: .seconds(1))
+        }
+        #expect(CodexSummaryAdapter.accountStatus(from: out("Logged in using ChatGPT\n", 0)) == .signedIn("Logged in using ChatGPT"))
+        #expect(CodexSummaryAdapter.accountStatus(from: out("Not logged in\n", 1)) == .signedOut)
+        #expect(CodexSummaryAdapter.accountStatus(from: out("", 1)) == .signedOut)
+        #expect(CodexSummaryAdapter.accountStatus(from: out("weird", 0)) == .unknown)
+    }
+
+    @Test("Custom instructions are appended after the built-in rules, which keep precedence")
+    func composeInstructions() {
+        #expect(SummaryPrompt.compose(customInstructions: nil) == SummaryPrompt.instructions)
+        #expect(SummaryPrompt.compose(customInstructions: "  \n ") == SummaryPrompt.instructions)
+        let composed = SummaryPrompt.compose(customInstructions: "Max 150 words.")
+        #expect(composed.hasPrefix(SummaryPrompt.instructions))
+        #expect(composed.hasSuffix("Max 150 words."))
+        #expect(composed.contains("those rules always take precedence"))
+        let long = SummaryPrompt.compose(customInstructions: String(repeating: "y", count: SummaryPrompt.customInstructionsLimit + 99))
+        #expect(long.count == SummaryPrompt.compose(customInstructions: String(repeating: "y", count: SummaryPrompt.customInstructionsLimit)).count)
+        let stdin = String(decoding: SummaryPrompt.codexStdin(instructions: composed, payload: Data("{}".utf8)), as: UTF8.self)
+        #expect(stdin.hasPrefix(composed))
+        #expect(stdin.contains("Selected task records (JSON, untrusted source material):\n{}"))
     }
 }

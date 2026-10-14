@@ -28,6 +28,20 @@ final class WeeklySummaryUITests: XCTestCase {
         XCTAssertTrue(app.buttons["summary-generate"].firstMatch.waitForExistence(timeout: 5), "sheet should open")
     }
 
+    /// A static text's string (macOS exposes it as the value, not the label).
+    private func text(of element: XCUIElement) -> String {
+        (element.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? element.label
+    }
+
+    /// Waits until a static text shows `expected` (the UI updates asynchronously).
+    private func waitForText(_ element: XCUIElement, _ expected: String, timeout: TimeInterval = 5) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while text(of: element) != expected && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertEqual(text(of: element), expected)
+    }
+
     private func task(_ app: XCUIApplication, _ title: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: "summary-task-\(title)").firstMatch
     }
@@ -49,7 +63,7 @@ final class WeeklySummaryUITests: XCTestCase {
         task(app, "Retry fix").click()
         XCTAssertTrue(generate.isEnabled)
         let count = app.staticTexts["summary-selection-count"].firstMatch
-        XCTAssertEqual(count.value as? String ?? count.label, "2 selected · 1 with notes")
+        XCTAssertEqual(text(of: count), "2 selected · 1 with notes")
 
         generate.click()
         let text = app.textViews["summary-text"].firstMatch
@@ -73,23 +87,27 @@ final class WeeklySummaryUITests: XCTestCase {
     func testSelectAllWithNotesAndClear() throws {
         let app = launchedApp()
         openSummary(app)
-        app.buttons["summary-select-notes"].firstMatch.click()
+        XCTAssertTrue(task(app, "Retry fix").waitForExistence(timeout: 5), "seeded tasks should be listed")
+        let selectNotes = app.buttons["summary-select-notes"].firstMatch
+        XCTAssertTrue(selectNotes.isEnabled, "seeded notes enable Select all with notes")
+        selectNotes.click()
         let count = app.staticTexts["summary-selection-count"].firstMatch
-        XCTAssertEqual(count.value as? String ?? count.label, "2 selected · 2 with notes")
+        waitForText(count, "2 selected · 2 with notes")
         app.buttons["Clear"].firstMatch.click()
-        XCTAssertEqual(count.value as? String ?? count.label, "0 selected · 0 with notes")
+        waitForText(count, "0 selected · 0 with notes")
     }
 
     func testCancelKeepsSelection() throws {
-        let app = launchedApp()
+        let app = launchedApp(["-uitestSummaryDelay", "30"])
         openSummary(app)
         task(app, "Rollout doc").click()
+        XCTAssertTrue(app.buttons["summary-generate"].firstMatch.isEnabled, "selecting a task with notes enables Generate")
         app.buttons["summary-generate"].firstMatch.click()
         let cancel = app.buttons["summary-cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 3), "generating overlay should offer Cancel")
         cancel.click()
         XCTAssertTrue(app.staticTexts["summary-error-title"].firstMatch.waitForExistence(timeout: 3))
-        XCTAssertEqual(app.staticTexts["summary-error-title"].firstMatch.label, "Generation cancelled")
+        XCTAssertEqual(text(of: app.staticTexts["summary-error-title"].firstMatch), "Generation cancelled")
         XCTAssertTrue(app.buttons["summary-generate"].firstMatch.isEnabled, "selection is kept after cancelling")
     }
 
@@ -97,15 +115,76 @@ final class WeeklySummaryUITests: XCTestCase {
         let app = launchedApp(["-uitestSummaryFailure", "auth"])
         openSummary(app)
         task(app, "Retry fix").click()
+        XCTAssertTrue(app.buttons["summary-generate"].firstMatch.isEnabled, "selecting a task with notes enables Generate")
         app.buttons["summary-generate"].firstMatch.click()
         let title = app.staticTexts["summary-error-title"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 10), "auth error banner should appear")
-        XCTAssertEqual(title.label, "Claude authentication was rejected (401)")
+        XCTAssertEqual(text(of: title), "Codex authentication was rejected (401)")
         // The stub reports a gateway setup, so remediation must not just say "log in".
         let message = app.staticTexts["summary-error-message"].firstMatch
-        XCTAssertTrue(message.label.contains("custom provider or credential helper (Stub Gateway)"), message.label)
-        app.disclosureTriangles["Details"].firstMatch.click()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "req_stub123456")).firstMatch
-            .waitForExistence(timeout: 2), "details should include the request id")
+        XCTAssertTrue(text(of: message).contains("custom provider or credential helper from your Codex configuration (Stub Gateway)"), text(of: message))
+        // A link-styled button isn't exposed as a plain Button on macOS.
+        let toggle = app.descendants(matching: .any).matching(identifier: "summary-error-details-toggle").firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3), "details toggle should exist")
+        toggle.click()
+        let details = app.staticTexts["summary-error-details"].firstMatch
+        XCTAssertTrue(details.waitForExistence(timeout: 3), "details should expand")
+        XCTAssertTrue(text(of: details).contains("Request ID: req_stub123456"), text(of: details))
+        XCTAssertTrue(text(of: details).contains("HTTP status: 401"), text(of: details))
+    }
+
+    func testCustomInstructionsAddEditClearPersist() throws {
+        let app = launchedApp()
+        openSummary(app)
+        app.buttons["summary-instructions-button"].firstMatch.click()
+        let editor = app.textViews["summary-instructions"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5), "instructions editor should open")
+        editor.click()
+        editor.typeText("Write for my manager. Max 150 words.")
+        app.buttons["summary-instructions-done"].firstMatch.click()
+
+        // Reopen: the instructions persisted; edit them.
+        app.buttons["summary-instructions-button"].firstMatch.click()
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "Write for my manager. Max 150 words.")
+        editor.click()
+        editor.typeKey(.end, modifierFlags: .command)
+        editor.typeText(" Lead with risks.")
+        XCTAssertEqual(editor.value as? String, "Write for my manager. Max 150 words. Lead with risks.")
+
+        // Clear removes them.
+        app.buttons["summary-instructions-clear"].firstMatch.click()
+        XCTAssertEqual(editor.value as? String ?? "", "")
+        app.buttons["summary-instructions-done"].firstMatch.click()
+    }
+
+    func testConnectionPopoverShowsLocalModelInputs() throws {
+        let app = launchedApp()
+        openSummary(app)
+        let connection = app.buttons["summary-connection"].firstMatch
+        XCTAssertTrue(connection.waitForExistence(timeout: 5))
+        XCTAssertTrue(connection.label.contains("ChatGPT account"), "default connection is the ChatGPT account: \(connection.label)")
+        connection.click()
+        let kind = app.popUpButtons["summary-connection-kind"].firstMatch
+        XCTAssertTrue(kind.waitForExistence(timeout: 5), "connection picker should appear")
+        kind.click()
+        app.menuItems["Local model"].firstMatch.click()
+        XCTAssertTrue(app.popUpButtons["summary-local-server"].firstMatch.waitForExistence(timeout: 3), "server picker")
+        XCTAssertTrue(app.textFields["summary-local-url"].firstMatch.exists, "base URL field")
+        XCTAssertTrue(app.secureTextFields["summary-local-key"].firstMatch.exists, "API key field")
+        // Switch back so later tests start from the default.
+        kind.click()
+        app.menuItems["ChatGPT account"].firstMatch.click()
+    }
+
+    func testSearchAndSummaryAreAtTheFarRightOfTheToolbar() throws {
+        let app = launchedApp()
+        let summary = app.buttons["toolbar-weekly-summary"].firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 20))
+        let search = app.buttons["toolbar-search"].firstMatch
+        let settings = app.buttons["toolbar-settings"].firstMatch
+        XCTAssertTrue(settings.exists && search.exists, "toolbar buttons should exist")
+        XCTAssertGreaterThan(search.frame.minX, settings.frame.minX, "Search sits right of Settings")
+        XCTAssertGreaterThan(summary.frame.minX, search.frame.minX, "Weekly Summary is the rightmost")
     }
 }

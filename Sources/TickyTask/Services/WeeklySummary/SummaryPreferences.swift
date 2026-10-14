@@ -1,156 +1,159 @@
 import Foundation
 
-/// Manages user preferences for Weekly Summary via UserDefaults.
-/// Keys are safe for inclusion in portable backup (except CLI paths).
+/// Remembered Weekly Summary choices (UserDefaults). Models, efforts, and custom
+/// model ids are kept per connection, since each reaches different models.
+/// Every portable value is stored as a String so the settings backup can carry
+/// them generically; the CLI path (machine-specific) and the local API key
+/// (Keychain) are never part of it.
 struct SummaryPreferences {
+    enum ConnectionKind: String, CaseIterable, Identifiable, Sendable {
+        case chatGPTAccount = "chatgpt"
+        case cliConfiguration = "cli"
+        case local
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .chatGPTAccount: "ChatGPT account"
+            case .cliConfiguration: "Codex CLI configuration"
+            case .local: "Local model"
+            }
+        }
+    }
+
+    private enum Key {
+        static let connection = "weeklySummary.connection"
+        static let localServer = "weeklySummary.local.server"
+        static let localBaseURL = "weeklySummary.local.baseURL"
+        static let efforts = "weeklySummary.efforts"
+        static let instructions = "weeklySummary.instructions"
+        static let cliPath = "weeklySummary.cliPath.codex"
+        static func model(_ connection: String) -> String { "weeklySummary.model.\(connection)" }
+        static func customModels(_ connection: String) -> String { "weeklySummary.customModels.\(connection)" }
+    }
+
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = SummaryPreferences.store) {
         self.defaults = defaults
     }
 
-    // MARK: - Provider
+    /// UI-test runs use a throwaway suite so they never change the user's real choices.
+    static let store: UserDefaults = UITestSupport.isRunning ? UITestSupport.scratchDefaults : .standard
 
-    var provider: SummaryProvider {
-        get {
-            let rawValue = defaults.string(forKey: "weeklySummary.provider") ?? "claude"
-            return SummaryProvider(rawValue: rawValue) ?? .claude
-        }
-        nonmutating set {
-            defaults.set(newValue.rawValue, forKey: "weeklySummary.provider")
+    // MARK: - Connection
+
+    /// Defaults to the user's own ChatGPT sign-in — no gateway setup needed.
+    var connectionKind: ConnectionKind {
+        get { defaults.string(forKey: Key.connection).flatMap(ConnectionKind.init(rawValue:)) ?? .chatGPTAccount }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.connection) }
+    }
+
+    var localServer: SummaryLocalServer {
+        get { defaults.string(forKey: Key.localServer).flatMap(SummaryLocalServer.init(rawValue:)) ?? .ollama }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.localServer) }
+    }
+
+    /// Blank = the server's default address.
+    var localBaseURL: String {
+        get { defaults.string(forKey: Key.localBaseURL) ?? "" }
+        nonmutating set { setOrRemove(newValue, forKey: Key.localBaseURL) }
+    }
+
+    var connection: SummaryConnectionTarget {
+        switch connectionKind {
+        case .chatGPTAccount: .chatGPTAccount
+        case .cliConfiguration: .cliConfiguration
+        case .local: .local(server: localServer, baseURL: localBaseURL.isEmpty ? nil : localBaseURL)
         }
     }
 
-    // MARK: - Model IDs (per provider)
+    // MARK: - Models (per connection)
 
-    func modelID(for provider: SummaryProvider) -> String {
-        let key = "weeklySummary.model.\(provider.rawValue)"
-        return defaults.string(forKey: key) ?? ""
+    /// "" = CLI default.
+    func modelID(for connection: SummaryConnectionTarget) -> String {
+        defaults.string(forKey: Key.model(connection.storageKey)) ?? ""
     }
 
-    func setModelID(_ id: String, for provider: SummaryProvider) {
-        let key = "weeklySummary.model.\(provider.rawValue)"
-        let trimmed = id.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            defaults.removeObject(forKey: key)
-        } else {
-            defaults.set(trimmed, forKey: key)
-        }
+    func setModelID(_ id: String, for connection: SummaryConnectionTarget) {
+        setOrRemove(id, forKey: Key.model(connection.storageKey))
     }
 
-    // MARK: - Efforts (per provider + model ID)
+    // MARK: - Efforts (per connection + model)
 
-    func effort(for provider: SummaryProvider, modelID: String) -> EffortChoice? {
-        guard let effortJSON = defaults.string(forKey: "weeklySummary.efforts") else {
-            return nil
-        }
-
-        guard let data = effortJSON.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-
-        let keyString = "\(provider.rawValue)|\(modelID)"
-        guard let effortData = dict[keyString] as? [String: Any] else { return nil }
-
-        // Decode EffortChoice from its Codable representation.
-        if let choiceType = effortData["_type"] as? String {
-            switch choiceType {
-            case "cliDefault":
-                return .cliDefault
-            case "modelDefault":
-                if let level = effortData["level"] as? String {
-                    return .modelDefault(level)
-                }
-            case "level":
-                if let level = effortData["level"] as? String {
-                    return .level(level)
-                }
-            default:
-                break
-            }
-        }
-        return nil
+    func effort(for connection: SummaryConnectionTarget, modelID: String) -> EffortChoice? {
+        efforts()[effortKey(connection, modelID)]
     }
 
-    func setEffort(_ effort: EffortChoice, for provider: SummaryProvider, modelID: String) {
-        var dict = (defaults.string(forKey: "weeklySummary.efforts")
-            .flatMap { $0.data(using: .utf8) }
-            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) ?? [:]
-
-        let keyString = "\(provider.rawValue)|\(modelID)"
-
-        // Encode EffortChoice.
-        var effortData: [String: Any] = [:]
-        switch effort {
-        case .cliDefault:
-            effortData["_type"] = "cliDefault"
-        case .modelDefault(let level):
-            effortData["_type"] = "modelDefault"
-            effortData["level"] = level
-        case .level(let level):
-            effortData["_type"] = "level"
-            effortData["level"] = level
-        }
-
-        dict[keyString] = effortData
-
-        if let data = try? JSONSerialization.data(withJSONObject: dict),
-           let json = String(data: data, encoding: .utf8) {
-            defaults.set(json, forKey: "weeklySummary.efforts")
+    func setEffort(_ effort: EffortChoice, for connection: SummaryConnectionTarget, modelID: String) {
+        var all = efforts()
+        all[effortKey(connection, modelID)] = effort
+        if let data = try? JSONEncoder().encode(all) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Key.efforts)
         }
     }
 
-    // MARK: - Custom Model IDs (per provider)
-
-    func customModelIDs(for provider: SummaryProvider) -> [String] {
-        let key = "weeklySummary.customModels.\(provider.rawValue)"
-        return (defaults.array(forKey: key) as? [String]) ?? []
+    private func efforts() -> [String: EffortChoice] {
+        guard let json = defaults.string(forKey: Key.efforts),
+              let decoded = try? JSONDecoder().decode([String: EffortChoice].self, from: Data(json.utf8)) else { return [:] }
+        return decoded
     }
 
-    func addCustomModelID(_ id: String, for provider: SummaryProvider) {
-        let key = "weeklySummary.customModels.\(provider.rawValue)"
-        var ids = customModelIDs(for: provider)
-        let trimmed = id.trimmingCharacters(in: .whitespaces)
+    private func effortKey(_ connection: SummaryConnectionTarget, _ modelID: String) -> String {
+        "\(connection.storageKey)|\(modelID)"
+    }
 
-        // Skip empty strings and duplicates.
-        guard !trimmed.isEmpty, !ids.contains(trimmed) else { return }
+    // MARK: - Custom model ids (per connection)
 
-        // Keep most recent at the front; cap at 10.
+    /// Most recent first.
+    func customModelIDs(for connection: SummaryConnectionTarget) -> [String] {
+        guard let json = defaults.string(forKey: Key.customModels(connection.storageKey)),
+              let ids = try? JSONDecoder().decode([String].self, from: Data(json.utf8)) else { return [] }
+        return ids
+    }
+
+    /// Trims, ignores blanks, de-duplicates (moving a repeat to the front), keeps 10.
+    func addCustomModelID(_ id: String, for connection: SummaryConnectionTarget) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var ids = customModelIDs(for: connection).filter { $0 != trimmed }
         ids.insert(trimmed, at: 0)
-        if ids.count > 10 {
-            ids = Array(ids.prefix(10))
-        }
-
-        defaults.set(ids, forKey: key)
-    }
-
-    // MARK: - CLI Path Overrides (per provider)
-
-    func cliPathOverride(for provider: SummaryProvider) -> String? {
-        let key = "weeklySummary.cliPath.\(provider.rawValue)"
-        let path = defaults.string(forKey: key)
-        return path?.isEmpty == false ? path : nil
-    }
-
-    func setCLIPathOverride(_ path: String?, for provider: SummaryProvider) {
-        let key = "weeklySummary.cliPath.\(provider.rawValue)"
-        let trimmed = path?.trimmingCharacters(in: .whitespaces)
-        if trimmed?.isEmpty != false {
-            defaults.removeObject(forKey: key)
-        } else {
-            defaults.set(trimmed, forKey: key)
+        if let data = try? JSONEncoder().encode(Array(ids.prefix(10))) {
+            defaults.set(String(decoding: data, as: UTF8.self), forKey: Key.customModels(connection.storageKey))
         }
     }
 
-    // MARK: - Portable Backup Keys
+    // MARK: - Custom instructions
 
-    static let portableKeys = [
-        "weeklySummary.provider",
-        "weeklySummary.model.claude",
-        "weeklySummary.model.codex",
-        "weeklySummary.efforts",
-        "weeklySummary.customModels.claude",
-        "weeklySummary.customModels.codex"
-    ]
+    /// The user's own summary instructions, applied on top of the built-in rules.
+    var customInstructions: String {
+        get { defaults.string(forKey: Key.instructions) ?? "" }
+        nonmutating set {
+            let limited = String(newValue.prefix(SummaryPrompt.customInstructionsLimit))
+            setOrRemove(limited, forKey: Key.instructions)
+        }
+    }
+
+    // MARK: - CLI path (machine-specific; not backed up)
+
+    var cliPathOverride: String? {
+        get { defaults.string(forKey: Key.cliPath).flatMap { $0.isEmpty ? nil : $0 } }
+        nonmutating set { setOrRemove(newValue ?? "", forKey: Key.cliPath) }
+    }
+
+    // MARK: - Backup
+
+    /// Every connection's storage key, so per-connection keys can be enumerated.
+    static let connectionStorageKeys = ["chatgpt", "cli"] + SummaryLocalServer.allCases.map { "local-\($0.rawValue)" }
+
+    /// String-valued keys safe to include in the portable settings backup.
+    static let portableKeys: [String] =
+        [Key.connection, Key.localServer, Key.localBaseURL, Key.efforts, Key.instructions]
+        + connectionStorageKeys.flatMap { [Key.model($0), Key.customModels($0)] }
+
+    private func setOrRemove(_ value: String, forKey key: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { defaults.removeObject(forKey: key) } else { defaults.set(key == Key.instructions ? value : trimmed, forKey: key) }
+    }
 }

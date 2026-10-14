@@ -166,14 +166,10 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     var endOfDayReminderMinutes: Int? = nil
     var menuBarOnly: Bool? = nil
     var autoCheckUpdates: Bool? = nil
-    // Weekly Summary choices (optional, stable keys). CLI paths are machine-specific
-    // and deliberately excluded.
-    var weeklySummaryProvider: String? = nil
-    var weeklySummaryModelClaude: String? = nil
-    var weeklySummaryModelCodex: String? = nil
-    var weeklySummaryEfforts: String? = nil
-    var weeklySummaryCustomModelsClaude: [String]? = nil
-    var weeklySummaryCustomModelsCodex: [String]? = nil
+    /// Weekly Summary choices (connection, models, efforts, custom instructions),
+    /// keyed by their UserDefaults key. Optional so older backups decode; the CLI
+    /// path and the local-server API key are never included.
+    var weeklySummary: [String: String]? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -193,12 +189,12 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             endOfDayReminderMinutes: d.object(forKey: "endOfDayReminderMinutes") as? Int,
             menuBarOnly: d.object(forKey: "menuBarOnly") as? Bool,
             autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool,
-            weeklySummaryProvider: d.string(forKey: "weeklySummary.provider"),
-            weeklySummaryModelClaude: d.string(forKey: "weeklySummary.model.claude"),
-            weeklySummaryModelCodex: d.string(forKey: "weeklySummary.model.codex"),
-            weeklySummaryEfforts: d.string(forKey: "weeklySummary.efforts"),
-            weeklySummaryCustomModelsClaude: d.array(forKey: "weeklySummary.customModels.claude") as? [String],
-            weeklySummaryCustomModelsCodex: d.array(forKey: "weeklySummary.customModels.codex") as? [String]
+            weeklySummary: {
+                let values = SummaryPreferences.portableKeys.reduce(into: [String: String]()) { result, key in
+                    if let value = d.string(forKey: key) { result[key] = value }
+                }
+                return values.isEmpty ? nil : values
+            }()
         )
     }
 
@@ -232,12 +228,10 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = endOfDayReminderMinutes { d.set(v, forKey: "endOfDayReminderMinutes") }
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
-        if let v = weeklySummaryProvider { d.set(v, forKey: "weeklySummary.provider") }
-        if let v = weeklySummaryModelClaude { d.set(v, forKey: "weeklySummary.model.claude") }
-        if let v = weeklySummaryModelCodex { d.set(v, forKey: "weeklySummary.model.codex") }
-        if let v = weeklySummaryEfforts { d.set(v, forKey: "weeklySummary.efforts") }
-        if let v = weeklySummaryCustomModelsClaude { d.set(v, forKey: "weeklySummary.customModels.claude") }
-        if let v = weeklySummaryCustomModelsCodex { d.set(v, forKey: "weeklySummary.customModels.codex") }
+        // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
+        for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key) {
+            d.set(value, forKey: key)
+        }
     }
 }
 

@@ -137,7 +137,7 @@ private struct SummarySelectionView: View {
                     Text("\(selectedCount) selected · \(selectedWithNotes) with notes")
                         .font(.callout.weight(.medium))
                         .accessibilityIdentifier("summary-selection-count")
-                    Text("Sends the selected tasks through your \(session.provider.cliName) to its configured model provider. Your CLI and provider settings apply. Summarizes current notes and statuses, not a history of the week.")
+                    Text(disclosure)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -157,6 +157,13 @@ private struct SummarySelectionView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
+    }
+
+    private var disclosure: String {
+        let destination = session.connection.isLocal
+            ? "to your local model server"
+            : (session.connection == .chatGPTAccount ? "to OpenAI using your ChatGPT account" : "to the provider in your Codex configuration")
+        return "Sends the selected tasks through the Codex CLI \(destination). Summarizes current notes and statuses, not a history of the week."
     }
 
     private func ordered(_ rows: [SummaryTaskSnapshot]) -> [SummaryTaskSnapshot] {
@@ -215,28 +222,39 @@ private struct SummaryTaskRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(task.title.isEmpty ? "Untitled" : task.title)
-                        .strikethrough(task.isDone)
-                        .foregroundStyle(task.isDone ? .secondary : .primary)
-                    if task.isDone {
-                        Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
-                            .accessibilityLabel("Done")
+            // A real button (not a tap gesture) so the first click always toggles
+            // and the row works with the keyboard and VoiceOver.
+            Button { session.toggle(task.id) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(task.title.isEmpty ? "Untitled" : task.title)
+                                .strikethrough(task.isDone)
+                                .foregroundStyle(task.isDone ? .secondary : .primary)
+                            if task.isDone {
+                                Image(systemName: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
+                                    .accessibilityLabel("Done")
+                            }
+                            if task.isRecurring {
+                                Image(systemName: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.secondary)
+                                    .accessibilityLabel("Repeats")
+                            }
+                        }
+                        Text(task.hasNotes ? excerpt : "No notes")
+                            .font(.caption)
+                            .foregroundStyle(task.hasNotes ? .secondary : .tertiary)
+                            .lineLimit(2)
                     }
-                    if task.isRecurring {
-                        Image(systemName: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.secondary)
-                            .accessibilityLabel("Repeats")
-                    }
+                    Spacer(minLength: 0)
                 }
-                Text(task.hasNotes ? excerpt : "No notes")
-                    .font(.caption)
-                    .foregroundStyle(task.hasNotes ? .secondary : .tertiary)
-                    .lineLimit(2)
+                .contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
+            .accessibilityValue(isSelected ? "selected" : "not selected")
+            .accessibilityIdentifier("summary-task-\(task.title)")
+
             if let series = task.seriesID, seriesCount > 1 {
                 Button("Select series (\(seriesCount))") { session.selectSeries(series, in: weekTasks) }
                     .buttonStyle(.link)
@@ -248,13 +266,7 @@ private struct SummaryTaskRow: View {
         .padding(.horizontal, 8)
         .background(isSelected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.03),
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture { session.toggle(task.id) }
         .padding(.leading, 18)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityValue(isSelected ? "selected" : "not selected")
-        .accessibilityIdentifier("summary-task-\(task.title)")
     }
 
     private var excerpt: String {
@@ -269,17 +281,28 @@ private struct SummaryConfigurationBar: View {
     @Bindable var session: WeeklySummarySession
     @State private var isEnteringCustomModel = false
     @State private var customModel = ""
+    @State private var showConnection = false
+    @State private var showInstructions = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Picker("Provider", selection: Binding(get: { session.provider }, set: { session.selectProvider($0) })) {
-                    ForEach(SummaryProvider.allCases) { Text($0.displayName).tag($0) }
+                Button {
+                    showConnection = true
+                } label: {
+                    Label("Codex · \(session.connection.label)", systemImage: session.connection.isLocal ? "desktopcomputer" : "person.crop.circle")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityIdentifier("summary-provider")
+                .help("Change how Codex connects")
+                .accessibilityIdentifier("summary-connection")
+                .popover(isPresented: $showConnection, arrowEdge: .bottom) {
+                    SummaryConnectionForm(
+                        onChange: { Task { await session.syncConnection(); await session.refreshAccountStatus() } },
+                        accountStatus: { await session.fetchAccountStatus() },
+                        signIn: { try await session.performSignIn() }
+                    )
+                    .padding(16)
+                    .frame(width: 420)
+                }
 
                 Picker("Model", selection: Binding(get: { session.modelID }, set: { value in
                     if value == Self.customTag { isEnteringCustomModel = true } else { session.selectModel(value) }
@@ -288,7 +311,7 @@ private struct SummaryConfigurationBar: View {
                     Divider()
                     Text("Custom model ID…").tag(Self.customTag)
                 }
-                .frame(maxWidth: 260)
+                .frame(maxWidth: 240)
                 .accessibilityIdentifier("summary-model")
 
                 Button {
@@ -302,30 +325,59 @@ private struct SummaryConfigurationBar: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(session.isRefreshingModels)
-                .help(session.provider == .claude ? "Refresh configured models" : "Refresh the Codex model list")
+                .help("Refresh the model list")
                 .accessibilityLabel("Refresh models")
                 .accessibilityIdentifier("summary-refresh-models")
 
                 Picker("Effort", selection: Binding(get: { session.effort }, set: { session.selectEffort($0) })) {
                     ForEach(session.effortChoices, id: \.self) { Text(SummaryEffortResolver.label(for: $0)).tag($0) }
                 }
-                .frame(maxWidth: 220)
+                .frame(maxWidth: 200)
                 .accessibilityIdentifier("summary-effort")
+
+                Button {
+                    showInstructions = true
+                } label: {
+                    Label("Instructions", systemImage: session.customInstructions.isEmpty ? "text.bubble" : "text.bubble.fill")
+                }
+                .help(session.customInstructions.isEmpty ? "Add your own instructions" : "Edit your instructions")
+                .accessibilityIdentifier("summary-instructions-button")
+            }
+            if session.connection == .chatGPTAccount, session.accountStatus == .signedOut {
+                HStack(spacing: 6) {
+                    Label("Codex isn't signed in to your ChatGPT account.", systemImage: "exclamationmark.circle.fill")
+                        .foregroundStyle(.orange)
+                    Button(session.isSigningIn ? "Signing in…" : "Sign in…") { Task { await session.signIn() } }
+                        .disabled(session.isSigningIn)
+                }
+                .font(.caption)
             }
             if let note = session.effortNote ?? session.modelRefreshError {
                 Label(note, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if let description = session.modelListDescription {
                 Text(description).font(.caption).foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .task { await session.refreshAccountStatus() }
         .alert("Custom model ID", isPresented: $isEnteringCustomModel) {
-            TextField("e.g. claude-opus-5-5 or gpt-6-sol", text: $customModel)
+            TextField("e.g. gpt-6-sol or llama3.1:8b", text: $customModel)
             Button("Use") { session.useCustomModel(customModel); customModel = "" }
             Button("Cancel", role: .cancel) { customModel = "" }
         } message: {
-            Text("Passed to the \(session.provider.cliName) exactly as typed.")
+            Text("Passed to Codex exactly as typed.")
+        }
+        .sheet(isPresented: $showInstructions) {
+            VStack(alignment: .trailing, spacing: 12) {
+                SummaryInstructionsEditor(instructions: $session.customInstructions)
+                Button("Done") { showInstructions = false }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("summary-instructions-done")
+            }
+            .padding(20)
+            .frame(width: 560)
         }
     }
 
@@ -343,7 +395,7 @@ private struct SummaryGeneratingOverlay: View {
             Rectangle().fill(.regularMaterial)
             VStack(spacing: 12) {
                 ProgressView().controlSize(.large)
-                Text("Generating with \(session.provider.displayName) · \(session.selectedModel.label)")
+                Text("Generating with Codex · \(session.connection.label) · \(session.selectedModel.label)")
                     .font(.headline)
                 TimelineView(.periodic(from: startedAt, by: 1)) { context in
                     Text("\(Int(context.date.timeIntervalSince(startedAt)))s elapsed")
@@ -429,7 +481,7 @@ private struct SummaryResultView: View {
     }
 
     private func footer(_ result: SummaryResult) -> String {
-        var parts = [result.config.provider.displayName, result.resolvedModel ?? result.config.modelID ?? "CLI default model"]
+        var parts = ["Codex", result.config.connection.label, result.resolvedModel ?? result.config.modelID ?? "CLI default model"]
         if let effort = result.config.effort { parts.append("effort \(effort)") }
         parts.append("\(Int(result.duration.components.seconds))s")
         return "Generated with " + parts.joined(separator: " · ")
@@ -460,12 +512,18 @@ private struct SummaryErrorBanner: View {
                     .help("Dismiss")
             }
             if let details = presentation.details {
-                DisclosureGroup("Details", isExpanded: $showDetails) {
+                // An explicit button: clicking a DisclosureGroup's label doesn't reliably toggle it on macOS.
+                Button(showDetails ? "Hide details" : "Show details") { showDetails.toggle() }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .accessibilityIdentifier("summary-error-details-toggle")
+                if showDetails {
                     HStack(alignment: .top) {
                         Text(details)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("summary-error-details")
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(details, forType: .string)
@@ -474,13 +532,12 @@ private struct SummaryErrorBanner: View {
                         .help("Copy details")
                         .accessibilityLabel("Copy error details")
                     }
-                    .padding(.top, 4)
                 }
-                .font(.caption)
             }
         }
         .padding(10)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .accessibilityIdentifier("summary-error")
+        // No identifier on this container: on macOS it would override the
+        // children's identifiers (title/message), hiding them from tests.
     }
 }

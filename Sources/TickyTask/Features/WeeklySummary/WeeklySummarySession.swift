@@ -3,9 +3,9 @@ import AppKit
 import Observation
 
 /// Working state of the Weekly Summary sheet: the chosen week and tasks, the
-/// provider/model/effort, an in-flight generation, and the editable result.
-/// Generation runs on an immutable snapshot taken at Generate time; stale
-/// results (from a cancelled or superseded run) are discarded by generation id.
+/// Codex connection/model/effort, an in-flight generation, and the editable
+/// result. Generation runs on an immutable snapshot taken at Generate time;
+/// stale results (from a cancelled or superseded run) are discarded by id.
 @MainActor
 @Observable
 final class WeeklySummarySession {
@@ -19,14 +19,22 @@ final class WeeklySummarySession {
     var selectedIDs: Set<UUID> = []
     private(set) var phase: Phase = .selecting
 
-    private(set) var provider: SummaryProvider
-    private(set) var modelLists: [SummaryProvider: SummaryModelList] = [:]
+    private(set) var connection: SummaryConnectionTarget
+    private(set) var modelLists: [String: SummaryModelList] = [:]
     private(set) var modelID: String
     private(set) var effort: EffortChoice = .cliDefault
     /// Shown when a remembered effort didn't fit the newly chosen model.
     private(set) var effortNote: String?
     private(set) var isRefreshingModels = false
     private(set) var modelRefreshError: String?
+
+    private(set) var accountStatus: SummaryAccountStatus = .unknown
+    private(set) var isSigningIn = false
+
+    /// The user's own instructions, applied on top of the built-in rules.
+    var customInstructions: String {
+        didSet { preferences.customInstructions = customInstructions }
+    }
 
     /// The editable summary text (what Copy copies).
     var resultText = ""
@@ -49,19 +57,58 @@ final class WeeklySummarySession {
         self.generator = generator
         self.catalog = catalog
         self.preferences = preferences
-        self.provider = preferences.provider
-        self.modelID = preferences.modelID(for: preferences.provider)
+        self.connection = preferences.connection
+        self.modelID = preferences.modelID(for: preferences.connection)
+        self.customInstructions = preferences.customInstructions
     }
+
+    // MARK: - Connection
+
+    /// Re-reads the connection from preferences (e.g. after Settings › AI changed
+    /// it) and reloads models when it differs.
+    func syncConnection() async {
+        let current = preferences.connection
+        guard current != connection else { return }
+        connection = current
+        modelID = preferences.modelID(for: current)
+        effortNote = nil
+        reconcileEffort()
+        await loadModels()
+    }
+
+    func refreshAccountStatus() async {
+        guard connection == .chatGPTAccount else { return }
+        accountStatus = await generator.accountStatus()
+    }
+
+    /// Runs `codex login` (the browser opens for the ChatGPT sign-in).
+    func signIn() async {
+        isSigningIn = true
+        defer { isSigningIn = false }
+        do {
+            try await generator.signIn()
+            dismissError()
+        } catch let failure as WeeklySummaryError {
+            present(failure, authSetup: .accountLogin)
+        } catch {
+            present(.notSignedIn(.codex, SummaryErrorDetail(message: error.localizedDescription)), authSetup: .accountLogin)
+        }
+        accountStatus = await generator.accountStatus()
+        await loadModels(refresh: true)
+    }
+
+    /// Pass-throughs so the shared connection form can use this session's generator.
+    func fetchAccountStatus() async -> SummaryAccountStatus { await generator.accountStatus() }
+    func performSignIn() async throws { try await generator.signIn() }
 
     // MARK: - Models & effort
 
-    /// The current provider's models plus any custom ids the user has entered,
-    /// and the remembered model if it's no longer listed (so it isn't lost).
+    /// The connection's models plus custom ids the user has entered, and the
+    /// remembered model if it's no longer listed (so it isn't lost).
     var modelOptions: [SummaryModelOption] {
-        var options = modelLists[provider]?.models ?? [.cliDefault]
+        var options = modelLists[connection.storageKey]?.models ?? [.cliDefault]
         var known = Set(options.map(\.id))
-        let customs = preferences.customModelIDs(for: provider) + [modelID]
-        for id in customs where !id.isEmpty && !known.contains(id) {
+        for id in preferences.customModelIDs(for: connection) + [modelID] where !id.isEmpty && !known.contains(id) {
             options.append(SummaryModelOption(id: id, label: id, source: .custom, supportedEfforts: nil, defaultEffort: nil))
             known.insert(id)
         }
@@ -73,11 +120,11 @@ final class WeeklySummarySession {
     }
 
     var effortChoices: [EffortChoice] {
-        SummaryEffortResolver.choices(provider: provider, model: selectedModel)
+        SummaryEffortResolver.choices(model: selectedModel)
     }
 
     var modelListDescription: String? {
-        guard let list = modelLists[provider] else { return nil }
+        guard let list = modelLists[connection.storageKey] else { return nil }
         var text = list.sourceDescription
         if let date = list.refreshedAt { text += " · updated \(date.formatted(.relative(presentation: .named)))" }
         if list.isStale { text += " · refresh failed, showing the last list" }
@@ -85,60 +132,49 @@ final class WeeklySummarySession {
     }
 
     func loadModels(refresh: Bool = false) async {
-        let target = provider
+        let target = connection
         isRefreshingModels = true
         modelRefreshError = nil
         defer { isRefreshingModels = false }
         do {
             let list = try await catalog.models(for: target, refresh: refresh)
-            modelLists[target] = list
+            modelLists[target.storageKey] = list
             if list.isStale { modelRefreshError = "Couldn't refresh the model list; showing the last one." }
-        } catch let error as WeeklySummaryError {
-            modelRefreshError = SummaryErrorPresenter.present(error).title
+        } catch let failure as WeeklySummaryError {
+            let presentation = SummaryErrorPresenter.present(failure, connection: target)
+            modelRefreshError = "\(presentation.title). \(presentation.message)"
         } catch {
             modelRefreshError = error.localizedDescription
         }
-        if target == provider { reconcileEffort() }
-    }
-
-    func selectProvider(_ newProvider: SummaryProvider) {
-        guard newProvider != provider else { return }
-        provider = newProvider
-        preferences.provider = newProvider
-        modelID = preferences.modelID(for: newProvider)
-        effortNote = nil
-        reconcileEffort()
-        if modelLists[newProvider] == nil {
-            Task { await loadModels() }
-        }
+        if target == connection { reconcileEffort() }
     }
 
     func selectModel(_ id: String) {
         modelID = id
-        preferences.setModelID(id, for: provider)
+        preferences.setModelID(id, for: connection)
         reconcileEffort()
     }
 
-    /// Adds and selects a typed model id (passed verbatim to the CLI).
+    /// Adds and selects a typed model id (passed verbatim to Codex).
     func useCustomModel(_ rawID: String) {
         let id = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return }
-        preferences.addCustomModelID(id, for: provider)
+        preferences.addCustomModelID(id, for: connection)
         selectModel(id)
     }
 
     func selectEffort(_ choice: EffortChoice) {
         effort = choice
         effortNote = nil
-        preferences.setEffort(choice, for: provider, modelID: modelID)
+        preferences.setEffort(choice, for: connection, modelID: modelID)
     }
 
     private func reconcileEffort() {
-        let remembered = preferences.effort(for: provider, modelID: modelID)
-        let reconciled = SummaryEffortResolver.reconcile(remembered: remembered, provider: provider, model: selectedModel)
+        let remembered = preferences.effort(for: connection, modelID: modelID)
+        let reconciled = SummaryEffortResolver.reconcile(remembered: remembered, model: selectedModel)
         effort = reconciled.choice
         effortNote = reconciled.note
-        if remembered != reconciled.choice { preferences.setEffort(reconciled.choice, for: provider, modelID: modelID) }
+        if remembered != reconciled.choice { preferences.setEffort(reconciled.choice, for: connection, modelID: modelID) }
     }
 
     // MARK: - Week & selection
@@ -189,7 +225,7 @@ final class WeeklySummarySession {
         start()
     }
 
-    /// Re-runs the captured snapshot with the current provider/model/effort.
+    /// Re-runs the captured snapshot with the current connection/model/effort/instructions.
     func regenerate() {
         guard !snapshot.isEmpty else { return }
         start()
@@ -222,17 +258,18 @@ final class WeeklySummarySession {
         do {
             payload = try SummaryInputBuilder.payload(for: snapshot)
         } catch let failure as WeeklySummaryError {
-            present(failure, provider: provider)
+            present(failure)
             return
         } catch {
-            present(.invalidResponse(provider, SummaryErrorDetail(message: error.localizedDescription)), provider: provider)
+            present(.invalidResponse(.codex, SummaryErrorDetail(message: error.localizedDescription)))
             return
         }
 
         let request = SummaryRequest(
-            instructions: SummaryPrompt.instructions,
+            instructions: SummaryPrompt.compose(customInstructions: customInstructions),
             payload: payload,
-            config: SummaryRunConfig(provider: provider, modelID: modelID.isEmpty ? nil : modelID, effort: effort.cliValue)
+            config: SummaryRunConfig(connection: connection, modelID: modelID.isEmpty ? nil : modelID,
+                                     effort: effort.cliValue)
         )
         phase = .generating(startedAt: Date())
         let generator = generator
@@ -246,24 +283,24 @@ final class WeeklySummarySession {
             } catch {
                 guard let self, id == self.generationID else { return }
                 let failure = (error as? WeeklySummaryError) ?? (error is CancellationError ? .cancelled
-                    : .cliFailed(request.config.provider, SummaryErrorDetail(message: error.localizedDescription)))
+                    : .cliFailed(.codex, SummaryErrorDetail(message: error.localizedDescription)))
                 // A failed regenerate keeps the previous (possibly edited) draft.
                 self.phase = hadResult ? .result : .selecting
-                await self.presentWithAuthContext(failure, provider: request.config.provider)
+                await self.presentWithAuthContext(failure, connection: request.config.connection)
             }
         }
     }
 
-    private func present(_ failure: WeeklySummaryError, provider: SummaryProvider, authSetup: SummaryAuthSetup = .unknown) {
+    private func present(_ failure: WeeklySummaryError, authSetup: SummaryAuthSetup = .unknown) {
         error = failure
-        errorPresentation = SummaryErrorPresenter.present(failure, authSetup: authSetup)
+        errorPresentation = SummaryErrorPresenter.present(failure, authSetup: authSetup, connection: connection)
     }
 
-    private func presentWithAuthContext(_ failure: WeeklySummaryError, provider: SummaryProvider) async {
-        present(failure, provider: provider)   // show at once; refine auth advice below
+    private func presentWithAuthContext(_ failure: WeeklySummaryError, connection: SummaryConnectionTarget) async {
+        present(failure)   // show at once; refine auth advice below
         guard failure.isAuthRelated else { return }
-        let setup = await generator.authSetup(for: provider)
-        if error == failure { present(failure, provider: provider, authSetup: setup) }
+        let setup = await generator.authSetup(for: connection)
+        if error == failure { present(failure, authSetup: setup) }
     }
 
     // MARK: - Copy

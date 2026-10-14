@@ -2,132 +2,6 @@ import Testing
 import Foundation
 @testable import TickyTask
 
-@Suite("ClaudeModelCatalogParser")
-struct ClaudeModelCatalogParserTests {
-    @Test("starts with cliDefault")
-    func startsWithDefault() {
-        let options = ClaudeModelCatalogParser.options(policy: [], user: [])
-        #expect(!options.isEmpty)
-        #expect(options[0].isCLIDefault)
-    }
-
-    @Test("policy modelPicker.options merged before built-in aliases")
-    func policyModelPickerOptions() {
-        let policy = [[
-            "modelPicker": [
-                "options": [
-                    ["model": "opus", "label": "Claude Opus"],
-                    ["model": "sonnet", "label": "Claude Sonnet"]
-                ]
-            ] as [String: Any]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: policy, user: [])
-
-        let opusOption = options.first { $0.id == "opus" }
-        #expect(opusOption != nil)
-        #expect(opusOption?.label == "Claude Opus")
-        #expect(opusOption?.source == .policy)
-    }
-
-    @Test("replaceBuiltInOptions true prevents built-in aliases")
-    func replaceBuiltInOptions() {
-        let policy = [[
-            "modelPicker": [
-                "options": [
-                    ["model": "custom", "label": "Custom Model"]
-                ],
-                "replaceBuiltInOptions": true
-            ] as [String: Any]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: policy, user: [])
-
-        // Should have cliDefault and custom, but NO opus/sonnet/haiku/fable.
-        let hasBuiltIn = options.contains { ["opus", "sonnet", "haiku", "fable"].contains($0.id) }
-        #expect(!hasBuiltIn)
-        #expect(options.contains { $0.id == "custom" })
-    }
-
-    @Test("built-in aliases added when replaceBuiltInOptions is false/absent")
-    func builtInAliases() {
-        let options = ClaudeModelCatalogParser.options(policy: [], user: [])
-        let aliases = ["opus", "sonnet", "haiku", "fable"]
-        for alias in aliases {
-            let option = options.first { $0.id == alias }
-            #expect(option != nil)
-            #expect(option?.source == .builtInAlias)
-        }
-    }
-
-    @Test("user availableModels added")
-    func userAvailableModels() {
-        let user = [[
-            "availableModels": ["model-x", "model-y"]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: [], user: user)
-
-        let hasX = options.contains { $0.id == "model-x" }
-        let hasY = options.contains { $0.id == "model-y" }
-        #expect(hasX)
-        #expect(hasY)
-    }
-
-    @Test("policy availableModels acts as an allowlist")
-    func policyAvailableModelsAllowlist() {
-        let policy = [[
-            "modelPicker": [
-                "options": [
-                    ["model": "opus", "label": "Opus"],
-                    ["model": "denied", "label": "Denied"]
-                ]
-            ] as [String: Any],
-            "availableModels": ["opus"]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: policy, user: [])
-
-        #expect(options.contains { $0.id == "opus" })
-        #expect(!options.contains { $0.id == "denied" })
-        #expect(options.contains { $0.isCLIDefault })
-    }
-
-    @Test("deduplicates by id")
-    func deduplication() {
-        let policy = [[
-            "modelPicker": [
-                "options": [
-                    ["model": "dup", "label": "First"]
-                ]
-            ] as [String: Any]
-        ]]
-        let user = [[
-            "availableModels": ["dup"]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: policy, user: user)
-
-        let dupCount = options.filter { $0.id == "dup" }.count
-        #expect(dupCount == 1)
-    }
-
-    @Test("skips malformed modelPicker entries")
-    func skipsMailformed() {
-        let policy = [[
-            "modelPicker": [
-                "options": [
-                    ["model": "", "label": "Empty"],  // Skip empty model
-                    ["label": "NoModel"],              // Skip missing model
-                    ["model": "valid", "label": "Valid"]
-                ]
-            ] as [String: Any]
-        ]]
-        let options = ClaudeModelCatalogParser.options(policy: policy, user: [])
-
-        // Should have cliDefault and valid; no malformed entries.
-        #expect(options.contains { $0.isCLIDefault })
-        #expect(options.contains { $0.id == "valid" })
-        let policyOptions = options.filter { $0.source == .policy }
-        #expect(policyOptions.count == 1)  // Only "valid"
-    }
-}
-
 @Suite("CodexModelCatalogParser")
 struct CodexModelCatalogParserTests {
     @Test("parses catalog with mixed visibility")
@@ -274,180 +148,178 @@ struct CodexModelCatalogParserTests {
     }
 }
 
-@Suite("SummaryModelCatalog")
-struct SummaryModelCatalogTests {
-    @Test("Claude returns cached list without re-reading files")
-    func claudeCachesInMemory() async throws {
-        let readFile: @Sendable (String) -> Data? = { _ in nil }
-
-        let catalog = SummaryModelCatalog(
-            runner: FakeCLIRunner(),
-            resolveExecutable: { _ in throw CLIResolutionError.notFound(name: "test") },
-            environment: { _ in [:] },
-            readFile: readFile,
-            listDirectory: { _ in [] },
-            home: "~",
-            cacheDirectory: FileManager.default.temporaryDirectory
-        )
-
-        let list1 = try await catalog.models(for: .claude, refresh: false)
-        let list2 = try await catalog.models(for: .claude, refresh: false)
-
-        // Lists should be identical (same objects due to caching).
-        #expect(list1.models == list2.models)
-    }
-
-    @Test("Codex writes compact cache to disk")
-    func codexWritesCompactCache() async throws {
-        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: cacheDir) }
-
-        let catalogJSON = """
-        {
-            "models": [
-                {
-                    "slug": "test-model",
-                    "display_name": "Test Model",
-                    "supported_reasoning_levels": ["low", "high"]
-                }
-            ]
-        }
-        """
-
-        let runner = FakeCLIRunner { _ in
-            CLIProcessOutput(
-                exitCode: 0,
-                signal: nil,
-                stdout: catalogJSON.data(using: .utf8)!,
-                stderr: Data(),
-                duration: .milliseconds(100)
-            )
-        }
-
-        let catalog = SummaryModelCatalog(
-            runner: runner,
-            resolveExecutable: { _ in URL(fileURLWithPath: "/usr/bin/codex") },
-            environment: { _ in [:] },
-            readFile: { FileManager.default.contents(atPath: $0) },
-            listDirectory: { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] },
-            home: "~",
-            cacheDirectory: cacheDir
-        )
-
-        _ = try await catalog.models(for: .codex, refresh: true)
-
-        let cachePath = cacheDir.appendingPathComponent("codex-models.json")
-        #expect(FileManager.default.fileExists(atPath: cachePath.path))
-
-        // Verify cache is compact (no base_instructions).
-        let cacheData = try Data(contentsOf: cachePath)
-        let cacheString = String(data: cacheData, encoding: .utf8) ?? ""
-        #expect(!cacheString.contains("base_instructions"))
-    }
-
-    @Test("Codex returns stale cache on refresh failure with prior cache")
-    func codexReturnsStaleCache() async throws {
-        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: cacheDir) }
-
-        // Pre-populate cache.
-        let oldCacheList = SummaryModelList(
-            models: [.cliDefault, SummaryModelOption(id: "old", label: "Old", source: .catalog)],
-            refreshedAt: Date(timeIntervalSince1970: 0),
-            sourceDescription: "old"
-        )
-        let cacheData = try JSONEncoder().encode(oldCacheList)
-        let cachePath = cacheDir.appendingPathComponent("codex-models.json")
-        try cacheData.write(to: cachePath)
-
-        // Runner that fails.
-        let runner = FakeCLIRunner { _ in
-            throw CLIProcessError.launchFailed("test")
-        }
-
-        let catalog = SummaryModelCatalog(
-            runner: runner,
-            resolveExecutable: { _ in URL(fileURLWithPath: "/usr/bin/codex") },
-            environment: { _ in [:] },
-            readFile: { FileManager.default.contents(atPath: $0) },
-            listDirectory: { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] },
-            home: "~",
-            cacheDirectory: cacheDir
-        )
-
-        let result = try await catalog.models(for: .codex, refresh: true)
-        #expect(result.isStale == true)
-        #expect(result.models.contains { $0.id == "old" })
-    }
-
-    @Test("Codex throws on refresh failure without cache")
-    func codexThrowsWithoutCache() async throws {
-        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: cacheDir) }
-
-        let runner = FakeCLIRunner { _ in
-            throw CLIProcessError.launchFailed("test")
-        }
-
-        let catalog = SummaryModelCatalog(
-            runner: runner,
-            resolveExecutable: { _ in URL(fileURLWithPath: "/usr/bin/codex") },
-            environment: { _ in [:] },
-            readFile: { _ in nil },
-            listDirectory: { _ in [] },
-            home: "~",
-            cacheDirectory: cacheDir
-        )
-
-        do {
-            _ = try await catalog.models(for: .codex, refresh: true)
-            #expect(Bool(false), "Expected to throw")
-        } catch is WeeklySummaryError {
-            // Expected.
-        }
-    }
-
-    @Test("maps CLIResolutionError.notFound to cliNotFound")
-    func mapsResolutionError() async throws {
-        let catalog = SummaryModelCatalog(
-            runner: FakeCLIRunner(),
-            resolveExecutable: { _ in throw CLIResolutionError.notFound(name: "codex") },
-            environment: { _ in [:] },
-            readFile: { _ in nil },
-            listDirectory: { _ in [] },
-            home: "~",
-            cacheDirectory: FileManager.default.temporaryDirectory
-        )
-
-        do {
-            _ = try await catalog.models(for: .codex, refresh: true)
-            #expect(Bool(false), "Expected to throw")
-        } catch let error as WeeklySummaryError {
-            #expect(error == WeeklySummaryError.cliNotFound(.codex))
-        }
-    }
-}
-
-// MARK: - Fakes
-
+/// Records invocations and answers from a closure (thread-safe for concurrent tests).
 private final class FakeCLIRunner: CLICommandRunning, @unchecked Sendable {
-    private let handler: ((CLIInvocation) async throws -> CLIProcessOutput)?
+    private let lock = NSLock()
+    private var recorded: [CLIInvocation] = []
+    private let handler: @Sendable (CLIInvocation) async throws -> CLIProcessOutput
 
-    init(handler: ((CLIInvocation) async throws -> CLIProcessOutput)? = nil) {
+    init(handler: @escaping @Sendable (CLIInvocation) async throws -> CLIProcessOutput) {
         self.handler = handler
     }
 
-    convenience init(result: CLIProcessOutput) {
-        self.init { _ in result }
-    }
+    var invocations: [CLIInvocation] { lock.lock(); defer { lock.unlock() }; return recorded }
 
     func run(_ invocation: CLIInvocation) async throws -> CLIProcessOutput {
-        if let handler {
-            return try await handler(invocation)
-        }
-        throw CLIProcessError.launchFailed("not implemented")
+        lock.lock(); recorded.append(invocation); lock.unlock()
+        return try await handler(invocation)
     }
+}
+
+private func output(_ stdout: String, exit: Int32 = 0, stderr: String = "") -> CLIProcessOutput {
+    CLIProcessOutput(exitCode: exit, signal: nil, stdout: Data(stdout.utf8), stderr: Data(stderr.utf8), duration: .seconds(1))
+}
+
+private let catalogJSON = #"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol","visibility":"list","default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"}],"base_instructions":"HUGE-INSTRUCTIONS-BLOB"}]}"#
+
+@Suite("Weekly Summary — model catalog")
+struct SummaryModelCatalogTests {
+    private func tempDirectory() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("catalog-tests-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func catalog(runner: FakeCLIRunner, cache: URL,
+                         resolve: @escaping @Sendable () async throws -> URL = { URL(fileURLWithPath: "/opt/homebrew/bin/codex") },
+                         fetch: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = { _ in throw URLError(.cannotConnectToHost) },
+                         apiKey: String? = nil) -> SummaryModelCatalog {
+        SummaryModelCatalog(runner: runner, resolveExecutable: resolve, environment: { _ in [:] },
+                            fetch: fetch, localAPIKey: { apiKey }, cacheDirectory: cache)
+    }
+
+    @Test("ChatGPT account lists models via `codex debug models` with the openai provider override")
+    func chatGPTCatalog() async throws {
+        let runner = FakeCLIRunner { _ in output(catalogJSON) }
+        let cache = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let list = try await catalog(runner: runner, cache: cache).models(for: .chatGPTAccount, refresh: false)
+        #expect(list.models.map(\.id) == ["", "gpt-6-sol"])
+        let args = runner.invocations.first?.arguments ?? []
+        #expect(Array(args.prefix(2)) == ["debug", "models"])
+        #expect(args.contains(#"model_provider="openai""#))
+    }
+
+    @Test("CLI configuration lists models without overriding the provider")
+    func cliConfigurationCatalog() async throws {
+        let runner = FakeCLIRunner { _ in output(catalogJSON) }
+        let cache = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        _ = try await catalog(runner: runner, cache: cache).models(for: .cliConfiguration, refresh: false)
+        #expect(runner.invocations.first?.arguments == ["debug", "models"])
+    }
+
+    @Test("Codex lists are cached compactly per connection and reused without re-running")
+    func compactCache() async throws {
+        let runner = FakeCLIRunner { _ in output(catalogJSON) }
+        let cache = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let first = catalog(runner: runner, cache: cache)
+        _ = try await first.models(for: .chatGPTAccount, refresh: false)
+        _ = try await first.models(for: .chatGPTAccount, refresh: false)
+        #expect(runner.invocations.count == 1)
+        let file = cache.appendingPathComponent("codex-models-chatgpt.json")
+        let contents = try String(contentsOf: file, encoding: .utf8)
+        #expect(!contents.contains("HUGE-INSTRUCTIONS-BLOB"))
+        // A fresh catalog loads the disk cache without running the CLI.
+        let secondRunner = FakeCLIRunner { _ in output(catalogJSON) }
+        let second = catalog(runner: secondRunner, cache: cache)
+        let list = try await second.models(for: .chatGPTAccount, refresh: false)
+        #expect(list.models.map(\.id).contains("gpt-6-sol"))
+        #expect(secondRunner.invocations.isEmpty)
+        // A different connection does not reuse it.
+        _ = try? await second.models(for: .cliConfiguration, refresh: false)
+        #expect(secondRunner.invocations.count == 1)
+    }
+
+    @Test("A failed refresh returns the last good list marked stale; with no list it throws")
+    func staleOnFailure() async throws {
+        let cache = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let good = FakeCLIRunner { _ in output(catalogJSON) }
+        let catalogA = catalog(runner: good, cache: cache)
+        _ = try await catalogA.models(for: .chatGPTAccount, refresh: true)
+
+        let failing = FakeCLIRunner { _ in output("", exit: 1, stderr: "boom") }
+        let catalogB = catalog(runner: failing, cache: cache)
+        let stale = try await catalogB.models(for: .chatGPTAccount, refresh: true)
+        #expect(stale.isStale)
+        #expect(stale.models.map(\.id).contains("gpt-6-sol"))
+
+        let empty = tempDirectory()
+        await #expect(throws: WeeklySummaryError.self) {
+            _ = try await catalog(runner: failing, cache: empty).models(for: .chatGPTAccount, refresh: true)
+        }
+    }
+
+    @Test("Resolution failures map to cliNotFound / invalidCLIPath")
+    func resolutionErrors() async {
+        let runner = FakeCLIRunner { _ in output("") }
+        let cache = tempDirectory()
+        do {
+            _ = try await catalog(runner: runner, cache: cache, resolve: { throw CLIResolutionError.notFound(name: "codex") })
+                .models(for: .chatGPTAccount, refresh: true)
+            Issue.record("expected throw")
+        } catch let error as WeeklySummaryError {
+            #expect(error == .cliNotFound(.codex))
+        } catch { Issue.record("unexpected \(error)") }
+        do {
+            _ = try await catalog(runner: runner, cache: cache, resolve: { throw CLIResolutionError.invalidOverride(path: "/bad") })
+                .models(for: .chatGPTAccount, refresh: true)
+            Issue.record("expected throw")
+        } catch let error as WeeklySummaryError {
+            #expect(error == .invalidCLIPath(.codex, path: "/bad"))
+        } catch { Issue.record("unexpected \(error)") }
+    }
+
+    @Test("Local servers list models from GET {base}/models, sending the API key as a bearer token")
+    func localListing() async throws {
+        let runner = FakeCLIRunner { _ in Issue.record("local listing must not run the CLI"); return output("") }
+        let cache = tempDirectory()
+        let seen = RequestBox()
+        let fetch: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            seen.set(request)
+            let body = Data(#"{"object":"list","data":[{"id":"llama3.1:8b"},{"id":"qwen2.5"},{"id":"llama3.1:8b"}]}"#.utf8)
+            return (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let list = try await catalog(runner: runner, cache: cache, fetch: fetch, apiKey: "sk-local")
+            .models(for: .local(server: .ollama, baseURL: nil), refresh: true)
+        #expect(list.models.map(\.id) == ["", "llama3.1:8b", "qwen2.5"])
+        #expect(seen.request?.url?.absoluteString == "http://localhost:11434/v1/models")
+        #expect(seen.request?.value(forHTTPHeaderField: "Authorization") == "Bearer sk-local")
+    }
+
+    @Test("Local listing failures: 401 → authenticationRejected; unreachable → networkFailure; missing URL → configurationRejected")
+    func localFailures() async {
+        let runner = FakeCLIRunner { _ in output("") }
+        let cache = tempDirectory()
+        let unauthorized: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            (Data(), HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!)
+        }
+        await #expect(throws: WeeklySummaryError.self) {
+            _ = try await catalog(runner: runner, cache: cache, fetch: unauthorized)
+                .models(for: .local(server: .lmStudio, baseURL: nil), refresh: true)
+        }
+        do {
+            _ = try await catalog(runner: runner, cache: cache, fetch: unauthorized)
+                .models(for: .local(server: .lmStudio, baseURL: nil), refresh: true)
+        } catch let error as WeeklySummaryError {
+            if case .authenticationRejected(_, let d) = error { #expect(d.httpStatus == 401) } else { Issue.record("got \(error)") }
+        } catch { Issue.record("unexpected \(error)") }
+        do {
+            _ = try await catalog(runner: runner, cache: cache).models(for: .local(server: .ollama, baseURL: nil), refresh: true)
+        } catch let error as WeeklySummaryError {
+            if case .networkFailure = error {} else { Issue.record("got \(error)") }
+        } catch { Issue.record("unexpected \(error)") }
+        do {
+            _ = try await catalog(runner: runner, cache: cache).models(for: .local(server: .openAICompatible, baseURL: nil), refresh: true)
+        } catch let error as WeeklySummaryError {
+            if case .configurationRejected = error {} else { Issue.record("got \(error)") }
+        } catch { Issue.record("unexpected \(error)") }
+    }
+}
+
+private final class RequestBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: URLRequest?
+    var request: URLRequest? { lock.lock(); defer { lock.unlock() }; return stored }
+    func set(_ request: URLRequest) { lock.lock(); stored = request; lock.unlock() }
 }

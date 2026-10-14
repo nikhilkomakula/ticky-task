@@ -1,28 +1,34 @@
 import Foundation
 
-/// Drives the real `claude` / `codex` CLIs. Each run gets a fresh private
-/// working directory; Codex runs are preceded by a model-free compatibility
-/// check of the isolation flags, so a summary never runs with tools enabled.
+/// Drives the real `codex` CLI. Each run gets a fresh private working
+/// directory and is preceded by a model-free compatibility check of the
+/// isolation flags, so a summary never runs with tools enabled.
 struct LiveSummaryGenerator: SummaryGenerating {
     /// App policy: high-effort reasoning can be quiet for minutes, so there's no
     /// inactivity timeout — only this overall deadline.
     static let generationTimeout: Duration = .seconds(300)
+    /// `codex login` waits for the browser sign-in to complete.
+    static let signInTimeout: Duration = .seconds(600)
 
     let runner: CLICommandRunning
-    let resolveExecutable: @Sendable (SummaryProvider) async throws -> URL
+    let resolveExecutable: @Sendable () async throws -> URL
     let environment: @Sendable (URL) async -> [String: String]
+    /// The local server API key (from the Keychain), read at run time only.
+    let localAPIKey: @Sendable () -> String?
     let runRoot: URL
     let home: String
     private let cache = CLIInfoCache()
 
     init(runner: CLICommandRunning,
-         resolveExecutable: @escaping @Sendable (SummaryProvider) async throws -> URL,
+         resolveExecutable: @escaping @Sendable () async throws -> URL,
          environment: @escaping @Sendable (URL) async -> [String: String],
+         localAPIKey: @escaping @Sendable () -> String? = { nil },
          runRoot: URL = LiveSummaryGenerator.defaultRunRoot,
          home: String = FileManager.default.homeDirectoryForCurrentUser.path) {
         self.runner = runner
         self.resolveExecutable = resolveExecutable
         self.environment = environment
+        self.localAPIKey = localAPIKey
         self.runRoot = runRoot
         self.home = home
     }
@@ -42,77 +48,97 @@ struct LiveSummaryGenerator: SummaryGenerating {
     }
 
     func generate(_ request: SummaryRequest) async throws -> SummaryResult {
-        let provider = request.config.provider
-        let executable = try await resolve(provider)
-        let env = await environment(executable)
+        let executable = try await resolve()
+        let apiKey = request.config.connection.isLocal ? localAPIKey() : nil
+        let env = (await environment(executable))
+            .merging(SummaryConnectionArguments.environment(for: request.config.connection, apiKey: apiKey)) { _, new in new }
         let version = await cache.version(for: executable) { await readVersion(executable, env: env) }
         let runDirectory = try makeRunDirectory()
         defer { try? FileManager.default.removeItem(at: runDirectory) }
 
         do {
-            switch provider {
-            case .claude:
-                let output = try await runner.run(CLIInvocation(
-                    executableURL: executable,
-                    arguments: ClaudeSummaryAdapter.arguments(config: request.config, instructions: request.instructions),
-                    stdin: request.payload,
-                    workingDirectory: runDirectory,
-                    environment: env,
-                    timeout: Self.generationTimeout
-                ))
-                return try ClaudeSummaryAdapter.parse(output, config: request.config, cliVersion: version,
-                                                      executablePath: executable.path).get()
-
-            case .codex:
-                let servers = try await codexMCPServers(executable, env: env, workingDirectory: runDirectory, version: version)
-                try await verifyCodexIsolation(executable, env: env, workingDirectory: runDirectory,
-                                               servers: servers, version: version)
-                let lastMessage = runDirectory.appendingPathComponent("last-message.txt")
-                let output = try await runner.run(CLIInvocation(
-                    executableURL: executable,
-                    arguments: CodexSummaryAdapter.arguments(config: request.config, lastMessagePath: lastMessage.path,
-                                                             mcpServerNames: servers),
-                    stdin: SummaryPrompt.codexStdin(payload: request.payload),
-                    workingDirectory: runDirectory,
-                    environment: env,
-                    timeout: Self.generationTimeout
-                ))
-                let message = try? String(contentsOf: lastMessage, encoding: .utf8)
-                return try CodexSummaryAdapter.parse(output, lastMessage: message, config: request.config,
-                                                     cliVersion: version, executablePath: executable.path).get()
+            let servers = try await mcpServers(executable, env: env, workingDirectory: runDirectory, version: version)
+            try await verifyIsolation(executable, env: env, workingDirectory: runDirectory, servers: servers, version: version)
+            let lastMessage = runDirectory.appendingPathComponent("last-message.txt")
+            let arguments: [String]
+            do {
+                arguments = try CodexSummaryAdapter.arguments(config: request.config, lastMessagePath: lastMessage.path,
+                                                              mcpServerNames: servers, hasAPIKey: apiKey != nil)
+            } catch {
+                // Never fall back to a bare invocation: that would drop the isolation flags.
+                throw WeeklySummaryError.configurationRejected(.codex, SummaryErrorDetail(
+                    message: "The local server address isn't a valid http(s) URL. Check Settings › AI.",
+                    cliVersion: version, executablePath: executable.path))
             }
+            let output = try await runner.run(CLIInvocation(
+                executableURL: executable,
+                arguments: arguments,
+                stdin: SummaryPrompt.codexStdin(instructions: request.instructions, payload: request.payload),
+                workingDirectory: runDirectory,
+                environment: env,
+                timeout: Self.generationTimeout
+            ))
+            let message = try? String(contentsOf: lastMessage, encoding: .utf8)
+            return try CodexSummaryAdapter.parse(output, lastMessage: message, config: request.config,
+                                                 cliVersion: version, executablePath: executable.path).get()
         } catch let error as CLIProcessError {
-            throw Self.map(error, provider: provider, executable: executable, version: version)
+            throw Self.map(error, executable: executable, version: version)
         }
     }
 
-    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup {
-        switch provider {
-        case .claude:
-            guard let executable = try? await resolve(.claude) else { return .unknown }
-            let env = await environment(executable)
-            let status = try? await runner.run(CLIInvocation(
-                executableURL: executable, arguments: ["auth", "status", "--json"],
-                workingDirectory: FileManager.default.temporaryDirectory, environment: env,
-                timeout: .seconds(15), stdoutLimit: 64 * 1024
-            ))
-            return SummaryAuthSetup.claude(authStatusJSON: status?.succeeded == true ? status?.stdout : nil,
-                                           baseURL: ClaudeSettingsEnvironment.baseURL(home: home))
-        case .codex:
+    func authSetup(for connection: SummaryConnectionTarget) async -> SummaryAuthSetup {
+        switch connection {
+        case .chatGPTAccount:
+            return .accountLogin
+        case .local(let server, _):
+            return .customProvider(name: server.displayName)
+        case .cliConfiguration:
             let config = try? String(contentsOfFile: "\(home)/.codex/config.toml", encoding: .utf8)
             return SummaryAuthSetup.codex(configTOML: config)
         }
     }
 
+    func accountStatus() async -> SummaryAccountStatus {
+        guard let executable = try? await resolve() else { return .unknown }
+        let env = await environment(executable)
+        guard let output = try? await runner.run(CLIInvocation(
+            executableURL: executable, arguments: CodexSummaryAdapter.loginStatusArguments,
+            workingDirectory: FileManager.default.temporaryDirectory, environment: env,
+            timeout: .seconds(20), stdoutLimit: 64 * 1024
+        )) else { return .unknown }
+        return CodexSummaryAdapter.accountStatus(from: output)
+    }
+
+    func signIn() async throws {
+        let executable = try await resolve()
+        let env = await environment(executable)
+        let output: CLIProcessOutput
+        do {
+            output = try await runner.run(CLIInvocation(
+                executableURL: executable, arguments: CodexSummaryAdapter.loginArguments,
+                workingDirectory: FileManager.default.temporaryDirectory, environment: env,
+                timeout: Self.signInTimeout, stdoutLimit: 1024 * 1024
+            ))
+        } catch let error as CLIProcessError {
+            throw Self.map(error, executable: executable, version: nil)
+        }
+        guard output.succeeded else {
+            throw WeeklySummaryError.notSignedIn(.codex, SummaryErrorDetail(
+                message: SummaryRedactor.redact(CodexSummaryAdapter.joined(output.stderrText, output.stdoutText,
+                                                                            fallback: "codex login did not complete.")),
+                exitCode: output.exitCode, executablePath: executable.path))
+        }
+    }
+
     // MARK: - Steps
 
-    private func resolve(_ provider: SummaryProvider) async throws -> URL {
+    private func resolve() async throws -> URL {
         do {
-            return try await resolveExecutable(provider)
+            return try await resolveExecutable()
         } catch CLIResolutionError.invalidOverride(let path) {
-            throw WeeklySummaryError.invalidCLIPath(provider, path: path)
+            throw WeeklySummaryError.invalidCLIPath(.codex, path: path)
         } catch is CLIResolutionError {
-            throw WeeklySummaryError.cliNotFound(provider)
+            throw WeeklySummaryError.cliNotFound(.codex)
         }
     }
 
@@ -128,8 +154,8 @@ struct LiveSummaryGenerator: SummaryGenerating {
 
     /// Every configured MCP server, so each can be disabled for this run. A
     /// version that can't list them can't be isolated → incompatible.
-    private func codexMCPServers(_ executable: URL, env: [String: String], workingDirectory: URL,
-                                 version: String?) async throws -> [String] {
+    private func mcpServers(_ executable: URL, env: [String: String], workingDirectory: URL,
+                            version: String?) async throws -> [String] {
         let output = try await runner.run(CLIInvocation(
             executableURL: executable, arguments: CodexSummaryAdapter.mcpListArguments,
             workingDirectory: workingDirectory, environment: env, timeout: .seconds(30), stdoutLimit: 1024 * 1024
@@ -141,8 +167,8 @@ struct LiveSummaryGenerator: SummaryGenerating {
         return CodexSummaryAdapter.mcpServerNames(fromListJSON: output.stdout)
     }
 
-    private func verifyCodexIsolation(_ executable: URL, env: [String: String], workingDirectory: URL,
-                                      servers: [String], version: String?) async throws {
+    private func verifyIsolation(_ executable: URL, env: [String: String], workingDirectory: URL,
+                                 servers: [String], version: String?) async throws {
         let key = "\(executable.path)|\(version ?? "?")|\(servers.sorted().joined(separator: ","))"
         if await cache.isolationVerified(key) { return }
         let output = try await runner.run(CLIInvocation(
@@ -164,20 +190,20 @@ struct LiveSummaryGenerator: SummaryGenerating {
     }
 
     private static func detail(_ output: CLIProcessOutput, prefix: String, executable: URL, version: String?) -> SummaryErrorDetail {
-        let message = ClaudeSummaryAdapter.joined(prefix, output.stderrText, fallback: prefix)
+        let message = CodexSummaryAdapter.joined(prefix, output.stderrText, fallback: prefix)
         return SummaryErrorDetail(message: SummaryRedactor.redact(String(message.prefix(4000))), exitCode: output.exitCode,
                                   cliVersion: version, executablePath: executable.path)
     }
 
-    private static func map(_ error: CLIProcessError, provider: SummaryProvider, executable: URL, version: String?) -> WeeklySummaryError {
+    private static func map(_ error: CLIProcessError, executable: URL, version: String?) -> WeeklySummaryError {
         switch error {
         case .cancelled: .cancelled
         case .timedOut(let seconds): .timedOut(seconds: seconds)
         case .outputTooLarge(let limit):
-            .invalidResponse(provider, SummaryErrorDetail(message: "The CLI produced more than \(limit / 1024 / 1024) MB of output.",
-                                                          cliVersion: version, executablePath: executable.path))
+            .invalidResponse(.codex, SummaryErrorDetail(message: "The CLI produced more than \(limit / 1024 / 1024) MB of output.",
+                                                        cliVersion: version, executablePath: executable.path))
         case .launchFailed(let message):
-            .launchFailed(provider, SummaryErrorDetail(message: message, cliVersion: version, executablePath: executable.path))
+            .launchFailed(.codex, SummaryErrorDetail(message: message, cliVersion: version, executablePath: executable.path))
         }
     }
 }
@@ -196,21 +222,4 @@ private actor CLIInfoCache {
 
     func isolationVerified(_ key: String) -> Bool { verified.contains(key) }
     func markIsolationVerified(_ key: String) { verified.insert(key) }
-}
-
-/// The Anthropic base URL configured for the Claude CLI (admin policy first,
-/// then user settings) — signals a gateway setup for auth remediation.
-enum ClaudeSettingsEnvironment {
-    static let managedSettingsPath = "/Library/Application Support/ClaudeCode/managed-settings.json"
-
-    static func baseURL(home: String, readFile: (String) -> Data? = { FileManager.default.contents(atPath: $0) }) -> String? {
-        for path in [managedSettingsPath, "\(home)/.claude/settings.json"] {
-            guard let data = readFile(path),
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let env = root["env"] as? [String: Any],
-                  let url = env["ANTHROPIC_BASE_URL"] as? String, !url.isEmpty else { continue }
-            return url
-        }
-        return nil
-    }
 }

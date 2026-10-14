@@ -4,20 +4,6 @@ import Foundation
 
 @Suite("SummaryEffortResolver")
 struct SummaryEffortResolverTests {
-    @Test("Claude offers CLI default + all standard levels")
-    func claudeChoices() {
-        let model = SummaryModelOption.cliDefault
-        let choices = SummaryEffortResolver.choices(provider: .claude, model: model)
-
-        #expect(choices.count == 6)  // cliDefault + 5 standard levels
-        #expect(choices.contains(.cliDefault))
-        #expect(choices.contains(.level("low")))
-        #expect(choices.contains(.level("medium")))
-        #expect(choices.contains(.level("high")))
-        #expect(choices.contains(.level("xhigh")))
-        #expect(choices.contains(.level("max")))
-    }
-
     @Test("Codex with known model and supported efforts")
     func codexKnownModel() {
         let model = SummaryModelOption(
@@ -27,7 +13,7 @@ struct SummaryEffortResolverTests {
             supportedEfforts: ["low", "medium", "high", "xhigh"],
             defaultEffort: "medium"
         )
-        let choices = SummaryEffortResolver.choices(provider: .codex, model: model)
+        let choices = SummaryEffortResolver.choices(model: model)
 
         // Should have modelDefault + the supported levels.
         #expect(choices.contains(.modelDefault("medium")))
@@ -41,7 +27,7 @@ struct SummaryEffortResolverTests {
     @Test("Codex CLI default model offers CLI default + standard levels")
     func codexCLIDefaultModel() {
         let model = SummaryModelOption.cliDefault
-        let choices = SummaryEffortResolver.choices(provider: .codex, model: model)
+        let choices = SummaryEffortResolver.choices(model: model)
 
         #expect(choices.contains(.cliDefault))
         #expect(choices.contains(.level("low")))
@@ -57,7 +43,7 @@ struct SummaryEffortResolverTests {
             supportedEfforts: nil,
             defaultEffort: nil
         )
-        let choices = SummaryEffortResolver.choices(provider: .codex, model: model)
+        let choices = SummaryEffortResolver.choices(model: model)
 
         #expect(choices.contains(.cliDefault))
         #expect(choices.contains(.level("low")))
@@ -76,7 +62,6 @@ struct SummaryEffortResolverTests {
 
         let result = SummaryEffortResolver.reconcile(
             remembered: .level("high"),
-            provider: .codex,
             model: model
         )
         #expect(result.choice == .level("high"))
@@ -95,7 +80,6 @@ struct SummaryEffortResolverTests {
 
         let result = SummaryEffortResolver.reconcile(
             remembered: nil,
-            provider: .codex,
             model: model
         )
         // First offered is modelDefault.
@@ -115,7 +99,6 @@ struct SummaryEffortResolverTests {
 
         let result = SummaryEffortResolver.reconcile(
             remembered: .level("xhigh"),
-            provider: .codex,
             model: model
         )
         #expect(result.choice != .level("xhigh"))
@@ -135,26 +118,12 @@ struct SummaryEffortResolverTests {
 
         let result = SummaryEffortResolver.reconcile(
             remembered: .modelDefault("xhigh"),
-            provider: .codex,
             model: model
         )
         #expect(result.choice == .modelDefault("max"))
         #expect(result.note != nil)
         let noteContains = result.note?.lowercased() ?? ""
         #expect(noteContains.contains("extra high") || noteContains.contains("model default"))
-    }
-
-    @Test("reconcile Claude keeps any standard level")
-    func claudeKeepsStandardLevel() {
-        let model = SummaryModelOption.cliDefault
-
-        let result = SummaryEffortResolver.reconcile(
-            remembered: .level("xhigh"),
-            provider: .claude,
-            model: model
-        )
-        #expect(result.choice == .level("xhigh"))
-        #expect(result.note == nil)
     }
 
     @Test("label for cliDefault")

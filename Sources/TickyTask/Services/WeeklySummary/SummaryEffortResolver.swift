@@ -1,41 +1,31 @@
 import Foundation
 
-/// Reconciles effort choices across providers and models, handling capability mismatches.
+/// Reconciles effort choices across Codex models, handling capability mismatches.
 enum SummaryEffortResolver {
     static let standardLevels = ["low", "medium", "high", "xhigh", "max"]
 
-    /// Compute the offered effort choices for a provider and model, in display order.
-    static func choices(provider: SummaryProvider, model: SummaryModelOption) -> [EffortChoice] {
-        switch provider {
-        case .claude:
-            // Claude: no per-model capabilities; offer CLI default + all standard levels.
+    /// The effort choices offered for `model`, in display order. A catalog model
+    /// with known levels gets "Model default (X)" — applied explicitly so a global
+    /// effort in the user's Codex config can't leak in — plus its levels. The CLI
+    /// default model, custom ids, and local models (no capability data) get
+    /// "CLI default" plus the standard levels, which are unverified.
+    static func choices(model: SummaryModelOption) -> [EffortChoice] {
+        guard let supported = model.supportedEfforts, !supported.isEmpty else {
             return [.cliDefault] + standardLevels.map { .level($0) }
-
-        case .codex:
-            if let supported = model.supportedEfforts, !supported.isEmpty {
-                // Known model with explicit support: offer modelDefault (if available) + levels.
-                var result: [EffortChoice] = []
-                if let defaultLevel = model.defaultEffort, supported.contains(defaultLevel) {
-                    result.append(.modelDefault(defaultLevel))
-                }
-                result.append(contentsOf: supported.map { .level($0) })
-                return result
-            } else if model.isCLIDefault {
-                // CLI default or unknown model: offer CLI default + standard levels.
-                return [.cliDefault] + standardLevels.map { .level($0) }
-            } else {
-                // Known custom Codex model with unknown efforts: offer CLI default + standard levels.
-                return [.cliDefault] + standardLevels.map { .level($0) }
-            }
         }
+        var result: [EffortChoice] = []
+        if let defaultLevel = model.defaultEffort, supported.contains(defaultLevel) {
+            result.append(.modelDefault(defaultLevel))
+        }
+        result.append(contentsOf: supported.map { .level($0) })
+        return result
     }
 
     /// Reconcile a remembered effort with the currently offered choices.
     /// Returns the effort to use and an optional note explaining any change.
     static func reconcile(remembered: EffortChoice?,
-                          provider: SummaryProvider,
                           model: SummaryModelOption) -> (choice: EffortChoice, note: String?) {
-        let offered = choices(provider: provider, model: model)
+        let offered = choices(model: model)
 
         // If no remembered choice, pick the first offered (prefer model default, then CLI default).
         guard let remembered else {

@@ -1,14 +1,14 @@
 # TickyTask
 
-A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry.
+A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry. The one exception is **opt-in**: **Weekly Summary** sends the notes of the tasks *you* select to the AI you connect it to (through your locally installed Codex CLI) — only when you click Generate.
 
-> **v0.1.15** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.16** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.15-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.16-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -28,8 +28,14 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 - **Recurring tasks** — turn any day task into a repeating one from the editor's **Repeat** section: **daily**, **every weekday (Mon–Fri)**, **weekly** (pick which weekdays), **monthly** (same day-of-month), or **yearly**, with an **every-N-interval** and an end condition (**never** / **after N times** / **on a date**). Each due day gets its own instance — complete or edit them independently, and deleting one asks whether to remove **just this occurrence** or the **whole series**. Missed occurrences stay on their day (they don't pile onto today), and repeating tasks show a small ↻ glyph.
 - **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, **automatically carry unfinished tasks forward to today** (on by default — runs when the app opens, becomes active, or the day rolls over while it's left open; completed tasks, recurring templates, and their generated occurrences stay put). When weekends are hidden, tasks skip the weekend and land on the next weekday, so a **previous Friday's unfinished tasks move to Monday** rather than an off-screen Saturday/Sunday. Optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
-- **Menu-bar app** — a **configurable** menu-bar icon (pick from several in **Settings › Appearance**; defaults to a calendar-with-checkmark) opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today**, with a **Today** button to jump back after browsing other months, and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, or run menu-bar-only (no Dock icon).
+- **Menu-bar app** — a **configurable** menu-bar icon (pick from several in **Settings › Appearance**; defaults to a calendar-with-checkmark) opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today**, with a **Today** button to jump back after browsing other months, and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, **quit** the app (the power button, or **⌘Q**), or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TickyTask, capture a new task for today, and **toggle the menu-bar popover** — from any app (**Settings › Shortcuts**).
+- **Weekly Summary** — click the toolbar's **Weekly Summary** button (or **⇧⌘Y**), pick one or more tasks on each day of a week (‹ › to change weeks, or **Select all with notes**), and generate **one detailed overall update** from their notes — no dates, no per-day breakdown — ready to paste into a Jira ticket. Edit the draft, then **copy it with one click** (the copy icon, or **⇧⌘C**). It runs your locally installed **[Codex CLI](https://github.com/openai/codex)** with tools, MCP servers, and web search turned off, so the model only reads your notes. Connect it with:
+  - your **ChatGPT account** (the default — `codex login`; a **Sign in** button is built in),
+  - your **Codex CLI configuration** (`~/.codex/config.toml`, e.g. a company gateway), or
+  - a **self-hosted model** — **Ollama**, **LM Studio**, or any **OpenAI-compatible** server (base URL, model, and an optional API key stored in your **Keychain**).
+
+  Choose any model (**Refresh** fetches new ones; you can also type a model id) and the reasoning **effort**; your last choices are remembered. Add your own **instructions** (audience, tone, length, format) — they're applied on top of built-in rules that treat notes as data and forbid inventing facts. Sign-in and other errors are explained with the fix and copyable details (status code, request id). **Settings › AI** holds the connection, instructions, and Codex path.
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
 - **Backup & restore** — export your entire store **and app settings** to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
 - **Data location** — choose which folder holds your data (**Settings › Data**); changing it **moves everything there** and relaunches (or, if the folder already has a TickyTask store, adopts it). You can keep it in an **iCloud Drive / Google Drive / Dropbox** folder to carry your tasks between Macs — it's a live database, not real-time sync, so use one Mac at a time and let the folder finish syncing before opening it elsewhere.
@@ -37,7 +43,7 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 - **Launch at login** — starts TickyTask automatically when you log in (**Settings › General**, on by default; also manageable in System Settings › General › Login Items).
 - **Software updates** — checks the project's GitHub Releases (latest stable **or pre-release**) for a newer version, manually or automatically (**Settings › General**).
 - **About & Help** — app version, GitHub/issue links, license, and quick tips (**Settings › About**).
-- **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation (right).
+- **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and ‹ Today › navigation, Settings, **Search**, and **Weekly Summary** at the far right.
 - Clean gradient calendar app icon; first-run sample data.
 
 ## How it works
@@ -48,6 +54,8 @@ TickyTask is a single SwiftUI app with four scenes sharing one local SwiftData s
 2. **Menu-bar popover** — a compact calendar + today's agenda + quick-add.
 3. **Quick-capture window** — a tiny "new task for today" box opened by a global shortcut.
 4. **Settings** — app preferences and data management.
+
+The **Weekly Summary** sheet (opened from the main window) is the only part that talks to anything outside your Mac: it builds a JSON payload from the selected tasks' notes (no dates or ids), then runs `codex exec` as a sandboxed, read-only child process with its tools disabled and the notes on stdin, and shows the reply. Nothing is sent until you click Generate.
 
 Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Drag-and-drop reordering and cross-day/-list moves route through the same `DataService`, which re-derives sort indices and preserves the day-XOR-list rule. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
 
@@ -71,6 +79,9 @@ flowchart TD
     MW --> NOT
     MW --> WM
     ST -->|"@AppStorage"| MW
+    MW --> WS["Weekly Summary sheet"]
+    WS -->|"selected notes, on stdin"| CX["codex exec<br/>(tools off, read-only)"]
+    CX --> AI["ChatGPT account · Codex config · local model"]
 ```
 
 ## Build & run from source

@@ -4,35 +4,17 @@ import Foundation
 // model/effort, the request handed to a generator, its result, and the typed
 // failures surfaced to the user. Pure value types so they cross actors freely.
 
-/// The local AI command-line tool that writes the summary.
+/// The local AI command-line tool that writes the summary. Weekly Summary
+/// uses the Codex CLI; how Codex reaches a model is a `SummaryConnectionTarget`.
 enum SummaryProvider: String, CaseIterable, Identifiable, Codable, Sendable {
-    case claude
     case codex
 
     var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .claude: "Claude"
-        case .codex: "Codex"
-        }
-    }
-
+    var displayName: String { "Codex" }
     /// The executable name looked up on disk.
-    var executableName: String {
-        switch self {
-        case .claude: "claude"
-        case .codex: "codex"
-        }
-    }
-
+    var executableName: String { "codex" }
     /// The product name used in user-facing messages.
-    var cliName: String {
-        switch self {
-        case .claude: "Claude Code CLI"
-        case .codex: "Codex CLI"
-        }
-    }
+    var cliName: String { "Codex CLI" }
 }
 
 /// One selectable model. `id` is passed verbatim to the CLI (`--model` / `-m`);
@@ -85,9 +67,10 @@ enum EffortChoice: Hashable, Codable, Sendable {
     }
 }
 
-/// Provider + model + effort for one generation.
+/// Connection + model + effort for one generation.
 struct SummaryRunConfig: Hashable, Codable, Sendable {
-    var provider: SummaryProvider
+    var provider: SummaryProvider = .codex
+    var connection: SummaryConnectionTarget = .chatGPTAccount
     /// `nil` = CLI default (omit the model flag).
     var modelID: String?
     /// `nil` = CLI default (omit the effort flag).
@@ -96,10 +79,10 @@ struct SummaryRunConfig: Hashable, Codable, Sendable {
 
 /// Model lists for each provider, with an explicit refresh.
 protocol SummaryModelCatalogProviding: Sendable {
-    /// Returns the selectable models for `provider` (always beginning with
-    /// `SummaryModelOption.cliDefault`). `refresh` forces re-reading the sources;
+    /// Returns the selectable models for `connection` (always beginning with
+    /// `SummaryModelOption.cliDefault`). `refresh` forces re-reading the source;
     /// otherwise a cached list may be returned.
-    func models(for provider: SummaryProvider, refresh: Bool) async throws -> SummaryModelList
+    func models(for connection: SummaryConnectionTarget, refresh: Bool) async throws -> SummaryModelList
 }
 
 /// A provider's model list plus when it was last refreshed.
@@ -140,13 +123,26 @@ struct SummaryResult: Sendable, Equatable {
 /// UI tests inject a stub.
 protocol SummaryGenerating: Sendable {
     func generate(_ request: SummaryRequest) async throws -> SummaryResult
-    /// How the provider's CLI authenticates — consulted only after an auth-class
-    /// failure, to pick the remediation that will actually help.
-    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup
+    /// How the CLI authenticates for `connection` — consulted only after an
+    /// auth-class failure, to pick the remediation that will actually help.
+    func authSetup(for connection: SummaryConnectionTarget) async -> SummaryAuthSetup
+    /// Whether the user's ChatGPT account is signed in to the Codex CLI.
+    func accountStatus() async -> SummaryAccountStatus
+    /// Runs `codex login` (opens the browser) and waits for it to finish.
+    func signIn() async throws
 }
 
 extension SummaryGenerating {
-    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup { .unknown }
+    func authSetup(for connection: SummaryConnectionTarget) async -> SummaryAuthSetup { .unknown }
+    func accountStatus() async -> SummaryAccountStatus { .unknown }
+    func signIn() async throws {}
+}
+
+/// The ChatGPT sign-in state reported by `codex login status`.
+enum SummaryAccountStatus: Equatable, Sendable {
+    case signedIn(String)
+    case signedOut
+    case unknown
 }
 
 /// Raw diagnostics kept alongside a typed failure for the "Details" disclosure.

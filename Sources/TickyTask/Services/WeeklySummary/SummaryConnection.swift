@@ -1,0 +1,158 @@
+import Foundation
+
+/// A self-hosted model server Codex can talk to.
+enum SummaryLocalServer: String, CaseIterable, Identifiable, Codable, Sendable {
+    case ollama
+    case lmStudio
+    case openAICompatible
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .ollama: "Ollama"
+        case .lmStudio: "LM Studio"
+        case .openAICompatible: "OpenAI-compatible server"
+        }
+    }
+
+    /// The server's usual OpenAI-compatible endpoint (`…/v1`); blank for a custom server.
+    var defaultBaseURL: String {
+        switch self {
+        case .ollama: "http://localhost:11434/v1"
+        case .lmStudio: "http://localhost:1234/v1"
+        case .openAICompatible: ""
+        }
+    }
+
+    /// Codex's built-in `--local-provider` name, when it has one.
+    var codexLocalProvider: String? {
+        switch self {
+        case .ollama: "ollama"
+        case .lmStudio: "lmstudio"
+        case .openAICompatible: nil
+        }
+    }
+}
+
+/// Where Codex sends the summary request for one run.
+enum SummaryConnectionTarget: Hashable, Codable, Sendable {
+    /// The user's own ChatGPT sign-in (`codex login`), bypassing any custom
+    /// provider configured in `~/.codex/config.toml`.
+    case chatGPTAccount
+    /// Whatever `~/.codex/config.toml` selects (e.g. a company gateway).
+    case cliConfiguration
+    /// A self-hosted server. `baseURL` nil = the server's default address.
+    case local(server: SummaryLocalServer, baseURL: String?)
+
+    /// A stable key for per-connection preferences and caches.
+    var storageKey: String {
+        switch self {
+        case .chatGPTAccount: "chatgpt"
+        case .cliConfiguration: "cli"
+        case .local(let server, _): "local-\(server.rawValue)"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .chatGPTAccount: "ChatGPT account"
+        case .cliConfiguration: "Codex CLI configuration"
+        case .local(let server, _): server.displayName
+        }
+    }
+
+    var isLocal: Bool {
+        if case .local = self { return true }
+        return false
+    }
+
+    /// The endpoint a local server is reached at (`…/v1`), if this is local.
+    var localBaseURL: String? {
+        guard case .local(let server, let url) = self else { return nil }
+        let trimmed = url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? (server.defaultBaseURL.isEmpty ? nil : server.defaultBaseURL) : trimmed
+    }
+}
+
+/// The child-process name of the API-key variable for an OpenAI-compatible
+/// server — the key travels in the environment, never in the argument list.
+enum SummaryConnectionArguments {
+    static let customProviderID = "tickytask_local"
+    static let apiKeyVariable = "TICKYTASK_LOCAL_API_KEY"
+
+    enum ValidationError: Error, Equatable {
+        case missingBaseURL
+        case invalidBaseURL(String)
+    }
+
+    /// Codex arguments that select the connection. Applied to generation and to
+    /// the model catalog so both see the same provider.
+    static func codexArguments(for target: SummaryConnectionTarget, hasAPIKey: Bool) throws -> [String] {
+        switch target {
+        case .chatGPTAccount:
+            return ["-c", #"model_provider="openai""#]
+        case .cliConfiguration:
+            return []
+        case .local(let server, _):
+            if let provider = server.codexLocalProvider {
+                return ["--oss", "--local-provider", provider]
+            }
+            guard let url = target.localBaseURL else { throw ValidationError.missingBaseURL }
+            let safeURL = try validatedBaseURL(url)
+            var table = #"{name="TickyTask local", base_url="\#(safeURL)", wire_api="responses""#
+            if hasAPIKey { table += #", env_key="\#(apiKeyVariable)""# }
+            table += "}"
+            return ["-c", #"model_provider="\#(customProviderID)""#,
+                    "-c", "model_providers.\(customProviderID)=\(table)"]
+        }
+    }
+
+    /// Extra child environment for the connection (the local server address for
+    /// Codex's built-in Ollama/LM Studio providers, and the API key).
+    static func environment(for target: SummaryConnectionTarget, apiKey: String?) -> [String: String] {
+        guard case .local(let server, _) = target else { return [:] }
+        var env: [String: String] = [:]
+        if server.codexLocalProvider != nil, let url = target.localBaseURL, url != server.defaultBaseURL {
+            env["CODEX_OSS_BASE_URL"] = url
+        }
+        if let apiKey, !apiKey.isEmpty { env[apiKeyVariable] = apiKey }
+        return env
+    }
+
+    /// Only plain http(s) URLs without quotes or control characters may be
+    /// embedded in the TOML provider table.
+    static func validatedBaseURL(_ raw: String) throws -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = components.host, !host.isEmpty,
+              trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: "\"\\'\n\r\t ")) == nil else {
+            throw ValidationError.invalidBaseURL(trimmed)
+        }
+        return trimmed
+    }
+}
+
+/// Lists the models a local server offers via its OpenAI-compatible
+/// `GET {base}/models` (supported by Ollama and LM Studio).
+enum LocalModelListing {
+    static func parse(_ data: Data) throws -> [String] {
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["data"] as? [[String: Any]] else {
+            throw URLError(.cannotParseResponse)
+        }
+        var seen = Set<String>()
+        return items.compactMap { $0["id"] as? String }.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    static func request(baseURL: String, apiKey: String?) throws -> URLRequest {
+        let base = try SummaryConnectionArguments.validatedBaseURL(baseURL)
+        guard let url = URL(string: base.hasSuffix("/") ? base + "models" : base + "/models") else {
+            throw SummaryConnectionArguments.ValidationError.invalidBaseURL(base)
+        }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        return request
+    }
+}

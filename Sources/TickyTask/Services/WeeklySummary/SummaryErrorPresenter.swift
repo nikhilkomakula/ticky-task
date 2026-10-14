@@ -7,21 +7,6 @@ enum SummaryAuthSetup: Sendable, Equatable {
     case customProvider(name: String?)
     case unknown
 
-    /// From `claude auth status` (JSON) plus a configured `ANTHROPIC_BASE_URL`.
-    static func claude(authStatusJSON: Data?, baseURL: String?) -> SummaryAuthSetup {
-        let status = authStatusJSON.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        let method = (status?["authMethod"] as? String)?.lowercased() ?? ""
-        let apiProvider = (status?["apiProvider"] as? String)?.lowercased() ?? ""
-        let host = baseURL.flatMap { URL(string: $0)?.host }
-        if !(host ?? "").isEmpty || method.contains("helper") || (!apiProvider.isEmpty && apiProvider != "firstparty") {
-            return .customProvider(name: host ?? (apiProvider.isEmpty ? nil : apiProvider))
-        }
-        if method.contains("oauth") || method.contains("claude") || method.contains("api_key") || method.contains("console") {
-            return .accountLogin
-        }
-        return .unknown
-    }
-
     /// From the top-level `model_provider = "…"` in `~/.codex/config.toml`.
     static func codex(configTOML: String?) -> SummaryAuthSetup {
         guard let configTOML else { return .unknown }
@@ -48,8 +33,10 @@ enum SummaryErrorPresenter {
         var details: String?
     }
 
-    static func present(_ error: WeeklySummaryError, authSetup: SummaryAuthSetup = .unknown) -> Presentation {
-        Presentation(title: title(error), message: remediation(error, authSetup: authSetup), details: details(error))
+    static func present(_ error: WeeklySummaryError, authSetup: SummaryAuthSetup = .unknown,
+                        connection: SummaryConnectionTarget? = nil) -> Presentation {
+        Presentation(title: title(error), message: remediation(error, authSetup: authSetup, connection: connection),
+                     details: details(error))
     }
 
     private static func title(_ error: WeeklySummaryError) -> String {
@@ -76,7 +63,8 @@ enum SummaryErrorPresenter {
         }
     }
 
-    private static func remediation(_ error: WeeklySummaryError, authSetup: SummaryAuthSetup) -> String {
+    private static func remediation(_ error: WeeklySummaryError, authSetup: SummaryAuthSetup,
+                                    connection: SummaryConnectionTarget?) -> String {
         switch error {
         case .cliNotFound(let p):
             return "Install the \(p.cliName), or set the path to the `\(p.executableName)` executable in Settings › AI."
@@ -90,8 +78,11 @@ enum SummaryErrorPresenter {
             return "No result after \(seconds / 60) minutes. Try again, choose a lower effort, or select fewer tasks."
         case .inputTooLarge(let bytes, let limit):
             return "The selected notes are \(bytes / 1024) KB; the limit is \(limit / 1024) KB. Select fewer tasks and try again."
-        case .notSignedIn(let p, _), .authenticationRejected(let p, _):
-            return authRemediation(p, setup: authSetup)
+        case .notSignedIn, .authenticationRejected:
+            if let connection, connection.isLocal {
+                return "The local server rejected the request. If it requires an API key, enter it in Settings › AI, then try again."
+            }
+            return authRemediation(setup: authSetup)
         case .authHelperFailed:
             return "The credential helper configured for this CLI didn't return a usable credential. Run the CLI once in Terminal to see the helper's error, fix its setup, then try again."
         case .accessDenied:
@@ -105,6 +96,10 @@ enum SummaryErrorPresenter {
         case .providerUnavailable:
             return "The provider reported a server-side problem. Try again in a few minutes."
         case .networkFailure:
+            if let connection, case .local(let server, _) = connection {
+                let address = connection.localBaseURL.map { " at \($0)" } ?? ""
+                return "Make sure \(server.displayName) is running and serving a model\(address), then try again."
+            }
             return "Check your network, VPN, or proxy, and that the provider endpoint is reachable, then try again."
         case .cliIncompatible(let p, _):
             return "TickyTask needs \(p.cliName) options this version doesn't support (it never runs a summary without them). Update the \(p.cliName), then try again."
@@ -117,16 +112,15 @@ enum SummaryErrorPresenter {
         }
     }
 
-    private static func authRemediation(_ provider: SummaryProvider, setup: SummaryAuthSetup) -> String {
-        let login = provider == .claude ? "claude auth login" : "codex login"
+    private static func authRemediation(setup: SummaryAuthSetup) -> String {
         switch setup {
         case .customProvider(let name):
             let via = name.map { " (\($0))" } ?? ""
-            return "This CLI authenticates through a custom provider or credential helper\(via). Check that setup — e.g. refresh the gateway token — then try again. Signing in with `\(login)` may not fix it."
+            return "Codex is using a custom provider or credential helper from your Codex configuration\(via). Check that setup — or switch the connection to your ChatGPT account in Settings › AI — then try again."
         case .accountLogin:
-            return "Sign in again by running `\(login)` in Terminal, then try again."
+            return "Sign in to your ChatGPT account: use Sign in under Settings › AI, or run `codex login` in Terminal, then try again."
         case .unknown:
-            return "Run `\(login)` in Terminal to sign in — or, if this CLI uses a gateway or credential helper, check that setup — then try again."
+            return "Sign in with Settings › AI › Sign in (or `codex login` in Terminal) — or, if Codex uses a gateway or credential helper, check that setup — then try again."
         }
     }
 

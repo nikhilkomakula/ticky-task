@@ -1,18 +1,38 @@
 import SwiftUI
 import AppKit
 
-/// Settings › AI: where to find the `claude` / `codex` CLIs used by Weekly
-/// Summary. Paths are optional — TickyTask searches the usual install locations.
+/// Settings › AI: how Weekly Summary connects to Codex (ChatGPT account, the
+/// Codex CLI's own configuration, or a local model server), the user's custom
+/// summary instructions, and where to find the `codex` executable.
 struct AISettingsView: View {
+    @State private var instructions = SummaryPreferences().customInstructions
+
+    private var generator: SummaryGenerating { WeeklySummaryDependencies.make().generator }
+
     var body: some View {
         Form {
             Section {
-                CLIPathRow(provider: .claude)
-                CLIPathRow(provider: .codex)
+                SummaryConnectionForm(
+                    accountStatus: { await generator.accountStatus() },
+                    signIn: { try await generator.signIn() }
+                )
             } header: {
-                Text("Command-line tools")
+                Text("Codex connection")
+            }
+
+            Section {
+                SummaryInstructionsEditor(instructions: $instructions)
+                    .onChange(of: instructions) { _, value in SummaryPreferences().customInstructions = value }
+            } header: {
+                Text("Weekly Summary instructions")
+            }
+
+            Section {
+                CodexPathRow()
+            } header: {
+                Text("Codex CLI")
             } footer: {
-                Text("Weekly Summary runs your locally installed Claude Code or Codex CLI, using its own sign-in and provider settings. Leave a path empty to search the usual install locations. “Check” confirms the CLI can be found and started — it does not verify your sign-in.")
+                Text("Weekly Summary runs your locally installed Codex CLI. Leave the path empty to search the usual install locations. “Check” confirms Codex can be found and started — it does not verify your sign-in.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -21,25 +41,19 @@ struct AISettingsView: View {
     }
 }
 
-private struct CLIPathRow: View {
-    let provider: SummaryProvider
-    @State private var path = ""
+private struct CodexPathRow: View {
+    @State private var path = SummaryPreferences().cliPathOverride ?? ""
     @State private var status: String?
     @State private var isChecking = false
     @State private var statusIsError = false
 
-    private var preferences: SummaryPreferences { SummaryPreferences() }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(provider.cliName)
-                Spacer()
                 TextField("Automatic", text: $path)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 260)
                     .onSubmit(save)
-                    .accessibilityIdentifier("ai-path-\(provider.rawValue)")
+                    .accessibilityIdentifier("ai-path-codex")
                 Button("Browse…", action: browse)
                 Button("Check", action: check)
                     .disabled(isChecking)
@@ -53,12 +67,11 @@ private struct CLIPathRow: View {
                     .textSelection(.enabled)
             }
         }
-        .onAppear { path = preferences.cliPathOverride(for: provider) ?? "" }
         .onChange(of: path) { _, _ in save() }
     }
 
     private func save() {
-        preferences.setCLIPathOverride(path, for: provider)
+        SummaryPreferences().cliPathOverride = path
         status = nil
     }
 
@@ -68,7 +81,7 @@ private struct CLIPathRow: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.treatsFilePackagesAsDirectories = true
-        panel.message = "Choose the \(provider.executableName) executable"
+        panel.message = "Choose the codex executable"
         if panel.runModal() == .OK, let url = panel.url {
             path = url.path
             save()
@@ -78,13 +91,11 @@ private struct CLIPathRow: View {
     private func check() {
         save()
         isChecking = true
-        let provider = provider
-        let override = preferences.cliPathOverride(for: provider)
+        let override = SummaryPreferences().cliPathOverride
         Task {
             defer { isChecking = false }
             do {
-                let executable = try await CLIExecutableResolver.resolve(name: provider.executableName,
-                                                                         override: override, probe: .system)
+                let executable = try await CLIExecutableResolver.resolve(name: "codex", override: override, probe: .system)
                 let home = FileManager.default.homeDirectoryForCurrentUser.path
                 let output = try await CLIProcessRunner().run(CLIInvocation(
                     executableURL: executable, arguments: ["--version"],
@@ -102,7 +113,7 @@ private struct CLIPathRow: View {
                 status = "“\(bad)” is missing or not executable."
             } catch is CLIResolutionError {
                 statusIsError = true
-                status = "\(provider.cliName) not found. Install it or choose its executable."
+                status = "Codex CLI not found. Install it (e.g. `brew install codex`) or choose its executable."
             } catch {
                 statusIsError = true
                 status = "Couldn't start it: \(error.localizedDescription)"

@@ -242,25 +242,7 @@ private struct TopToolbar: View {
                 .font(.headline.weight(.semibold))
 
             HStack(spacing: 12) {
-                // Left: search + Week / Month switcher.
-                Button(action: onSearch) {
-                    Image(systemName: "magnifyingglass")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-                .help("Search tasks (⌘F)")
-
-                Button(action: onWeeklySummary) {
-                    Image(systemName: "text.badge.star")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-                .help("Weekly Summary (⇧⌘Y)")
-                .accessibilityLabel("Weekly Summary")
-                .accessibilityIdentifier("toolbar-weekly-summary")
-
+                // Left: Week / Month switcher.
                 Picker("View", selection: $app.viewMode) {
                     ForEach(ViewMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol).tag(mode)
@@ -301,6 +283,27 @@ private struct TopToolbar: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
                     .help("Settings")
+                    .accessibilityIdentifier("toolbar-settings")
+
+                    // Far right: search and Weekly Summary.
+                    Button(action: onSearch) {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Search tasks (⌘F)")
+                    .accessibilityIdentifier("toolbar-search")
+
+                    Button(action: onWeeklySummary) {
+                        Image(systemName: "text.badge.star")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Weekly Summary (⇧⌘Y)")
+                    .accessibilityLabel("Weekly Summary")
+                    .accessibilityIdentifier("toolbar-weekly-summary")
                 }
             }
         }

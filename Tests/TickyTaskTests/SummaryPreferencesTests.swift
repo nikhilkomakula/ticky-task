@@ -2,229 +2,160 @@ import Testing
 import Foundation
 @testable import TickyTask
 
-@Suite("SummaryPreferences")
+@Suite("Weekly Summary — preferences")
 struct SummaryPreferencesTests {
-    private func isolatedDefaults() -> (defaults: UserDefaults, name: String) {
-        let id = UUID().uuidString
-        let name = "SummaryPreferencesTests-\(id)"
-        let defaults = UserDefaults(suiteName: name)!
-        return (defaults, name)
+    private func withPreferences(_ body: (SummaryPreferences, UserDefaults) throws -> Void) rethrows {
+        let suite = "SummaryPreferencesTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(SummaryPreferences(defaults: defaults), defaults)
     }
 
-    @Test("provider defaults to claude")
-    func providerDefault() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        let prefs = SummaryPreferences(defaults: defaults)
-        #expect(prefs.provider == .claude)
-    }
-
-    @Test("provider round-trips")
-    func providerRoundTrip() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.provider = .codex
-        let prefs2 = SummaryPreferences(defaults: defaults)
-        #expect(prefs2.provider == .codex)
-    }
-
-    @Test("model ID defaults to empty string")
-    func modelIDDefault() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        let prefs = SummaryPreferences(defaults: defaults)
-        #expect(prefs.modelID(for: .claude) == "")
-        #expect(prefs.modelID(for: .codex) == "")
-    }
-
-    @Test("model IDs per provider independent")
-    func modelIDPerProvider() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setModelID("opus", for: .claude)
-        prefs.setModelID("gpt-5.5", for: .codex)
-
-        let prefs2 = SummaryPreferences(defaults: defaults)
-        #expect(prefs2.modelID(for: .claude) == "opus")
-        #expect(prefs2.modelID(for: .codex) == "gpt-5.5")
-    }
-
-    @Test("setModelID trims whitespace")
-    func modelIDTrimsWhitespace() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setModelID("  sonnet  ", for: .claude)
-        #expect(prefs.modelID(for: .claude) == "sonnet")
-    }
-
-    @Test("setModelID empty removes the key")
-    func modelIDEmptyRemoves() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setModelID("opus", for: .claude)
-        prefs.setModelID("", for: .claude)
-        #expect(prefs.modelID(for: .claude) == "")
-    }
-
-    @Test("effort round-trips per provider and model")
-    func effortRoundTrip() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setEffort(.level("high"), for: .claude, modelID: "opus")
-        prefs.setEffort(.modelDefault("medium"), for: .codex, modelID: "gpt-5.5")
-
-        #expect(prefs.effort(for: .claude, modelID: "opus") == .level("high"))
-        #expect(prefs.effort(for: .codex, modelID: "gpt-5.5") == .modelDefault("medium"))
-    }
-
-    @Test("effort with different models independent")
-    func effortPerModel() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setEffort(.level("low"), for: .claude, modelID: "opus")
-        prefs.setEffort(.level("high"), for: .claude, modelID: "sonnet")
-
-        #expect(prefs.effort(for: .claude, modelID: "opus") == .level("low"))
-        #expect(prefs.effort(for: .claude, modelID: "sonnet") == .level("high"))
-    }
-
-    @Test("cliDefault effort round-trips")
-    func cliDefaultEffort() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setEffort(.cliDefault, for: .claude, modelID: "")
-        #expect(prefs.effort(for: .claude, modelID: "") == .cliDefault)
-    }
-
-    @Test("corrupt effort JSON returns nil")
-    func corruptEffortJSON() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        defaults.set("not valid json", forKey: "weeklySummary.efforts")
-        let prefs = SummaryPreferences(defaults: defaults)
-        #expect(prefs.effort(for: .claude, modelID: "opus") == nil)
-    }
-
-    @Test("custom model IDs per provider")
-    func customModelIDs() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.addCustomModelID("model-a", for: .claude)
-        prefs.addCustomModelID("model-b", for: .codex)
-
-        #expect(prefs.customModelIDs(for: .claude) == ["model-a"])
-        #expect(prefs.customModelIDs(for: .codex) == ["model-b"])
-    }
-
-    @Test("custom model IDs most recent first")
-    func customModelIDsOrder() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.addCustomModelID("first", for: .claude)
-        prefs.addCustomModelID("second", for: .claude)
-        prefs.addCustomModelID("third", for: .claude)
-
-        #expect(prefs.customModelIDs(for: .claude) == ["third", "second", "first"])
-    }
-
-    @Test("custom model IDs deduplicates")
-    func customModelIDsDedupe() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.addCustomModelID("dup", for: .claude)
-        prefs.addCustomModelID("dup", for: .claude)
-
-        #expect(prefs.customModelIDs(for: .claude).count == 1)
-    }
-
-    @Test("custom model IDs capped at 10")
-    func customModelIDsCap() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        for i in 1...15 {
-            prefs.addCustomModelID("model-\(i)", for: .claude)
+    @Test("Defaults: ChatGPT account, Ollama, blank URL, CLI-default model, no instructions")
+    func defaults() {
+        withPreferences { prefs, _ in
+            #expect(prefs.connectionKind == .chatGPTAccount)
+            #expect(prefs.connection == .chatGPTAccount)
+            #expect(prefs.localServer == .ollama)
+            #expect(prefs.localBaseURL.isEmpty)
+            #expect(prefs.modelID(for: .chatGPTAccount).isEmpty)
+            #expect(prefs.customInstructions.isEmpty)
+            #expect(prefs.cliPathOverride == nil)
         }
-
-        let ids = prefs.customModelIDs(for: .claude)
-        #expect(ids.count == 10)
-        #expect(ids[0] == "model-15")  // Most recent first.
     }
 
-    @Test("custom model IDs ignores empty strings")
-    func customModelIDsIgnoresEmpty() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.addCustomModelID("", for: .claude)
-        prefs.addCustomModelID("   ", for: .claude)
-        prefs.addCustomModelID("valid", for: .claude)
-
-        #expect(prefs.customModelIDs(for: .claude) == ["valid"])
+    @Test("Connection round-trips, including local server and base URL")
+    func connection() {
+        withPreferences { prefs, _ in
+            prefs.connectionKind = .cliConfiguration
+            #expect(prefs.connection == .cliConfiguration)
+            prefs.connectionKind = .local
+            prefs.localServer = .lmStudio
+            #expect(prefs.connection == .local(server: .lmStudio, baseURL: nil))
+            prefs.localBaseURL = "  http://10.0.0.5:1234/v1  "
+            #expect(prefs.connection == .local(server: .lmStudio, baseURL: "http://10.0.0.5:1234/v1"))
+            prefs.localBaseURL = "   "
+            #expect(prefs.connection == .local(server: .lmStudio, baseURL: nil))
+        }
     }
 
-    @Test("CLI path override get/set")
-    func cliPathOverride() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
+    @Test("Models, efforts, and custom ids are kept per connection")
+    func perConnection() {
+        withPreferences { prefs, _ in
+            let local = SummaryConnectionTarget.local(server: .ollama, baseURL: nil)
+            prefs.setModelID("gpt-6-sol", for: .chatGPTAccount)
+            prefs.setModelID("llama3.1:8b", for: local)
+            #expect(prefs.modelID(for: .chatGPTAccount) == "gpt-6-sol")
+            #expect(prefs.modelID(for: local) == "llama3.1:8b")
+            #expect(prefs.modelID(for: .cliConfiguration).isEmpty)
 
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setCLIPathOverride("/usr/local/bin/claude", for: .claude)
-        #expect(prefs.cliPathOverride(for: .claude) == "/usr/local/bin/claude")
+            prefs.setEffort(.level("high"), for: .chatGPTAccount, modelID: "gpt-6-sol")
+            prefs.setEffort(.modelDefault("max"), for: .cliConfiguration, modelID: "gpt-6-sol")
+            #expect(prefs.effort(for: .chatGPTAccount, modelID: "gpt-6-sol") == .level("high"))
+            #expect(prefs.effort(for: .cliConfiguration, modelID: "gpt-6-sol") == .modelDefault("max"))
+            #expect(prefs.effort(for: local, modelID: "gpt-6-sol") == nil)
+
+            prefs.addCustomModelID("mine", for: local)
+            #expect(prefs.customModelIDs(for: local) == ["mine"])
+            #expect(prefs.customModelIDs(for: .chatGPTAccount).isEmpty)
+
+            prefs.setModelID("  ", for: .chatGPTAccount)
+            #expect(prefs.modelID(for: .chatGPTAccount).isEmpty)   // blank clears
+        }
     }
 
-    @Test("CLI path override nil removes key")
-    func cliPathOverrideNilRemoves() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setCLIPathOverride("/usr/local/bin/claude", for: .claude)
-        prefs.setCLIPathOverride(nil, for: .claude)
-        #expect(prefs.cliPathOverride(for: .claude) == nil)
+    @Test("Custom model ids: trimmed, blanks ignored, repeats moved to front, capped at 10")
+    func customModels() {
+        withPreferences { prefs, _ in
+            prefs.addCustomModelID("  a  ", for: .chatGPTAccount)
+            prefs.addCustomModelID("", for: .chatGPTAccount)
+            prefs.addCustomModelID("b", for: .chatGPTAccount)
+            prefs.addCustomModelID("a", for: .chatGPTAccount)
+            #expect(prefs.customModelIDs(for: .chatGPTAccount) == ["a", "b"])
+            for index in 0..<15 { prefs.addCustomModelID("m\(index)", for: .chatGPTAccount) }
+            let ids = prefs.customModelIDs(for: .chatGPTAccount)
+            #expect(ids.count == 10)
+            #expect(ids.first == "m14")
+        }
     }
 
-    @Test("CLI path override empty string returns nil")
-    func cliPathOverrideEmptyReturnsNil() {
-        let (defaults, name) = isolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: name) }
-
-        var prefs = SummaryPreferences(defaults: defaults)
-        prefs.setCLIPathOverride("   ", for: .claude)
-        #expect(prefs.cliPathOverride(for: .claude) == nil)
+    @Test("Custom instructions keep their text, clear when blank, and are capped")
+    func instructions() {
+        withPreferences { prefs, _ in
+            prefs.customInstructions = "Write for my manager.\n- Lead with risks."
+            #expect(prefs.customInstructions == "Write for my manager.\n- Lead with risks.")
+            prefs.customInstructions = "   \n "
+            #expect(prefs.customInstructions.isEmpty)
+            prefs.customInstructions = String(repeating: "x", count: SummaryPrompt.customInstructionsLimit + 50)
+            #expect(prefs.customInstructions.count == SummaryPrompt.customInstructionsLimit)
+        }
     }
 
-    @Test("portableKeys excludes CLI paths")
-    func portableKeysExcludesPaths() {
-        let portableKeys = Set(SummaryPreferences.portableKeys)
-        #expect(!portableKeys.contains("weeklySummary.cliPath.claude"))
-        #expect(!portableKeys.contains("weeklySummary.cliPath.codex"))
-        #expect(portableKeys.contains("weeklySummary.provider"))
-        #expect(portableKeys.contains("weeklySummary.model.claude"))
+    @Test("CLI path override sets and clears")
+    func cliPath() {
+        withPreferences { prefs, _ in
+            prefs.cliPathOverride = "/opt/homebrew/bin/codex"
+            #expect(prefs.cliPathOverride == "/opt/homebrew/bin/codex")
+            prefs.cliPathOverride = ""
+            #expect(prefs.cliPathOverride == nil)
+        }
+    }
+
+    @Test("Corrupt stored values are treated as unset, never crash")
+    func corrupt() {
+        withPreferences { prefs, defaults in
+            defaults.set("{not json", forKey: "weeklySummary.efforts")
+            defaults.set("nope", forKey: "weeklySummary.customModels.chatgpt")
+            defaults.set("martian", forKey: "weeklySummary.connection")
+            defaults.set("toaster", forKey: "weeklySummary.local.server")
+            #expect(prefs.effort(for: .chatGPTAccount, modelID: "x") == nil)
+            #expect(prefs.customModelIDs(for: .chatGPTAccount).isEmpty)
+            #expect(prefs.connectionKind == .chatGPTAccount)
+            #expect(prefs.localServer == .ollama)
+            // A write after corruption recovers cleanly.
+            prefs.setEffort(.level("low"), for: .chatGPTAccount, modelID: "x")
+            #expect(prefs.effort(for: .chatGPTAccount, modelID: "x") == .level("low"))
+        }
+    }
+
+    @Test("Portable keys cover choices + instructions but never the CLI path or API key")
+    func portableKeys() {
+        let keys = SummaryPreferences.portableKeys
+        #expect(keys.contains("weeklySummary.connection"))
+        #expect(keys.contains("weeklySummary.instructions"))
+        #expect(keys.contains("weeklySummary.efforts"))
+        #expect(keys.contains("weeklySummary.model.chatgpt"))
+        #expect(keys.contains("weeklySummary.model.local-openAICompatible"))
+        #expect(!keys.contains { $0.contains("cliPath") })
+        #expect(!keys.contains { $0.lowercased().contains("key") && $0 != "weeklySummary.local.baseURL" })
+    }
+
+    @Test("Backup carries Weekly Summary choices and restores only known keys")
+    func backupRoundTrip() {
+        let suite = "SummaryPreferencesBackup-\(UUID().uuidString)"
+        let source = UserDefaults(suiteName: suite)!
+        defer { source.removePersistentDomain(forName: suite) }
+        let prefs = SummaryPreferences(defaults: source)
+        prefs.connectionKind = .local
+        prefs.localServer = .lmStudio
+        prefs.customInstructions = "Be brief."
+        prefs.setModelID("qwen", for: prefs.connection)
+        prefs.cliPathOverride = "/secret/path/codex"
+
+        var dto = AppSettingsDTO.capture(from: source)
+        #expect(dto.weeklySummary?["weeklySummary.instructions"] == "Be brief.")
+        #expect(dto.weeklySummary?.keys.contains("weeklySummary.cliPath.codex") == false)
+        dto.weeklySummary?["evil.key"] = "injected"
+
+        let targetSuite = "SummaryPreferencesRestore-\(UUID().uuidString)"
+        let target = UserDefaults(suiteName: targetSuite)!
+        defer { target.removePersistentDomain(forName: targetSuite) }
+        dto.apply(to: target)
+        let restored = SummaryPreferences(defaults: target)
+        #expect(restored.connection == .local(server: .lmStudio, baseURL: nil))
+        #expect(restored.customInstructions == "Be brief.")
+        #expect(restored.modelID(for: restored.connection) == "qwen")
+        #expect(target.string(forKey: "evil.key") == nil)
+        #expect(restored.cliPathOverride == nil)
     }
 }

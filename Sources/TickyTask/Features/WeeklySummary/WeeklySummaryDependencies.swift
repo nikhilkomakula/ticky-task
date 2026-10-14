@@ -30,43 +30,37 @@ enum WeeklySummaryDependencies {
     @MainActor
     static func make() -> Bundle {
         if UITestSupport.isRunning {
-            return Bundle(generator: StubSummaryGenerator(failure: UITestSupport.summaryFailure),
+            return Bundle(generator: StubSummaryGenerator(failure: UITestSupport.summaryFailure, delay: UITestSupport.summaryDelay),
                           catalog: StubSummaryModelCatalog())
         }
         return live
     }
 
-    /// Shared so the per-launch caches (CLI versions, verified isolation flags,
+    /// Shared so the per-launch caches (CLI version, verified isolation flags,
     /// model lists) survive reopening the sheet.
-    @MainActor private static let live: Bundle = {
+    @MainActor static let live: Bundle = {
         let runner = CLIProcessRunner()
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let resolve: @Sendable (SummaryProvider) async throws -> URL = { provider in
-            try await CLIExecutableResolver.resolve(
-                name: provider.executableName,
-                override: SummaryPreferences().cliPathOverride(for: provider),
-                probe: .system
-            )
+        let resolve: @Sendable () async throws -> URL = {
+            try await CLIExecutableResolver.resolve(name: "codex", override: SummaryPreferences().cliPathOverride,
+                                                    probe: .system)
         }
+        let environment: @Sendable (URL) async -> [String: String] = { executable in
+            CLIChildEnvironment.make(for: executable, home: home)
+        }
+        let apiKey: @Sendable () -> String? = { SummaryKeychain().read() }
         LiveSummaryGenerator.removeStaleRuns()
-        let generator = LiveSummaryGenerator(
-            runner: runner,
-            resolveExecutable: resolve,
-            environment: { executable in CLIChildEnvironment.make(for: executable, home: home) }
-        )
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        let catalog = SummaryModelCatalog(
-            runner: runner,
-            resolveExecutable: resolve,
-            environment: { executable in CLIChildEnvironment.make(for: executable, home: home) },
-            readFile: { FileManager.default.contents(atPath: $0) },
-            listDirectory: { (try? FileManager.default.contentsOfDirectory(atPath: $0)) ?? [] },
-            home: home,
-            cacheDirectory: caches.appendingPathComponent(Foundation.Bundle.main.bundleIdentifier ?? "com.tickytask.mac")
-                .appendingPathComponent("model-catalog", isDirectory: true)
+        return Bundle(
+            generator: LiveSummaryGenerator(runner: runner, resolveExecutable: resolve, environment: environment,
+                                            localAPIKey: apiKey),
+            catalog: SummaryModelCatalog(
+                runner: runner, resolveExecutable: resolve, environment: environment, localAPIKey: apiKey,
+                cacheDirectory: caches.appendingPathComponent(Foundation.Bundle.main.bundleIdentifier ?? "com.tickytask.mac")
+                    .appendingPathComponent("model-catalog", isDirectory: true)
+            )
         )
-        return Bundle(generator: generator, catalog: catalog)
     }()
 }
 
@@ -124,28 +118,28 @@ struct StubSummaryGenerator: SummaryGenerating {
                              duration: .seconds(1), usage: nil)
     }
 
-    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup {
+    func authSetup(for connection: SummaryConnectionTarget) async -> SummaryAuthSetup {
         .customProvider(name: "Stub Gateway")
     }
+
+    func accountStatus() async -> SummaryAccountStatus { .signedIn("Logged in using ChatGPT (stub)") }
+    func signIn() async throws {}
 }
 
 struct StubSummaryModelCatalog: SummaryModelCatalogProviding {
-    func models(for provider: SummaryProvider, refresh: Bool) async throws -> SummaryModelList {
-        switch provider {
-        case .claude:
+    func models(for connection: SummaryConnectionTarget, refresh: Bool) async throws -> SummaryModelList {
+        if connection.isLocal {
             return SummaryModelList(models: [
                 .cliDefault,
-                SummaryModelOption(id: "opus", label: "Opus", source: .builtInAlias, supportedEfforts: nil, defaultEffort: nil),
-                SummaryModelOption(id: "haiku", label: "Haiku", source: .builtInAlias, supportedEfforts: nil, defaultEffort: nil),
-            ], refreshedAt: nil, sourceDescription: "UI test stub")
-        case .codex:
-            return SummaryModelList(models: [
-                .cliDefault,
-                SummaryModelOption(id: "gpt-5.5", label: "GPT-5.5", source: .catalog,
-                                   supportedEfforts: ["low", "medium", "high", "xhigh"], defaultEffort: "medium"),
-                SummaryModelOption(id: "system.ai.glm-5-2", label: "GLM 5.2", source: .catalog,
-                                   supportedEfforts: ["high", "max"], defaultEffort: "max"),
-            ], refreshedAt: nil, sourceDescription: "UI test stub")
+                SummaryModelOption(id: "llama3.1:8b", label: "llama3.1:8b", source: .catalog, supportedEfforts: nil, defaultEffort: nil),
+            ], refreshedAt: nil, sourceDescription: "UI test stub (local)")
         }
+        return SummaryModelList(models: [
+            .cliDefault,
+            SummaryModelOption(id: "gpt-5.5", label: "GPT-5.5", source: .catalog,
+                               supportedEfforts: ["low", "medium", "high", "xhigh"], defaultEffort: "medium"),
+            SummaryModelOption(id: "system.ai.glm-5-2", label: "GLM 5.2", source: .catalog,
+                               supportedEfforts: ["high", "max"], defaultEffort: "max"),
+        ], refreshedAt: nil, sourceDescription: "UI test stub")
     }
 }
