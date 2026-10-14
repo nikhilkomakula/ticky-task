@@ -36,6 +36,7 @@ struct TickyTaskApp: App {
         .commands {
             CommandGroup(after: .textEditing) {
                 FindTaskCommand(appState: appState)
+                WeeklySummaryCommand(appState: appState)
             }
         }
 
@@ -73,5 +74,21 @@ private struct FindTaskCommand: View {
             appState.isSearchPresented = true
         }
         .keyboardShortcut("f", modifiers: .command)
+    }
+}
+
+/// The ⇧⌘Y "Weekly Summary…" menu command; like Find, it brings the main window
+/// forward first so the sheet has somewhere to appear.
+private struct WeeklySummaryCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    let appState: AppState
+
+    var body: some View {
+        Button("Weekly Summary…") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+            appState.isWeeklySummaryPresented = true
+        }
+        .keyboardShortcut("y", modifiers: [.command, .shift])
     }
 }

@@ -166,6 +166,14 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     var endOfDayReminderMinutes: Int? = nil
     var menuBarOnly: Bool? = nil
     var autoCheckUpdates: Bool? = nil
+    // Weekly Summary choices (optional, stable keys). CLI paths are machine-specific
+    // and deliberately excluded.
+    var weeklySummaryProvider: String? = nil
+    var weeklySummaryModelClaude: String? = nil
+    var weeklySummaryModelCodex: String? = nil
+    var weeklySummaryEfforts: String? = nil
+    var weeklySummaryCustomModelsClaude: [String]? = nil
+    var weeklySummaryCustomModelsCodex: [String]? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -184,7 +192,13 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             endOfDayReminderEnabled: d.object(forKey: "endOfDayReminderEnabled") as? Bool,
             endOfDayReminderMinutes: d.object(forKey: "endOfDayReminderMinutes") as? Int,
             menuBarOnly: d.object(forKey: "menuBarOnly") as? Bool,
-            autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool
+            autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool,
+            weeklySummaryProvider: d.string(forKey: "weeklySummary.provider"),
+            weeklySummaryModelClaude: d.string(forKey: "weeklySummary.model.claude"),
+            weeklySummaryModelCodex: d.string(forKey: "weeklySummary.model.codex"),
+            weeklySummaryEfforts: d.string(forKey: "weeklySummary.efforts"),
+            weeklySummaryCustomModelsClaude: d.array(forKey: "weeklySummary.customModels.claude") as? [String],
+            weeklySummaryCustomModelsCodex: d.array(forKey: "weeklySummary.customModels.codex") as? [String]
         )
     }
 
@@ -197,7 +211,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "autoDeleteCompletedEnabled", "autoDeleteCompletedDays",
         "endOfDayReminderEnabled", "endOfDayReminderMinutes",
         "menuBarOnly", "autoCheckUpdates",
-    ]
+    ] + SummaryPreferences.portableKeys
 
     /// Reproduce the backed-up settings: clear every portable key first (so a
     /// preference the source left at its default resets any explicit value here to
@@ -218,6 +232,12 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = endOfDayReminderMinutes { d.set(v, forKey: "endOfDayReminderMinutes") }
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
+        if let v = weeklySummaryProvider { d.set(v, forKey: "weeklySummary.provider") }
+        if let v = weeklySummaryModelClaude { d.set(v, forKey: "weeklySummary.model.claude") }
+        if let v = weeklySummaryModelCodex { d.set(v, forKey: "weeklySummary.model.codex") }
+        if let v = weeklySummaryEfforts { d.set(v, forKey: "weeklySummary.efforts") }
+        if let v = weeklySummaryCustomModelsClaude { d.set(v, forKey: "weeklySummary.customModels.claude") }
+        if let v = weeklySummaryCustomModelsCodex { d.set(v, forKey: "weeklySummary.customModels.codex") }
     }
 }
 

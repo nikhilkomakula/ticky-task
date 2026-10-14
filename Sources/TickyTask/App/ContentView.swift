@@ -41,7 +41,8 @@ struct ContentView: View {
         @Bindable var app = app
         ZStack {
             VStack(spacing: 0) {
-                TopToolbar(onSearch: { app.isSearchPresented = true })
+                TopToolbar(onSearch: { app.isSearchPresented = true },
+                           onWeeklySummary: { app.isWeeklySummaryPresented = true })
                 Divider()
                 switch app.viewMode {
                 case .week:
@@ -97,6 +98,9 @@ struct ContentView: View {
             carryForwardIfDayChanged()
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
+        .sheet(isPresented: $app.isWeeklySummaryPresented) {
+            WeeklySummarySheet(weekAnchor: app.weekAnchor)
+        }
     }
 
     /// Keep the drag controller's persistence context + sort config current.
@@ -226,6 +230,7 @@ private struct TopToolbar: View {
     @AppStorage("calendarColumns") private var calendarColumns = 5
     @AppStorage("showWeekends") private var showWeekends = false
     var onSearch: () -> Void = {}
+    var onWeeklySummary: () -> Void = {}
 
     private var columns: Int { max(1, min(12, calendarColumns)) }
 
@@ -245,6 +250,16 @@ private struct TopToolbar: View {
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
                 .help("Search tasks (⌘F)")
+
+                Button(action: onWeeklySummary) {
+                    Image(systemName: "text.badge.star")
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+                .help("Weekly Summary (⇧⌘Y)")
+                .accessibilityLabel("Weekly Summary")
+                .accessibilityIdentifier("toolbar-weekly-summary")
 
                 Picker("View", selection: $app.viewMode) {
                     ForEach(ViewMode.allCases) { mode in

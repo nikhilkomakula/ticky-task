@@ -140,6 +140,13 @@ struct SummaryResult: Sendable, Equatable {
 /// UI tests inject a stub.
 protocol SummaryGenerating: Sendable {
     func generate(_ request: SummaryRequest) async throws -> SummaryResult
+    /// How the provider's CLI authenticates — consulted only after an auth-class
+    /// failure, to pick the remediation that will actually help.
+    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup
+}
+
+extension SummaryGenerating {
+    func authSetup(for provider: SummaryProvider) async -> SummaryAuthSetup { .unknown }
 }
 
 /// Raw diagnostics kept alongside a typed failure for the "Details" disclosure.
