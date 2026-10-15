@@ -97,7 +97,8 @@ enum SummaryErrorPresenter {
             return "The provider reported a server-side problem. Try again in a few minutes."
         case .networkFailure:
             if let connection, case .local(let server, _) = connection {
-                let address = connection.localBaseURL.map { " at \($0)" } ?? ""
+                let url = connection.localBaseURL.map { SummaryRedactor.redact($0) } ?? ""
+                let address = url.isEmpty ? "" : " at \(url)"
                 return "Make sure \(server.displayName) is running and serving a model\(address), then try again."
             }
             return "Check your network, VPN, or proxy, and that the provider endpoint is reachable, then try again."

@@ -47,20 +47,29 @@ enum CodexSummaryAdapter {
 
     static let mcpListArguments = ["mcp", "list", "--json"]
 
+    struct UnrecognizedMCPList: Error {}
+
     /// Server names from `codex mcp list --json` (an array, or `{"servers": [...]}`).
-    static func mcpServerNames(fromListJSON data: Data) -> [String] {
-        guard let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
+    /// Fails closed: anything that isn't a list of named servers throws, since a
+    /// server we can't name is a server we can't disable.
+    static func mcpServerNames(fromListJSON data: Data) throws -> [String] {
+        let root = try? JSONSerialization.jsonObject(with: data)
         let items: [Any]
         if let array = root as? [Any] {
             items = array
         } else if let object = root as? [String: Any], let servers = object["servers"] as? [Any] {
             items = servers
         } else {
-            return []
+            throw UnrecognizedMCPList()
         }
-        var seen = Set<String>()
-        return items.compactMap { ($0 as? [String: Any])?["name"] as? String }
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        var names: [String] = []
+        for item in items {
+            guard let name = (item as? [String: Any])?["name"] as? String, !name.isEmpty else {
+                throw UnrecognizedMCPList()
+            }
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
     }
 
     /// Accepts output only when the process exited 0, no turn failed, and the

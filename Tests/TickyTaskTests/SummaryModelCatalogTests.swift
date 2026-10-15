@@ -174,11 +174,11 @@ private let catalogJSON = #"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6
 
 @Suite("Weekly Summary — model catalog")
 struct SummaryModelCatalogTests {
-    private func tempDirectory() -> URL {
+    fileprivate func tempDirectory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("catalog-tests-\(UUID().uuidString)", isDirectory: true)
     }
 
-    private func catalog(runner: FakeCLIRunner, cache: URL,
+    fileprivate func catalog(runner: FakeCLIRunner, cache: URL,
                          resolve: @escaping @Sendable () async throws -> URL = { URL(fileURLWithPath: "/opt/homebrew/bin/codex") },
                          fetch: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = { _ in throw URLError(.cannotConnectToHost) },
                          apiKey: String? = nil) -> SummaryModelCatalog {
@@ -314,6 +314,56 @@ struct SummaryModelCatalogTests {
         } catch let error as WeeklySummaryError {
             if case .configurationRejected = error {} else { Issue.record("got \(error)") }
         } catch { Issue.record("unexpected \(error)") }
+    }
+}
+
+extension SummaryModelCatalogTests {
+    @Test("A stale list stays marked stale on later reads until a refresh succeeds")
+    func staleStaysStale() async throws {
+        let cache = tempDirectory()
+        defer { try? FileManager.default.removeItem(at: cache) }
+        let fails = FailSwitch()
+        let runner = FakeCLIRunner { _ in fails.isOn ? output("", exit: 1, stderr: "boom") : output(catalogJSON) }
+        let catalog = catalog(runner: runner, cache: cache)
+        _ = try await catalog.models(for: .chatGPTAccount, refresh: true)
+        fails.isOn = true
+        #expect(try await catalog.models(for: .chatGPTAccount, refresh: true).isStale)
+        #expect(try await catalog.models(for: .chatGPTAccount, refresh: false).isStale)
+        fails.isOn = false
+        #expect(try await !catalog.models(for: .chatGPTAccount, refresh: true).isStale)
+    }
+
+    @Test("Local listing: HTTP 429 → rateLimited; a non-model-list reply → invalidResponse")
+    func localRateLimitAndBadJSON() async {
+        let runner = FakeCLIRunner { _ in output("") }
+        let cache = tempDirectory()
+        let limited: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            (Data(), HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!)
+        }
+        let garbage: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { request in
+            (Data("<html>".utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        do {
+            _ = try await catalog(runner: runner, cache: cache, fetch: limited).models(for: .local(server: .ollama, baseURL: nil), refresh: true)
+            Issue.record("expected throw")
+        } catch let error as WeeklySummaryError {
+            if case .rateLimited(_, let detail) = error { #expect(detail.httpStatus == 429) } else { Issue.record("got \(error)") }
+        } catch { Issue.record("unexpected \(error)") }
+        do {
+            _ = try await catalog(runner: runner, cache: cache, fetch: garbage).models(for: .local(server: .ollama, baseURL: nil), refresh: true)
+            Issue.record("expected throw")
+        } catch let error as WeeklySummaryError {
+            if case .invalidResponse = error {} else { Issue.record("got \(error)") }
+        } catch { Issue.record("unexpected \(error)") }
+    }
+}
+
+private final class FailSwitch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isOn: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
     }
 }
 

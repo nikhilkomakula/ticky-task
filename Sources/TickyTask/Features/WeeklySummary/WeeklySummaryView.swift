@@ -46,6 +46,10 @@ struct WeeklySummaryView: View {
         .frame(minWidth: 760, idealWidth: 820, minHeight: 620, idealHeight: 700)
         .task { await session.loadModels() }
         .onDisappear { session.cancel() }
+        // Returning from the Settings window (or another app) picks up Settings › AI changes.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            Task { await session.syncConnection() }
+        }
     }
 
     private var header: some View {

@@ -16,6 +16,7 @@ struct SummaryConnectionForm: View {
     @State private var status: SummaryAccountStatus = .unknown
     @State private var isSigningIn = false
     @State private var signInError: String?
+    @State private var saveKeyError: String?
 
     private var preferences: SummaryPreferences { SummaryPreferences() }
 
@@ -92,12 +93,22 @@ struct SummaryConnectionForm: View {
                     .onSubmit(saveLocal)
                     .onChange(of: baseURL) { _, _ in saveLocal() }
             }
+            if SummaryConnectionArguments.containsCredentials(baseURL) {
+                Text("This URL contains a user name, password, or token, so it isn't saved. Enter the address without them and put the key in API key (stored in your Keychain).")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             LabeledContent("API key") {
-                SecureField("Optional", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("summary-local-key")
-                    .onSubmit(saveKey)
-                    .onChange(of: apiKey) { _, _ in saveKey() }
+                VStack(alignment: .leading, spacing: 4) {
+                    SecureField("Optional", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("summary-local-key")
+                        .onSubmit(saveKey)
+                        .onChange(of: apiKey) { _, _ in saveKey() }
+                    if let error = saveKeyError {
+                        Text(error).font(.caption).foregroundStyle(.orange)
+                    }
+                }
             }
             Text(localHelp)
                 .font(.caption).foregroundStyle(.secondary)
@@ -120,7 +131,11 @@ struct SummaryConnectionForm: View {
     }
 
     private func saveKey() {
-        SummaryKeychain().write(apiKey)
+        if SummaryKeychain().write(apiKey) {
+            saveKeyError = nil
+        } else {
+            saveKeyError = "Couldn't save the API key to your Keychain."
+        }
     }
 
     private func loadStatus() async {

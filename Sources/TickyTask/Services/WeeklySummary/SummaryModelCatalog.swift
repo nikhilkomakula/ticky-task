@@ -82,7 +82,7 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
     }
 
     func models(for connection: SummaryConnectionTarget, refresh: Bool) async throws -> SummaryModelList {
-        let key = connection.storageKey
+        let key = connection.catalogKey
         if !refresh, let cached = memory[key] { return cached }
         if !refresh, !connection.isLocal, let disk = loadDisk(key) {
             memory[key] = disk
@@ -95,9 +95,11 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             return list
         } catch {
             // A failed refresh keeps the last good list usable.
+            // It stays marked stale until a refresh succeeds.
             if let previous = memory[key] ?? (connection.isLocal ? nil : loadDisk(key)) {
                 var stale = previous
                 stale.isStale = true
+                memory[key] = stale
                 return stale
             }
             throw error
@@ -155,27 +157,38 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             let (data, response) = try await fetch(request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 let status = http.statusCode
-                let message = "The local server at \(baseURL) answered HTTP \(status) for /models."
+                let redactedURL = SummaryRedactor.redact(baseURL)
+                let message = "The local server at \(redactedURL) answered HTTP \(status) for /models."
                 let detail = SummaryErrorDetail(message: message, httpStatus: status)
-                throw (status == 401 || status == 403)
-                    ? WeeklySummaryError.authenticationRejected(.codex, detail)
-                    : WeeklySummaryError.providerUnavailable(.codex, detail)
+                switch status {
+                case 401, 403: throw WeeklySummaryError.authenticationRejected(.codex, detail)
+                case 429: throw WeeklySummaryError.rateLimited(.codex, detail)
+                default: throw WeeklySummaryError.providerUnavailable(.codex, detail)
+                }
             }
-            ids = try LocalModelListing.parse(data)
+            do {
+                ids = try LocalModelListing.parse(data)
+            } catch {
+                throw WeeklySummaryError.invalidResponse(.codex, SummaryErrorDetail(
+                    message: "The local server's /models reply isn't an OpenAI-style model list."))
+            }
         } catch let error as WeeklySummaryError {
             throw error
         } catch is SummaryConnectionArguments.ValidationError {
+            let redactedURL = SummaryRedactor.redact(baseURL)
             throw WeeklySummaryError.configurationRejected(.codex, SummaryErrorDetail(
-                message: "“\(baseURL)” isn't a valid http(s) URL."))
+                message: "“\(redactedURL)” isn't a valid http(s) URL."))
         } catch {
+            let redactedURL = SummaryRedactor.redact(baseURL)
             throw WeeklySummaryError.networkFailure(.codex, SummaryErrorDetail(
-                message: "Couldn't reach the local server at \(baseURL): \(error.localizedDescription)"))
+                message: "Couldn't reach the local server at \(redactedURL): \(error.localizedDescription)"))
         }
         let options = ids.map {
             SummaryModelOption(id: $0, label: $0, source: .catalog, supportedEfforts: nil, defaultEffort: nil)
         }
+        let redactedURL = SummaryRedactor.redact(baseURL)
         return SummaryModelList(models: [.cliDefault] + options, refreshedAt: now(),
-                                sourceDescription: "\(connection.label) at \(baseURL)")
+                                sourceDescription: "\(connection.label) at \(redactedURL)")
     }
 
     // MARK: - Compact disk cache

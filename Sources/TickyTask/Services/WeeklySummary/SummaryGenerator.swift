@@ -164,7 +164,12 @@ struct LiveSummaryGenerator: SummaryGenerating {
             throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, prefix: "`codex mcp list --json` failed.",
                                                                          executable: executable, version: version))
         }
-        return CodexSummaryAdapter.mcpServerNames(fromListJSON: output.stdout)
+        do {
+            return try CodexSummaryAdapter.mcpServerNames(fromListJSON: output.stdout)
+        } catch {
+            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, prefix: "MCP server list has an unsupported schema.",
+                                                                         executable: executable, version: version))
+        }
     }
 
     private func verifyIsolation(_ executable: URL, env: [String: String], workingDirectory: URL,

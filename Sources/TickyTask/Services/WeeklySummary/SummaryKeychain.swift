@@ -22,12 +22,31 @@ struct SummaryKeychain: Sendable {
     @discardableResult
     func write(_ value: String?) -> Bool {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        SecItemDelete(baseQuery as CFDictionary)
-        guard !trimmed.isEmpty else { return true }
-        var attributes = baseQuery
-        attributes[kSecValueData as String] = Data(trimmed.utf8)
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+
+        if trimmed.isEmpty {
+            // Delete the item
+            SecItemDelete(baseQuery as CFDictionary)
+            return true
+        }
+
+        // Try to update first
+        var updateQuery = baseQuery
+        updateQuery[kSecValueData as String] = Data(trimmed.utf8)
+        updateQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, updateQuery as CFDictionary)
+
+        if updateStatus == errSecSuccess {
+            return true
+        } else if updateStatus == errSecItemNotFound {
+            // Item doesn't exist, create it
+            var attributes = baseQuery
+            attributes[kSecValueData as String] = Data(trimmed.utf8)
+            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
+            return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        } else {
+            // Update failed for other reasons, preserve existing item
+            return false
+        }
     }
 
     private var baseQuery: [String: Any] {

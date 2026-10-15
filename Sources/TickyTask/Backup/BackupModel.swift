@@ -229,7 +229,9 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
         // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
-        for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key) {
+        // A credential-bearing URL is never restored (it would land in plain defaults).
+        for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)
+            && !SummaryConnectionArguments.containsCredentials(value) {
             d.set(value, forKey: key)
         }
     }

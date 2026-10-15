@@ -10,8 +10,10 @@ enum SummaryRedactor {
     private static let rules: [(pattern: String, template: String)] = [
         (#"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+"#, "Bearer <redacted>"),
         (#"(?i)(authorization\s*[:=]\s*)("?)(?!Bearer <redacted>)[^\s",}]+"#, "$1$2<redacted>"),
+        (#"(?i)\b(x-api-key|[a-z0-9]*-api-key|[a-z0-9]*-token|[a-z0-9]*-key)\s*:\s*[^\s,}]+"#, "$1: <redacted>"),
+        (#"(?i)//[^@/]*@"#, "//***@"),
         (#"\b(?:(?:sk|xox[abpr]|ghp|gho|github_pat)[-_][A-Za-z0-9_-]{8,}|dapi[0-9A-Fa-f]{16,})"#, "<redacted>"),
-        (#"(?i)\b(api[_-]?key|x-api-key|token|access_token|secret|password|sig|signature|key)=([^&\s"']+)"#, "$1=<redacted>"),
+        (#"(?i)\b(api[_-]?key|x-api-key|token|access_token|secret|password|sig|signature|key|auth)=([^&\s"']+)"#, "$1=<redacted>"),
         (#"(?i)("(?:api[_-]?key|token|access_token|secret|password)"\s*:\s*")[^"]*(")"#, "$1<redacted>$2"),
     ]
 

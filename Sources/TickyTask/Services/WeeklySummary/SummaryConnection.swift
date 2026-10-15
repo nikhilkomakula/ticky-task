@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// A self-hosted model server Codex can talk to.
 enum SummaryLocalServer: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -54,6 +55,14 @@ enum SummaryConnectionTarget: Hashable, Codable, Sendable {
         }
     }
 
+    /// Identifies the model list a connection reaches: unlike `storageKey`, two
+    /// local servers of the same kind at different addresses differ.
+    var catalogKey: String {
+        guard isLocal else { return storageKey }
+        let digest = SHA256.hash(data: Data((localBaseURL ?? "").lowercased().utf8))
+        return storageKey + "-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
     var label: String {
         switch self {
         case .chatGPTAccount: "ChatGPT account"
@@ -84,7 +93,14 @@ enum SummaryConnectionArguments {
     enum ValidationError: Error, Equatable {
         case missingBaseURL
         case invalidBaseURL(String)
+        /// A user name, password, or token in the URL — credentials belong in the API key field (Keychain).
+        case credentialsInBaseURL
     }
+
+    /// Query parameters that carry credentials; such URLs are refused outright.
+    private static let credentialQueryNames: Set<String> = [
+        "token", "access_token", "key", "api_key", "apikey", "api-key", "secret", "password", "auth", "sig", "signature",
+    ]
 
     /// Codex arguments that select the connection. Applied to generation and to
     /// the model catalog so both see the same provider.
@@ -95,11 +111,13 @@ enum SummaryConnectionArguments {
         case .cliConfiguration:
             return []
         case .local(let server, _):
-            if let provider = server.codexLocalProvider {
-                return ["--oss", "--local-provider", provider]
-            }
             guard let url = target.localBaseURL else { throw ValidationError.missingBaseURL }
             let safeURL = try validatedBaseURL(url)
+            // Codex's built-in Ollama/LM Studio providers send no API key, so a
+            // server that needs one goes through the custom provider instead.
+            if let provider = server.codexLocalProvider, !hasAPIKey {
+                return ["--oss", "--local-provider", provider]
+            }
             var table = #"{name="TickyTask local", base_url="\#(safeURL)", wire_api="responses""#
             if hasAPIKey { table += #", env_key="\#(apiKeyVariable)""# }
             table += "}"
@@ -113,15 +131,17 @@ enum SummaryConnectionArguments {
     static func environment(for target: SummaryConnectionTarget, apiKey: String?) -> [String: String] {
         guard case .local(let server, _) = target else { return [:] }
         var env: [String: String] = [:]
-        if server.codexLocalProvider != nil, let url = target.localBaseURL, url != server.defaultBaseURL {
+        let hasAPIKey = !(apiKey ?? "").isEmpty
+        if server.codexLocalProvider != nil, !hasAPIKey, let url = target.localBaseURL, url != server.defaultBaseURL {
             env["CODEX_OSS_BASE_URL"] = url
         }
-        if let apiKey, !apiKey.isEmpty { env[apiKeyVariable] = apiKey }
+        if hasAPIKey, let apiKey { env[apiKeyVariable] = apiKey }
         return env
     }
 
     /// Only plain http(s) URLs without quotes or control characters may be
-    /// embedded in the TOML provider table.
+    /// embedded in the TOML provider table. Rejects URLs with userinfo or
+    /// credential-bearing query parameters.
     static func validatedBaseURL(_ raw: String) throws -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
@@ -130,7 +150,15 @@ enum SummaryConnectionArguments {
               trimmed.rangeOfCharacter(from: CharacterSet(charactersIn: "\"\\'\n\r\t ")) == nil else {
             throw ValidationError.invalidBaseURL(trimmed)
         }
+        if containsCredentials(trimmed) { throw ValidationError.credentialsInBaseURL }
         return trimmed
+    }
+
+    /// Whether a URL carries a user name/password or a credential query parameter.
+    static func containsCredentials(_ raw: String) -> Bool {
+        guard let components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
+        if components.user != nil || components.password != nil { return true }
+        return components.queryItems?.contains { credentialQueryNames.contains($0.name.lowercased()) } ?? false
     }
 }
 

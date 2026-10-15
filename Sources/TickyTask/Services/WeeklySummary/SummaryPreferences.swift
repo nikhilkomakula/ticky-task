@@ -55,10 +55,17 @@ struct SummaryPreferences {
         nonmutating set { defaults.set(newValue.rawValue, forKey: Key.localServer) }
     }
 
-    /// Blank = the server's default address.
+    /// Blank = the server's default address. A URL carrying credentials is never
+    /// stored (they belong in the Keychain-backed API key), so it reads as blank.
     var localBaseURL: String {
-        get { defaults.string(forKey: Key.localBaseURL) ?? "" }
-        nonmutating set { setOrRemove(newValue, forKey: Key.localBaseURL) }
+        get {
+            let stored = defaults.string(forKey: Key.localBaseURL) ?? ""
+            return SummaryConnectionArguments.containsCredentials(stored) ? "" : stored
+        }
+        nonmutating set {
+            let safe = SummaryConnectionArguments.containsCredentials(newValue) ? "" : newValue
+            setOrRemove(safe, forKey: Key.localBaseURL)
+        }
     }
 
     var connection: SummaryConnectionTarget {

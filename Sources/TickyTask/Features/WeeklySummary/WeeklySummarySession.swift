@@ -48,6 +48,7 @@ final class WeeklySummarySession {
     private var snapshot: [SummaryTaskSnapshot] = []
     private var generationTask: Task<Void, Never>?
     private var generationID = 0
+    private var modelLoadID = 0
 
     init(weekAnchor: Date,
          generator: SummaryGenerating,
@@ -57,23 +58,34 @@ final class WeeklySummarySession {
         self.generator = generator
         self.catalog = catalog
         self.preferences = preferences
-        self.connection = preferences.connection
-        self.modelID = preferences.modelID(for: preferences.connection)
+        let connection = preferences.connection
+        let modelID = preferences.modelID(for: connection)
+        self.connection = connection
+        self.modelID = modelID
+        // The remembered effort applies at once; the model list may refine it later.
+        self.effort = preferences.effort(for: connection, modelID: modelID) ?? .cliDefault
         self.customInstructions = preferences.customInstructions
     }
 
     // MARK: - Connection
 
-    /// Re-reads the connection from preferences (e.g. after Settings › AI changed
-    /// it) and reloads models when it differs.
-    func syncConnection() async {
+    /// Picks up changes made elsewhere (Settings › AI) to the connection and
+    /// instructions. Returns whether the connection changed.
+    @discardableResult
+    func syncPreferences() -> Bool {
+        if customInstructions != preferences.customInstructions { customInstructions = preferences.customInstructions }
         let current = preferences.connection
-        guard current != connection else { return }
+        guard current != connection else { return false }
         connection = current
         modelID = preferences.modelID(for: current)
         effortNote = nil
         reconcileEffort()
-        await loadModels()
+        return true
+    }
+
+    /// `syncPreferences`, then loads the new connection's models if it changed.
+    func syncConnection() async {
+        if syncPreferences() { await loadModels() }
     }
 
     func refreshAccountStatus() async {
@@ -106,7 +118,7 @@ final class WeeklySummarySession {
     /// The connection's models plus custom ids the user has entered, and the
     /// remembered model if it's no longer listed (so it isn't lost).
     var modelOptions: [SummaryModelOption] {
-        var options = modelLists[connection.storageKey]?.models ?? [.cliDefault]
+        var options = modelLists[connection.catalogKey]?.models ?? [.cliDefault]
         var known = Set(options.map(\.id))
         for id in preferences.customModelIDs(for: connection) + [modelID] where !id.isEmpty && !known.contains(id) {
             options.append(SummaryModelOption(id: id, label: id, source: .custom, supportedEfforts: nil, defaultEffort: nil))
@@ -124,28 +136,35 @@ final class WeeklySummarySession {
     }
 
     var modelListDescription: String? {
-        guard let list = modelLists[connection.storageKey] else { return nil }
+        guard let list = modelLists[connection.catalogKey] else { return nil }
         var text = list.sourceDescription
         if let date = list.refreshedAt { text += " · updated \(date.formatted(.relative(presentation: .named)))" }
         if list.isStale { text += " · refresh failed, showing the last list" }
         return text
     }
 
+    /// Only the newest load updates the spinner, error, and effort, so an older
+    /// reply (possibly for another connection) can't overwrite them.
     func loadModels(refresh: Bool = false) async {
         let target = connection
+        modelLoadID += 1
+        let id = modelLoadID
         isRefreshingModels = true
         modelRefreshError = nil
-        defer { isRefreshingModels = false }
+        var refreshError: String?
         do {
             let list = try await catalog.models(for: target, refresh: refresh)
-            modelLists[target.storageKey] = list
-            if list.isStale { modelRefreshError = "Couldn't refresh the model list; showing the last one." }
+            modelLists[target.catalogKey] = list
+            if list.isStale { refreshError = "Couldn't refresh the model list; showing the last one." }
         } catch let failure as WeeklySummaryError {
             let presentation = SummaryErrorPresenter.present(failure, connection: target)
-            modelRefreshError = "\(presentation.title). \(presentation.message)"
+            refreshError = "\(presentation.title). \(presentation.message)"
         } catch {
-            modelRefreshError = error.localizedDescription
+            refreshError = error.localizedDescription
         }
+        guard id == modelLoadID else { return }
+        isRefreshingModels = false
+        modelRefreshError = refreshError
         if target == connection { reconcileEffort() }
     }
 
@@ -231,15 +250,26 @@ final class WeeklySummarySession {
         start()
     }
 
+    /// Stops a running generation; anything it still reports is ignored. The
+    /// selection and any earlier (possibly edited) draft are kept.
     func cancel() {
-        generationTask?.cancel()
+        guard isGenerating else { return }
+        invalidateGeneration()
+        phase = lastResult != nil ? .result : .selecting
+        present(.cancelled)
     }
 
     /// Back to the selection; the next Generate takes a fresh snapshot.
     func changeSelection() {
-        cancel()
+        invalidateGeneration()
         phase = .selecting
         dismissError()
+    }
+
+    private func invalidateGeneration() {
+        generationTask?.cancel()
+        generationTask = nil
+        generationID += 1
     }
 
     func dismissError() {
@@ -253,6 +283,9 @@ final class WeeklySummarySession {
         let id = generationID
         let hadResult = lastResult != nil
         dismissError()
+
+        // Settings › AI may have changed while the sheet was open.
+        if syncPreferences() { Task { await loadModels() } }
 
         let payload: Data
         do {
@@ -286,7 +319,7 @@ final class WeeklySummarySession {
                     : .cliFailed(.codex, SummaryErrorDetail(message: error.localizedDescription)))
                 // A failed regenerate keeps the previous (possibly edited) draft.
                 self.phase = hadResult ? .result : .selecting
-                await self.presentWithAuthContext(failure, connection: request.config.connection)
+                await self.presentWithAuthContext(failure, connection: request.config.connection, generationID: id)
             }
         }
     }
@@ -296,11 +329,11 @@ final class WeeklySummarySession {
         errorPresentation = SummaryErrorPresenter.present(failure, authSetup: authSetup, connection: connection)
     }
 
-    private func presentWithAuthContext(_ failure: WeeklySummaryError, connection: SummaryConnectionTarget) async {
+    private func presentWithAuthContext(_ failure: WeeklySummaryError, connection: SummaryConnectionTarget, generationID id: Int) async {
         present(failure)   // show at once; refine auth advice below
-        guard failure.isAuthRelated else { return }
+        guard failure.isAuthRelated, id == generationID else { return }
         let setup = await generator.authSetup(for: connection)
-        if error == failure { present(failure, authSetup: setup) }
+        if id == generationID && error == failure { present(failure, authSetup: setup) }
     }
 
     // MARK: - Copy
@@ -308,9 +341,8 @@ final class WeeklySummarySession {
     /// Copies the current (possibly edited) summary to the clipboard.
     @discardableResult
     func copyToPasteboard(_ pasteboard: NSPasteboard = .general) -> Bool {
-        let text = resultText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return false }
+        guard !resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         pasteboard.clearContents()
-        return pasteboard.setString(text, forType: .string)
+        return pasteboard.setString(resultText, forType: .string)
     }
 }

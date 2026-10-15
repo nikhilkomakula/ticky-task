@@ -10,7 +10,9 @@ enum SummaryNotes: Sendable, Equatable {
 
     static func resolve(notesRich: Data?, notes: String) -> SummaryNotes {
         if let notesRich, !notesRich.isEmpty, let document = try? NotesCodec.decode(notesRich) {
-            return document.isEmpty ? .none : .rich(document)
+            // Rich-first: check if document is empty or whitespace-only
+            let trimmed = document.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? .none : .rich(document)
         }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? .none : .legacyMarkdown(notes)

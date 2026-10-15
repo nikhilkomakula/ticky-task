@@ -278,13 +278,20 @@ struct CodexSummaryAdapterTests {
         #expect(args.last == "ping")
     }
 
-    @Test("MCP server names parse from an array or a servers object; junk yields none")
-    func mcpNames() {
-        let array = Data(#"[{"name":"jira","enabled":true},{"name":"slack"},{"name":"jira"},{"enabled":true}]"#.utf8)
-        #expect(CodexSummaryAdapter.mcpServerNames(fromListJSON: array) == ["jira", "slack"])
+    @Test("MCP server names parse from an array or a servers object; junk throws")
+    func mcpNames() throws {
+        let array = Data(#"[{"name":"jira","enabled":true},{"name":"slack"},{"name":"jira"}]"#.utf8)
+        #expect(try CodexSummaryAdapter.mcpServerNames(fromListJSON: array) == ["jira", "slack"])
+        #expect(try CodexSummaryAdapter.mcpServerNames(fromListJSON: Data("[]".utf8)).isEmpty)
+        // An unnamed entry can't be disabled, so the whole list is rejected.
+        #expect(throws: (any Error).self) {
+            try CodexSummaryAdapter.mcpServerNames(fromListJSON: Data(#"[{"name":"jira"},{"enabled":true}]"#.utf8))
+        }
         let object = Data(#"{"servers":[{"name":"glean"}]}"#.utf8)
-        #expect(CodexSummaryAdapter.mcpServerNames(fromListJSON: object) == ["glean"])
-        #expect(CodexSummaryAdapter.mcpServerNames(fromListJSON: Data("nope".utf8)).isEmpty)
+        #expect(try CodexSummaryAdapter.mcpServerNames(fromListJSON: object) == ["glean"])
+        #expect(throws: (any Error).self) {
+            try CodexSummaryAdapter.mcpServerNames(fromListJSON: Data("nope".utf8))
+        }
     }
 }
 
@@ -408,12 +415,57 @@ struct SummaryConnectionTests {
         #expect(try SummaryConnectionArguments.codexArguments(for: .cliConfiguration, hasAPIKey: false).isEmpty)
     }
 
-    @Test("Ollama / LM Studio use Codex's built-in local providers")
+    @Test("Ollama / LM Studio use Codex's built-in local providers when no API key is set")
     func builtInLocal() throws {
         #expect(try SummaryConnectionArguments.codexArguments(for: .local(server: .ollama, baseURL: nil), hasAPIKey: false)
                 == ["--oss", "--local-provider", "ollama"])
-        #expect(try SummaryConnectionArguments.codexArguments(for: .local(server: .lmStudio, baseURL: "http://box:1234/v1"), hasAPIKey: true)
+        #expect(try SummaryConnectionArguments.codexArguments(for: .local(server: .lmStudio, baseURL: "http://box:1234/v1"), hasAPIKey: false)
                 == ["--oss", "--local-provider", "lmstudio"])
+    }
+
+    @Test("With an API key, Ollama / LM Studio go through the custom provider so Codex actually sends it")
+    func keyedBuiltInLocal() throws {
+        let target = SummaryConnectionTarget.local(server: .lmStudio, baseURL: "http://box:1234/v1")
+        let args = try SummaryConnectionArguments.codexArguments(for: target, hasAPIKey: true)
+        #expect(!args.contains("--oss"))
+        let table = try #require(args.last)
+        #expect(table.contains(#"base_url="http://box:1234/v1""#))
+        #expect(table.contains(#"env_key="TICKYTASK_LOCAL_API_KEY""#))
+        // The default address is used when none is entered.
+        let defaulted = try SummaryConnectionArguments.codexArguments(for: .local(server: .ollama, baseURL: nil), hasAPIKey: true)
+        #expect((defaulted.last ?? "").contains(#"base_url="http://localhost:11434/v1""#))
+        // The key is in the environment only, and the built-in provider's URL variable isn't set.
+        #expect(SummaryConnectionArguments.environment(for: target, apiKey: "lm-secret") == ["TICKYTASK_LOCAL_API_KEY": "lm-secret"])
+        #expect(!args.joined().contains("lm-secret"))
+    }
+
+    @Test("URLs carrying credentials are refused for every local server, in arguments, preferences, and restore")
+    func credentialURLs() throws {
+        let bad = ["https://user:pw@models.example/v1", "https://models.example/v1?token=abc",
+                   "http://box:1234/v1?api_key=abc", "http://box:11434/v1?Key=abc"]
+        for url in bad {
+            #expect(SummaryConnectionArguments.containsCredentials(url), "\(url)")
+            for server in SummaryLocalServer.allCases {
+                #expect(throws: SummaryConnectionArguments.ValidationError.credentialsInBaseURL, "\(server) \(url)") {
+                    try SummaryConnectionArguments.codexArguments(for: .local(server: server, baseURL: url), hasAPIKey: false)
+                }
+            }
+        }
+        #expect(!SummaryConnectionArguments.containsCredentials("http://box:1234/v1?keep_alive=5m"))
+
+        let suite = "SummaryConnectionTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = SummaryPreferences(defaults: defaults)
+        prefs.localBaseURL = "http://gpu-box:11434/v1"
+        prefs.localBaseURL = "https://user:pw@gpu-box/v1"
+        #expect(prefs.localBaseURL.isEmpty)
+        #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
+
+        var dto = AppSettingsDTO.capture(from: defaults)
+        dto.weeklySummary = ["weeklySummary.local.baseURL": "https://models.example/v1?token=abc"]
+        dto.apply(to: defaults)
+        #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
     }
 
     @Test("A custom base URL reaches the built-in providers via CODEX_OSS_BASE_URL; the default doesn't")
