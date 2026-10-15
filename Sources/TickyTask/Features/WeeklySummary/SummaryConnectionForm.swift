@@ -44,6 +44,16 @@ struct SummaryConnectionForm: View {
             }
         }
         .task { await loadStatus() }
+        // The other copy of this form (sheet or Settings) may have changed the choices.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            let saved = SummaryPreferences()
+            if kind != saved.connectionKind { kind = saved.connectionKind }
+            if server != saved.localServer { server = saved.localServer }
+            // A credential-bearing URL is never saved; keep it on screen with its warning.
+            if baseURL != saved.localBaseURL && !SummaryConnectionArguments.containsCredentials(baseURL) {
+                baseURL = saved.localBaseURL
+            }
+        }
     }
 
     private var accountSection: some View {

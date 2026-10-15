@@ -323,10 +323,9 @@ struct CLIProcessRunnerTests {
         let tempDir = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let script = createScript(in: tempDir, name: "inherited_pipes", "#!/bin/sh\n/bin/sleep 1 &\nprintf done\nexit 0\n")
         let invocation = CLIInvocation(
-            executableURL: script,
-            arguments: [],
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "/bin/sleep 1 &\nprintf done\nexit 0\n"],
             workingDirectory: tempDir,
             environment: [:],
             timeout: .seconds(3)
@@ -344,10 +343,9 @@ struct CLIProcessRunnerTests {
         let tempDir = Self.makeTempDir()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let script = createScript(in: tempDir, name: "overflow_then_sleep", "#!/bin/sh\nprintf '%0128d' 0\n/bin/sleep 1\n")
         let invocation = CLIInvocation(
-            executableURL: script,
-            arguments: [],
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf '%0128d' 0\n/bin/sleep 1\n"],
             workingDirectory: tempDir,
             environment: [:],
             timeout: .seconds(3),

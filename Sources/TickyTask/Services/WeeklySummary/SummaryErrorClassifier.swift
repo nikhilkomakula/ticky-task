@@ -36,8 +36,10 @@ enum SummaryErrorClassifier {
                          model: String?,
                          exitCode: Int32?,
                          cliVersion: String? = nil,
-                         executablePath: String? = nil) -> WeeklySummaryError {
-        let message = SummaryRedactor.redact(rawMessage.trimmingCharacters(in: .whitespacesAndNewlines))
+                         executablePath: String? = nil,
+                         secrets: [String] = []) -> WeeklySummaryError {
+        // Known secrets go first, before truncation or request-id extraction can see them.
+        let message = SummaryRedactor.redact(rawMessage.trimmingCharacters(in: .whitespacesAndNewlines), removing: secrets)
         let status = httpStatus(in: message)
         let detail = SummaryErrorDetail(
             message: String(message.prefix(4000)),

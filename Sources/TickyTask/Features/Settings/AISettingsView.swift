@@ -38,6 +38,11 @@ struct AISettingsView: View {
             }
         }
         .formStyle(.grouped)
+        // The Weekly Summary sheet can change these too; refresh when Settings regains focus.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            let saved = SummaryPreferences().customInstructions
+            if instructions != saved { instructions = saved }
+        }
     }
 }
 

@@ -151,6 +151,30 @@ struct CodexSignoffRegressionTests {
         }
     }
 
+    @Test func suppliedKeyCannotRemainInRequestIDMetadata() async throws {
+        let secret = "req_signoffopaqueapikey123"
+        let root = Self.runRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let generator = LiveSummaryGenerator(
+            runner: SignoffFailureEventRunner(message: "Invalid API key provided: \(secret)"),
+            resolveExecutable: { URL(fileURLWithPath: "/unused/codex") }, environment: { _ in [:] },
+            localAPIKey: { secret }, runRoot: root)
+        let connection = SummaryConnectionTarget.local(server: .openAICompatible, baseURL: "https://models.example/v1")
+        do {
+            _ = try await generator.generate(SummaryRequest(instructions: "Summarize.", payload: Data("{}".utf8),
+                                                            config: SummaryRunConfig(connection: connection)))
+            Issue.record("Expected synthetic authentication failure")
+        } catch let failure as WeeklySummaryError {
+            guard case .authenticationRejected = failure else {
+                Issue.record("Expected terminal authentication failure, received \(failure)")
+                return
+            }
+            #expect(!(failure.detail?.requestID?.contains(secret) ?? false))
+            let details = SummaryErrorPresenter.present(failure, connection: connection).details ?? ""
+            #expect(!details.contains(secret), "Known secrets must also be removed from derived request-id metadata")
+        }
+    }
+
     @Test func catalogRedactsTheKeyUsedBeforeAnAwait() async throws {
         let keys = SignoffChangingKey()
         let catalog = SummaryModelCatalog(

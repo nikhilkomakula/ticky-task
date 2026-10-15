@@ -406,6 +406,22 @@ struct SummaryErrorClassifierTests {
     }
 }
 
+@Suite("Weekly Summary — known secrets in diagnostics")
+struct SummaryKnownSecretTests {
+    @Test("A known key is removed before truncation and request-id extraction")
+    func knownSecretRemovedEverywhere() {
+        let key = "req_0123456789abcdefKEY"
+        // The key straddles the 4,000-character cut and also looks like a request id.
+        let message = String(repeating: "x", count: 3_990) + " " + key + " Invalid API key provided"
+        let error = SummaryErrorClassifier.classify(message: message, provider: .codex, model: nil, exitCode: 1, secrets: [key])
+        let detail = error.detail
+        #expect(!(detail?.message.contains(key.prefix(8)) ?? true))
+        #expect(detail?.requestID?.contains(key) != true)
+        let presented = SummaryErrorPresenter.present(error).details ?? ""
+        #expect(!presented.contains(key))
+    }
+}
+
 @Suite("Weekly Summary — Codex connections")
 struct SummaryConnectionTests {
     @Test("ChatGPT account overrides the provider; CLI configuration adds nothing")
@@ -452,6 +468,11 @@ struct SummaryConnectionTests {
             }
         }
         #expect(!SummaryConnectionArguments.containsCredentials("http://box:1234/v1?keep_alive=5m"))
+        // Whole words of the name decide, so ordinary parameters pass and camelCase secrets don't.
+        #expect(!SummaryConnectionArguments.containsCredentials("https://m.example/v1?author=jo&design=a&monkey=1"))
+        for name in ["sessionToken", "client_secret", "apiKey", "X-Api-Key", "access_token", "sig"] {
+            #expect(SummaryConnectionArguments.containsCredentials("https://m.example/v1?\(name)=x"), "\(name)")
+        }
 
         let suite = "SummaryConnectionTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

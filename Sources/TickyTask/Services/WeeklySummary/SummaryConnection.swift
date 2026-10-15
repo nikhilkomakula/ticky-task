@@ -105,9 +105,32 @@ enum SummaryConnectionArguments {
         case credentialsInBaseURL
     }
 
-    /// A query parameter whose name contains any of these carries credentials
-    /// (`token`, `x-api-key`, `client_secret`, …); such URLs are refused outright.
-    private static let credentialNameFragments = ["key", "token", "secret", "password", "auth", "sig", "credential"]
+    /// A query parameter carries credentials when any word of its name is one of
+    /// these (`token`, `x-api-key`, `client_secret`, `apiKey`, …), so ordinary
+    /// names like `author` or `design` still pass. Such URLs are refused outright.
+    private static let credentialWords: Set<String> = [
+        "key", "apikey", "token", "accesstoken", "secret", "password", "passwd", "pwd",
+        "auth", "authorization", "sig", "signature", "credential", "credentials",
+    ]
+
+    /// `x-api-key` → x, api, key; `sessionToken` → session, token.
+    private static func words(of name: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        for character in name {
+            if !character.isLetter && !character.isNumber {
+                if !current.isEmpty { words.append(current) }
+                current = ""
+            } else if character.isUppercase, let last = current.last, last.isLowercase {
+                words.append(current)
+                current = String(character)
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words.map { $0.lowercased() }
+    }
 
     /// Codex arguments that select the connection. Applied to generation and to
     /// the model catalog so both see the same provider.
@@ -171,8 +194,8 @@ enum SummaryConnectionArguments {
         guard let components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         if components.user != nil || components.password != nil { return true }
         return components.queryItems?.contains { item in
-            let name = item.name.lowercased()
-            return credentialNameFragments.contains { name.contains($0) }
+            words(of: item.name).contains(where: credentialWords.contains)
+                || credentialWords.contains(item.name.lowercased().filter { $0.isLetter })
         } ?? false
     }
 }

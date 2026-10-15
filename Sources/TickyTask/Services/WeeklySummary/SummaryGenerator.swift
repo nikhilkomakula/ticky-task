@@ -81,13 +81,11 @@ struct LiveSummaryGenerator: SummaryGenerating {
                 timeout: Self.generationTimeout
             ))
             let message = try? String(contentsOf: lastMessage, encoding: .utf8)
-            // The key is removed from the classified error (after the CLI's JSON is
-            // decoded), so a provider echoing it back can't put it in the details.
-            switch CodexSummaryAdapter.parse(output, lastMessage: message, config: request.config,
-                                             cliVersion: version, executablePath: executable.path) {
-            case .success(let result): return result
-            case .failure(let failure): throw failure.removing(secret: apiKey)
-            }
+            // The key is removed from the decoded failure text, so a provider echoing
+            // it back can't put it in any part of the details.
+            return try CodexSummaryAdapter.parse(output, lastMessage: message, config: request.config,
+                                                 cliVersion: version, executablePath: executable.path,
+                                                 secrets: [apiKey ?? ""]).get()
         } catch let error as CLIProcessError {
             throw Self.map(error, executable: executable, version: version)
         }

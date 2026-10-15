@@ -78,7 +78,8 @@ enum CodexSummaryAdapter {
                       lastMessage: String?,
                       config: SummaryRunConfig,
                       cliVersion: String?,
-                      executablePath: String?) -> Result<SummaryResult, WeeklySummaryError> {
+                      executablePath: String?,
+                      secrets: [String] = []) -> Result<SummaryResult, WeeklySummaryError> {
         let events = Events(jsonl: output.stdout)
         let text = (lastMessage ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if output.succeeded, events.turnFailure == nil {
@@ -91,7 +92,7 @@ enum CodexSummaryAdapter {
             ?? joined(output.stderrText, fallback: exitDescription(output))
         return .failure(SummaryErrorClassifier.classify(
             message: message, provider: .codex, model: config.modelID,
-            exitCode: output.exitCode, cliVersion: cliVersion, executablePath: executablePath))
+            exitCode: output.exitCode, cliVersion: cliVersion, executablePath: executablePath, secrets: secrets))
     }
 
     /// The pieces of the JSONL event stream the app cares about.
