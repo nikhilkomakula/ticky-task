@@ -105,12 +105,16 @@ enum SummaryConnectionArguments {
         case credentialsInBaseURL
     }
 
-    /// A query parameter carries credentials when any word of its name is one of
-    /// these (`token`, `x-api-key`, `client_secret`, `apiKey`, …), so ordinary
-    /// names like `author` or `design` still pass. Such URLs are refused outright.
+    /// A query parameter carries credentials when its name contains one of these
+    /// anywhere (`authtoken`, `client_secret`, `x-api-key`, `privatekey`, …) …
+    private static let credentialFragments = [
+        "token", "secret", "password", "passwd", "credential", "apikey", "accesskey", "privatekey",
+    ]
+    /// … or has one of these as a whole word (`key`, `x-auth`, `sig`), so
+    /// ordinary names like `author`, `design`, or `monkey` still pass.
+    /// Such URLs are refused outright.
     private static let credentialWords: Set<String> = [
-        "key", "apikey", "token", "accesstoken", "secret", "password", "passwd", "pwd",
-        "auth", "authorization", "sig", "signature", "credential", "credentials",
+        "key", "pwd", "auth", "authorization", "sig", "signature",
     ]
 
     /// `x-api-key` → x, api, key; `sessionToken` → session, token.
@@ -194,8 +198,9 @@ enum SummaryConnectionArguments {
         guard let components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         if components.user != nil || components.password != nil { return true }
         return components.queryItems?.contains { item in
-            words(of: item.name).contains(where: credentialWords.contains)
-                || credentialWords.contains(item.name.lowercased().filter { $0.isLetter })
+            let compact = item.name.lowercased().filter { $0.isLetter || $0.isNumber }
+            return credentialFragments.contains { compact.contains($0) }
+                || words(of: item.name).contains(where: credentialWords.contains)
         } ?? false
     }
 }

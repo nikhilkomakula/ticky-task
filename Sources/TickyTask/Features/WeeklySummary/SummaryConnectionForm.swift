@@ -49,6 +49,8 @@ struct SummaryConnectionForm: View {
             let saved = SummaryPreferences()
             if kind != saved.connectionKind { kind = saved.connectionKind }
             if server != saved.localServer { server = saved.localServer }
+            let savedKey = SummaryKeychain().read() ?? ""
+            if apiKey != savedKey && saveKeyError == nil { apiKey = savedKey }
             // A credential-bearing URL is never saved; keep it on screen with its warning.
             if baseURL != saved.localBaseURL && !SummaryConnectionArguments.containsCredentials(baseURL) {
                 baseURL = saved.localBaseURL

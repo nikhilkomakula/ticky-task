@@ -166,13 +166,13 @@ struct LiveSummaryGenerator: SummaryGenerating {
             workingDirectory: workingDirectory, environment: env, timeout: .seconds(30), stdoutLimit: 1024 * 1024
         ))
         guard output.succeeded else {
-            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, prefix: "`codex mcp list --json` failed.",
+            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, secret: env[SummaryConnectionArguments.apiKeyVariable], prefix: "`codex mcp list --json` failed.",
                                                                          executable: executable, version: version))
         }
         do {
             return try CodexSummaryAdapter.mcpServerNames(fromListJSON: output.stdout)
         } catch {
-            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, prefix: "MCP server list has an unsupported schema.",
+            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, secret: env[SummaryConnectionArguments.apiKeyVariable], prefix: "MCP server list has an unsupported schema.",
                                                                          executable: executable, version: version))
         }
     }
@@ -186,7 +186,7 @@ struct LiveSummaryGenerator: SummaryGenerating {
             workingDirectory: workingDirectory, environment: env, timeout: .seconds(30), stdoutLimit: 4 * 1024 * 1024
         ))
         guard output.succeeded else {
-            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, prefix: "Codex rejected TickyTask's isolation options.",
+            throw WeeklySummaryError.cliIncompatible(.codex, Self.detail(output, secret: env[SummaryConnectionArguments.apiKeyVariable], prefix: "Codex rejected TickyTask's isolation options.",
                                                                          executable: executable, version: version))
         }
         await cache.markIsolationVerified(key)
@@ -199,9 +199,11 @@ struct LiveSummaryGenerator: SummaryGenerating {
         return directory
     }
 
-    private static func detail(_ output: CLIProcessOutput, prefix: String, executable: URL, version: String?) -> SummaryErrorDetail {
-        let message = CodexSummaryAdapter.joined(prefix, output.stderrText, fallback: prefix)
-        return SummaryErrorDetail(message: SummaryRedactor.redact(String(message.prefix(4000))), exitCode: output.exitCode,
+    private static func detail(_ output: CLIProcessOutput, secret: String?, prefix: String,
+                               executable: URL, version: String?) -> SummaryErrorDetail {
+        let message = SummaryRedactor.redact(CodexSummaryAdapter.joined(prefix, output.stderrText, fallback: prefix),
+                                             removing: [secret ?? ""])
+        return SummaryErrorDetail(message: String(message.prefix(4000)), exitCode: output.exitCode,
                                   cliVersion: version, executablePath: executable.path)
     }
 
