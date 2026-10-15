@@ -158,9 +158,10 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             throw WeeklySummaryError.configurationRejected(.codex, SummaryErrorDetail(
                 message: "Enter the server's base URL (for example http://localhost:8000/v1) in Settings › AI."))
         }
+        let apiKey = localAPIKey()   // the key actually sent, so it's the one scrubbed from errors
         let ids: [String]
         do {
-            let request = try LocalModelListing.request(baseURL: baseURL, apiKey: localAPIKey())
+            let request = try LocalModelListing.request(baseURL: baseURL, apiKey: apiKey)
             let (data, response) = try await fetch(request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 let status = http.statusCode
@@ -189,7 +190,7 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             let redactedURL = SummaryRedactor.redact(baseURL)
             throw WeeklySummaryError.networkFailure(.codex, SummaryErrorDetail(
                 message: "Couldn't reach the local server at \(redactedURL): "
-                    + SummaryRedactor.redact(error.localizedDescription, removing: [localAPIKey() ?? ""])))
+                    + SummaryRedactor.redact(error.localizedDescription, removing: [apiKey ?? ""])))
         }
         let options = ids.map {
             SummaryModelOption(id: $0, label: $0, source: .catalog, supportedEfforts: nil, defaultEffort: nil)

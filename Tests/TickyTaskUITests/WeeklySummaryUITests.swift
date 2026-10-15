@@ -25,7 +25,9 @@ final class WeeklySummaryUITests: XCTestCase {
         let button = app.buttons["toolbar-weekly-summary"].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 20), "toolbar Weekly Summary button should exist")
         button.click()
-        XCTAssertTrue(app.buttons["summary-generate"].firstMatch.waitForExistence(timeout: 5), "sheet should open")
+        let generate = app.buttons["summary-generate"].firstMatch
+        if !generate.waitForExistence(timeout: 4) { button.click() }   // a click during window layout can miss
+        XCTAssertTrue(generate.waitForExistence(timeout: 5), "sheet should open")
     }
 
     /// A static text's string (macOS exposes it as the value, not the label).
@@ -139,6 +141,11 @@ final class WeeklySummaryUITests: XCTestCase {
         app.buttons["summary-instructions-button"].firstMatch.click()
         let editor = app.textViews["summary-instructions"].firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 5), "instructions editor should open")
+        // It starts with the default instructions.
+        let defaults = editor.value as? String ?? ""
+        XCTAssertTrue(defaults.hasPrefix("Audience: my team and manager"), "default instructions are pre-filled: \(defaults)")
+        app.buttons["summary-instructions-clear"].firstMatch.click()
+        XCTAssertEqual(editor.value as? String ?? "", "")
         editor.click()
         editor.typeText("Write for my manager. Max 150 words.")
         app.buttons["summary-instructions-done"].firstMatch.click()
@@ -152,9 +159,11 @@ final class WeeklySummaryUITests: XCTestCase {
         editor.typeText(" Lead with risks.")
         XCTAssertEqual(editor.value as? String, "Write for my manager. Max 150 words. Lead with risks.")
 
-        // Clear removes them.
+        // Clear removes them; Restore defaults brings the defaults back.
         app.buttons["summary-instructions-clear"].firstMatch.click()
         XCTAssertEqual(editor.value as? String ?? "", "")
+        app.buttons["summary-instructions-restore"].firstMatch.click()
+        XCTAssertEqual(editor.value as? String, defaults)
         app.buttons["summary-instructions-done"].firstMatch.click()
     }
 
@@ -177,14 +186,18 @@ final class WeeklySummaryUITests: XCTestCase {
         app.menuItems["ChatGPT account"].firstMatch.click()
     }
 
-    func testSearchAndSummaryAreAtTheFarRightOfTheToolbar() throws {
+    func testToolbarRightSideOrderEndsWithTodayNavigation() throws {
         let app = launchedApp()
         let summary = app.buttons["toolbar-weekly-summary"].firstMatch
         XCTAssertTrue(summary.waitForExistence(timeout: 20))
         let search = app.buttons["toolbar-search"].firstMatch
         let settings = app.buttons["toolbar-settings"].firstMatch
-        XCTAssertTrue(settings.exists && search.exists, "toolbar buttons should exist")
+        let today = app.buttons["toolbar-today"].firstMatch
+        XCTAssertTrue(settings.exists && search.exists && today.exists, "toolbar buttons should exist")
         XCTAssertGreaterThan(search.frame.minX, settings.frame.minX, "Search sits right of Settings")
-        XCTAssertGreaterThan(summary.frame.minX, search.frame.minX, "Weekly Summary is the rightmost")
+        XCTAssertGreaterThan(summary.frame.minX, search.frame.minX, "Weekly Summary follows Search")
+        XCTAssertGreaterThan(today.frame.minX, summary.frame.minX, "‹ Today › is at the far right")
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThan(window.maxX - today.frame.maxX, 80, "‹ Today › hugs the right edge")
     }
 }

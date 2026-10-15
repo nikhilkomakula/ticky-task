@@ -131,14 +131,23 @@ struct SummaryPreferences {
         }
     }
 
+    /// Whether `value` is an endpoint URL carrying credentials (only the base URL
+    /// setting is checked; instructions may legitimately mention URLs).
+    static func isUnsafeEndpoint(_ value: String, forKey key: String) -> Bool {
+        key == Key.localBaseURL && SummaryConnectionArguments.containsCredentials(value)
+    }
+
     // MARK: - Custom instructions
 
     /// The user's own summary instructions, applied on top of the built-in rules.
+    /// Until the user changes them they're the defaults; clearing them is kept
+    /// (stored as empty), not reverted.
     var customInstructions: String {
-        get { defaults.string(forKey: Key.instructions) ?? "" }
+        get { defaults.string(forKey: Key.instructions) ?? SummaryPrompt.defaultCustomInstructions }
         nonmutating set {
             let limited = String(newValue.prefix(SummaryPrompt.customInstructionsLimit))
-            setOrRemove(limited, forKey: Key.instructions)
+            let isBlank = limited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            defaults.set(isBlank ? "" : limited, forKey: Key.instructions)
         }
     }
 

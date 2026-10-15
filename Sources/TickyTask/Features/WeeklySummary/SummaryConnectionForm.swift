@@ -170,7 +170,7 @@ struct SummaryInstructionsEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your instructions")
                 .font(.headline)
-            Text("Tell the summarizer about audience, tone, length, emphasis, or format — e.g. “Write for my manager, max 200 words, lead with risks.” They're added to the built-in rules, which always keep task notes as data and forbid inventing facts.")
+            Text("Audience, tone, length, emphasis, or format — e.g. “Write for my manager, max 200 words, lead with risks.” These start as sensible defaults for a Jira update; edit them freely. They're added to the built-in rules, which always keep task notes as data and forbid inventing facts.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextEditor(text: $instructions)
@@ -185,6 +185,9 @@ struct SummaryInstructionsEditor: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(instructions.count > SummaryPrompt.customInstructionsLimit ? .orange : .secondary)
                 Spacer()
+                Button("Restore defaults") { instructions = SummaryPrompt.defaultCustomInstructions }
+                    .disabled(instructions == SummaryPrompt.defaultCustomInstructions)
+                    .accessibilityIdentifier("summary-instructions-restore")
                 Button("Clear") { instructions = "" }
                     .disabled(instructions.isEmpty)
                     .accessibilityIdentifier("summary-instructions-clear")

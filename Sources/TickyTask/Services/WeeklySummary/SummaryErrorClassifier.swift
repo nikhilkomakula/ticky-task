@@ -20,7 +20,7 @@ enum SummaryRedactor {
     /// Also removes each known secret verbatim (e.g. the configured local API key),
     /// which no pattern could recognize on its own.
     static func redact(_ text: String, removing secrets: [String] = []) -> String {
-        let scrubbed = secrets.filter { $0.count >= 4 }.reduce(text) { $0.replacingOccurrences(of: $1, with: "<redacted>") }
+        let scrubbed = secrets.filter { !$0.isEmpty }.reduce(text) { $0.replacingOccurrences(of: $1, with: "<redacted>") }
         return rules.reduce(scrubbed) { partial, rule in
             partial.replacingOccurrences(of: rule.pattern, with: rule.template, options: .regularExpression)
         }

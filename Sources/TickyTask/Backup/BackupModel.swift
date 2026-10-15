@@ -191,8 +191,8 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool,
             weeklySummary: {
                 let values = SummaryPreferences.portableKeys.reduce(into: [String: String]()) { result, key in
-                    // A credential-bearing URL left by an older build never goes into a backup.
-                    if let value = d.string(forKey: key), !SummaryConnectionArguments.containsCredentials(value) {
+                    // A credential-bearing endpoint URL never goes into a backup.
+                    if let value = d.string(forKey: key), !SummaryPreferences.isUnsafeEndpoint(value, forKey: key) {
                         result[key] = value
                     }
                 }
@@ -232,9 +232,9 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
         // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
-        // A credential-bearing URL is never restored (it would land in plain defaults).
+        // A credential-bearing endpoint URL is never restored (it would land in plain defaults).
         for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)
-            && !SummaryConnectionArguments.containsCredentials(value) {
+            && !SummaryPreferences.isUnsafeEndpoint(value, forKey: key) {
             d.set(value, forKey: key)
         }
     }

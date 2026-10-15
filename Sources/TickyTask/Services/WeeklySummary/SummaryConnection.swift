@@ -195,7 +195,8 @@ enum LocalModelListing {
         guard var components = URLComponents(string: base) else {
             throw SummaryConnectionArguments.ValidationError.invalidBaseURL(base)
         }
-        components.path = (components.path.hasSuffix("/") ? components.path : components.path + "/") + "models"
+        let path = components.percentEncodedPath   // keeps escapes like %2F intact
+        components.percentEncodedPath = (path.hasSuffix("/") ? path : path + "/") + "models"
         guard let url = components.url else {
             throw SummaryConnectionArguments.ValidationError.invalidBaseURL(base)
         }

@@ -59,6 +59,17 @@ enum SummaryPrompt {
     /// The user's own instructions are capped so a pasted document can't crowd out the notes.
     static let customInstructionsLimit = 8_000
 
+    /// What "Your instructions" starts with (and "Restore defaults" brings back):
+    /// a Jira-ready style the user can edit or clear.
+    static let defaultCustomInstructions = """
+    Audience: my team and manager, reading this as an update on a Jira ticket.
+    - Open with one or two sentences on the overall outcome of the work.
+    - Lead each point with the result, then the supporting technical detail.
+    - Use past tense for finished work and present tense for work in progress.
+    - Mention blockers or risks only when the notes state them.
+    - Keep a neutral, professional tone; aim for about 150–300 words unless the notes need more.
+    """
+
     /// The built-in rules, followed by the user's custom instructions when set.
     /// User instructions come from the TickyTask user (trusted), unlike the task
     /// payload; they may shape tone, length, audience, or format, but the

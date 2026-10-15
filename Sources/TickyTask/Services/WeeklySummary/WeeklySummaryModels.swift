@@ -211,3 +211,28 @@ enum WeeklySummaryError: Error, Sendable, Equatable {
         }
     }
 }
+
+extension WeeklySummaryError {
+    /// The same error with `secret` removed from its diagnostic message.
+    func removing(secret: String?) -> WeeklySummaryError {
+        guard let secret, !secret.isEmpty, let detail, detail.message.contains(secret) else { return self }
+        var scrubbed = detail
+        scrubbed.message = detail.message.replacingOccurrences(of: secret, with: "<redacted>")
+        switch self {
+        case .launchFailed(let p, _): return .launchFailed(p, scrubbed)
+        case .notSignedIn(let p, _): return .notSignedIn(p, scrubbed)
+        case .authenticationRejected(let p, _): return .authenticationRejected(p, scrubbed)
+        case .authHelperFailed(let p, _): return .authHelperFailed(p, scrubbed)
+        case .accessDenied(let p, _): return .accessDenied(p, scrubbed)
+        case .modelUnavailable(let p, let model, _): return .modelUnavailable(p, model: model, scrubbed)
+        case .configurationRejected(let p, _): return .configurationRejected(p, scrubbed)
+        case .rateLimited(let p, _): return .rateLimited(p, scrubbed)
+        case .providerUnavailable(let p, _): return .providerUnavailable(p, scrubbed)
+        case .networkFailure(let p, _): return .networkFailure(p, scrubbed)
+        case .cliIncompatible(let p, _): return .cliIncompatible(p, scrubbed)
+        case .invalidResponse(let p, _): return .invalidResponse(p, scrubbed)
+        case .cliFailed(let p, _): return .cliFailed(p, scrubbed)
+        case .cliNotFound, .invalidCLIPath, .cancelled, .timedOut, .inputTooLarge, .emptyResponse: return self
+        }
+    }
+}

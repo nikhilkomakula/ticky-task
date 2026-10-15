@@ -11,7 +11,7 @@ struct SummaryPreferencesTests {
         try body(SummaryPreferences(defaults: defaults), defaults)
     }
 
-    @Test("Defaults: ChatGPT account, Ollama, blank URL, CLI-default model, no instructions")
+    @Test("Defaults: ChatGPT account, Ollama, blank URL, CLI-default model, default instructions")
     func defaults() {
         withPreferences { prefs, _ in
             #expect(prefs.connectionKind == .chatGPTAccount)
@@ -19,7 +19,7 @@ struct SummaryPreferencesTests {
             #expect(prefs.localServer == .ollama)
             #expect(prefs.localBaseURL.isEmpty)
             #expect(prefs.modelID(for: .chatGPTAccount).isEmpty)
-            #expect(prefs.customInstructions.isEmpty)
+            #expect(prefs.customInstructions == SummaryPrompt.defaultCustomInstructions)
             #expect(prefs.cliPathOverride == nil)
         }
     }
@@ -85,7 +85,7 @@ struct SummaryPreferencesTests {
             prefs.customInstructions = "Write for my manager.\n- Lead with risks."
             #expect(prefs.customInstructions == "Write for my manager.\n- Lead with risks.")
             prefs.customInstructions = "   \n "
-            #expect(prefs.customInstructions.isEmpty)
+            #expect(prefs.customInstructions.isEmpty)   // cleared stays cleared, not back to the defaults
             prefs.customInstructions = String(repeating: "x", count: SummaryPrompt.customInstructionsLimit + 50)
             #expect(prefs.customInstructions.count == SummaryPrompt.customInstructionsLimit)
         }

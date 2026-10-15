@@ -254,22 +254,8 @@ private struct TopToolbar: View {
 
                 Spacer()
 
-                // Right: navigation.
+                // Right: Settings, search, Weekly Summary, then ‹ Today › at the far right.
                 HStack(spacing: 6) {
-                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
-                    Button("Today") { app.goToToday() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Next week" : "Next month")
-
                     // Always-available Settings entry — the only way to reach
                     // Settings when the Dock icon is hidden (accessory mode).
                     // Activate explicitly so it comes frontmost in accessory mode.
@@ -285,7 +271,7 @@ private struct TopToolbar: View {
                     .help("Settings")
                     .accessibilityIdentifier("toolbar-settings")
 
-                    // Far right: search and Weekly Summary.
+                    // Search and Weekly Summary.
                     Button(action: onSearch) {
                         Image(systemName: "magnifyingglass")
                     }
@@ -304,6 +290,21 @@ private struct TopToolbar: View {
                     .help("Weekly Summary (⇧⌘Y)")
                     .accessibilityLabel("Weekly Summary")
                     .accessibilityIdentifier("toolbar-weekly-summary")
+
+                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                    Button("Today") { app.goToToday() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("toolbar-today")
+                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Next week" : "Next month")
                 }
             }
         }
