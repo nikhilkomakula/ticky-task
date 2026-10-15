@@ -24,29 +24,18 @@ struct SummaryKeychain: Sendable {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         if trimmed.isEmpty {
-            // Delete the item
-            SecItemDelete(baseQuery as CFDictionary)
-            return true
+            let status = SecItemDelete(baseQuery as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
         }
 
-        // Try to update first
-        var updateQuery = baseQuery
-        updateQuery[kSecValueData as String] = Data(trimmed.utf8)
-        updateQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, updateQuery as CFDictionary)
-
-        if updateStatus == errSecSuccess {
-            return true
-        } else if updateStatus == errSecItemNotFound {
-            // Item doesn't exist, create it
-            var attributes = baseQuery
-            attributes[kSecValueData as String] = Data(trimmed.utf8)
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlocked
-            return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
-        } else {
-            // Update failed for other reasons, preserve existing item
-            return false
-        }
+        // Update in place (only the item's own attributes may change), so a failed
+        // save never loses the previous key; add it only if there is none yet.
+        let changes: [String: Any] = [kSecValueData as String: Data(trimmed.utf8),
+                                      kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked]
+        let status = SecItemUpdate(baseQuery as CFDictionary, changes as CFDictionary)
+        guard status == errSecItemNotFound else { return status == errSecSuccess }
+        let attributes = baseQuery.merging(changes) { _, new in new }
+        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
     private var baseQuery: [String: Any] {

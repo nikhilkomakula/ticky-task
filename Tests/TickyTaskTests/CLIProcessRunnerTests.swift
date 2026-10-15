@@ -264,6 +264,60 @@ struct CLIProcessRunnerTests {
         #expect(result.stdoutText == "done")
     }
 
+    @Test func completedProcessCanDrainPastItsExecutionDeadline() async throws {
+        let graceRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(300))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let start = Date()
+        let result = try await graceRunner.run(CLIInvocation(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "/bin/sleep 0.8 & printf done"],
+            workingDirectory: tempDir, environment: [:], timeout: .milliseconds(150)))
+        #expect(result.exitCode == 0)
+        #expect(result.stdoutText == "done")
+        #expect(Date().timeIntervalSince(start) >= 0.25,
+                "The inherited pipe must keep draining across the 150 ms execution deadline")
+        #expect(Date().timeIntervalSince(start) < 1.0)
+    }
+
+    @Test func descendantGetsKillGraceAfterRootExits() async throws {
+        let graceRunner = CLIProcessRunner(killGrace: .milliseconds(500), eofGrace: .milliseconds(50))
+        let tempDir = Self.makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let command = #"""
+        /usr/bin/perl -e '
+        $SIG{TERM} = sub {
+            $SIG{TERM} = "IGNORE";
+            select undef, undef, undef, 0.2;
+            open my $done, ">", "cleanup" or die;
+            print $done "done";
+            close $done;
+            exit 0;
+        };
+        open my $ready, ">", "ready" or die;
+        print $ready "ready";
+        close $ready;
+        sleep 2;
+        ' &
+        wait
+        """#
+        let task = Task {
+            try await graceRunner.run(CLIInvocation(
+                executableURL: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", command],
+                workingDirectory: tempDir, environment: [:], timeout: .seconds(5)))
+        }
+        let ready = tempDir.appendingPathComponent("ready")
+        for _ in 0 ..< 200 where !FileManager.default.fileExists(atPath: ready.path) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(FileManager.default.fileExists(atPath: ready.path))
+        task.cancel()
+        _ = try? await task.value
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("cleanup").path),
+                "A 200 ms descendant SIGTERM cleanup must get the configured 500 ms grace after the root exits")
+    }
+
     @Test func boundsDrainAfterMainProcessExit() async throws {
         let graceRunner = CLIProcessRunner(killGrace: .milliseconds(50), eofGrace: .milliseconds(50))
         let tempDir = Self.makeTempDir()

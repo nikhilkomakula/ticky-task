@@ -64,6 +64,7 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
     private let cacheDirectory: URL
     private let now: @Sendable () -> Date
     private var memory: [String: SummaryModelList] = [:]
+    private var latestFetch: [String: Int] = [:]
 
     init(runner: CLICommandRunning,
          resolveExecutable: @escaping @Sendable () async throws -> URL,
@@ -88,10 +89,16 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             memory[key] = disk
             return disk
         }
+        // Fetches can overlap (the actor is reentrant across awaits); only the
+        // newest one per list may update the cache.
+        let fetchID = (latestFetch[key] ?? 0) + 1
+        latestFetch[key] = fetchID
         do {
             let list = connection.isLocal ? try await fetchLocal(connection) : try await fetchCodex(connection)
-            memory[key] = list
-            if !connection.isLocal { try? saveDisk(list, key: key) }
+            if latestFetch[key] == fetchID {
+                memory[key] = list
+                if !connection.isLocal { try? saveDisk(list, key: key) }
+            }
             return list
         } catch {
             // A failed refresh keeps the last good list usable.
@@ -99,7 +106,7 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
             if let previous = memory[key] ?? (connection.isLocal ? nil : loadDisk(key)) {
                 var stale = previous
                 stale.isStale = true
-                memory[key] = stale
+                if latestFetch[key] == fetchID { memory[key] = stale }
                 return stale
             }
             throw error
@@ -181,7 +188,8 @@ actor SummaryModelCatalog: SummaryModelCatalogProviding {
         } catch {
             let redactedURL = SummaryRedactor.redact(baseURL)
             throw WeeklySummaryError.networkFailure(.codex, SummaryErrorDetail(
-                message: "Couldn't reach the local server at \(redactedURL): \(error.localizedDescription)"))
+                message: "Couldn't reach the local server at \(redactedURL): "
+                    + SummaryRedactor.redact(error.localizedDescription, removing: [localAPIKey() ?? ""])))
         }
         let options = ids.map {
             SummaryModelOption(id: $0, label: $0, source: .catalog, supportedEfforts: nil, defaultEffort: nil)

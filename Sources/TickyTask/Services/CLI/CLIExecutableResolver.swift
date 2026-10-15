@@ -86,10 +86,12 @@ enum CLIExecutableResolver {
 
     /// Whether a file starts with `#!/usr/bin/env node`.
     static func needsNode(_ executable: URL) -> Bool {
-        guard let data = try? Data(contentsOf: executable),
-              data.count >= 16 else { return false }
+        // Read only the first line's worth, not the whole (possibly large) binary.
+        guard let handle = try? FileHandle(forReadingFrom: executable) else { return false }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 32), data.count >= 16 else { return false }
 
-        let header = String(bytes: data.prefix(32), encoding: .utf8) ?? ""
+        let header = String(bytes: data, encoding: .utf8) ?? ""
         return header.hasPrefix("#!/usr/bin/env node")
     }
 

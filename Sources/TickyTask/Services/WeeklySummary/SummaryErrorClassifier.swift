@@ -17,8 +17,11 @@ enum SummaryRedactor {
         (#"(?i)("(?:api[_-]?key|token|access_token|secret|password)"\s*:\s*")[^"]*(")"#, "$1<redacted>$2"),
     ]
 
-    static func redact(_ text: String) -> String {
-        rules.reduce(text) { partial, rule in
+    /// Also removes each known secret verbatim (e.g. the configured local API key),
+    /// which no pattern could recognize on its own.
+    static func redact(_ text: String, removing secrets: [String] = []) -> String {
+        let scrubbed = secrets.filter { $0.count >= 4 }.reduce(text) { $0.replacingOccurrences(of: $1, with: "<redacted>") }
+        return rules.reduce(scrubbed) { partial, rule in
             partial.replacingOccurrences(of: rule.pattern, with: rule.template, options: .regularExpression)
         }
     }

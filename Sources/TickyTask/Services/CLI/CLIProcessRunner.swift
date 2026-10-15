@@ -126,12 +126,12 @@ struct CLIProcessRunner: CLICommandRunning {
 
         let lifecycle = RunLifecycle(pid: pid, killGrace: killGrace)
         let stdout = PipeReader(fd: stdoutRead, limit: invocation.stdoutLimit, keepTail: false, label: "cli.stdout") {
-            lifecycle.stop(because: .outputTooLarge(limit: invocation.stdoutLimit))
+            [weak lifecycle] in lifecycle?.stop(because: .outputTooLarge(limit: invocation.stdoutLimit))
         }
         let stderr = PipeReader(fd: stderrRead, limit: invocation.stderrLimit, keepTail: true, label: "cli.stderr") {}
         let stdin = PipeWriter(fd: stdinWrite, data: invocation.stdin)
         let pipes: [PipeEnd] = [stdout, stderr, stdin]
-        lifecycle.pipes = pipes
+        lifecycle.attach(pipes)
         pipes.forEach { $0.start() }
 
         let timeoutSeconds = max(1, Int(invocation.timeout.components.seconds))
@@ -144,15 +144,18 @@ struct CLIProcessRunner: CLICommandRunning {
             timeout.cancel()
 
             let drainDeadline = DispatchWorkItem {
-                // Something outside the reaped child still holds a pipe open.
+                // A process outside the reaped child still holds a pipe: stop reading and end it.
                 pipes.forEach { $0.finish() }
-                lifecycle.killLeftoverGroup()
+                lifecycle.endLeftovers()
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + eofGrace.timeInterval, execute: drainDeadline)
             let stdoutData = await stdout.value()
             let stderrData = await stderr.value()
             await stdin.value()
             drainDeadline.cancel()
+            // Nothing this run started outlives it.
+            await lifecycle.teardownFinished()
+            lifecycle.detachPipes()
 
             if let cause = lifecycle.cause { throw cause }
             let elapsed = Date().timeIntervalSince(startTime)
@@ -172,16 +175,21 @@ struct CLIProcessRunner: CLICommandRunning {
 
 /// The single owner of a run's state: why it's ending early (first cause wins),
 /// whether the child has been reaped, and the teardown of its process tree.
-/// Reaping and signalling the child happen under one lock, so a signal is never
-/// sent to a pid after `waitpid` has released it.
+///
+/// Reaping, the running check, and every signal happen under one lock. The
+/// child's process group is signalled as a whole only while the child is
+/// unreaped (so its pid is still ours); afterwards only recorded processes that
+/// are verifiably the same ones (pid + start time) are signalled.
 private final class RunLifecycle: @unchecked Sendable {
     private let lock = NSLock()
     private let pid: pid_t
     private let killGrace: Duration
     private var reaped = false
     private var stopCause: CLIProcessError?
-    /// Set once before the run starts; finished early when a stop arrives after exit.
-    var pipes: [PipeEnd] = []
+    private var pipes: [PipeEnd] = []
+    private var teardownStarted = false
+    private var teardownDone = false
+    private var teardownWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(pid: pid_t, killGrace: Duration) {
         self.pid = pid
@@ -193,43 +201,81 @@ private final class RunLifecycle: @unchecked Sendable {
         return stopCause
     }
 
-    /// Records `reason` (unless an earlier cause exists) and tears the process
-    /// tree down. If the child has already exited, stops draining its pipes instead.
-    func stop(because reason: CLIProcessError) {
-        lock.lock()
-        let isFirst = stopCause == nil
-        if isFirst { stopCause = reason }
-        let childRunning = !reaped
-        let tree = isFirst && childRunning ? ProcessTree.snapshot(root: pid) : []
-        if isFirst && childRunning { ProcessTree.signal(group: pid, members: tree, SIGTERM) }
-        lock.unlock()
+    func attach(_ pipes: [PipeEnd]) {
+        lock.lock(); defer { lock.unlock() }
+        self.pipes = pipes
+    }
 
-        guard isFirst else { return }
-        if childRunning {
-            DispatchQueue.global().asyncAfter(deadline: .now() + killGrace.timeInterval) { [self] in
-                lock.lock(); defer { lock.unlock() }
-                let survivors = reaped ? tree : tree + ProcessTree.snapshot(root: pid)
-                ProcessTree.signal(group: pid, members: survivors, SIGKILL)
-            }
-        } else {
-            pipes.forEach { $0.finish() }
-            killLeftoverGroup()
-        }
+    /// Drops the pipes (and their buffers) once the run has collected them.
+    func detachPipes() {
+        lock.lock(); defer { lock.unlock() }
+        pipes = []
+    }
+
+    /// Records `reason` (unless an earlier cause exists) and tears the process
+    /// tree down. After the child exited, it also stops draining its pipes.
+    func stop(because reason: CLIProcessError) {
+        lock.lock(); defer { lock.unlock() }
+        if stopCause == nil { stopCause = reason }
+        if reaped { pipes.forEach { $0.finish() } }
+        beginTeardown()
     }
 
     /// A timeout only applies while the child is still running.
     func stopIfRunning(because reason: CLIProcessError) {
-        lock.lock()
-        let running = !reaped
-        lock.unlock()
-        if running { stop(because: reason) }
+        lock.lock(); defer { lock.unlock() }
+        guard !reaped else { return }
+        if stopCause == nil { stopCause = reason }
+        beginTeardown()
     }
 
-    /// Kills anything left in the child's process group after the child exited.
-    /// The group id can't be reissued while any member is alive, so this only
-    /// reaches our own leftovers.
-    func killLeftoverGroup() {
-        kill(-pid, SIGKILL)
+    /// Ends what's left of the child's process group after it exited — e.g. a
+    /// background descendant still holding its pipes. The run's output stands.
+    func endLeftovers() {
+        lock.lock(); defer { lock.unlock() }
+        beginTeardown()
+    }
+
+    /// Returns once any teardown has finished (immediately if none started).
+    func teardownFinished() async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if !teardownStarted || teardownDone {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                teardownWaiters.append(continuation)
+                lock.unlock()
+            }
+        }
+    }
+
+    /// SIGTERM now, SIGKILL after `killGrace` — once per run. Call with the lock held.
+    private func beginTeardown() {
+        guard !teardownStarted else { return }
+        teardownStarted = true
+        let recorded = members()
+        signal(recorded, SIGTERM)
+        DispatchQueue.global().asyncAfter(deadline: .now() + killGrace.timeInterval) { [self] in
+            lock.lock()
+            signal(recorded + members(), SIGKILL)
+            teardownDone = true
+            let waiters = teardownWaiters
+            teardownWaiters = []
+            lock.unlock()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    /// The child's descendants while it's alive (found through their parents,
+    /// even if they changed process group); its process group once it's reaped.
+    private func members() -> [ProcessTree.Member] {
+        reaped ? ProcessTree.groupMembers(pid) : ProcessTree.descendants(of: pid)
+    }
+
+    private func signal(_ members: [ProcessTree.Member], _ signal: Int32) {
+        if !reaped { kill(-pid, signal) }
+        ProcessTree.signal(members, signal)
     }
 
     /// Waits for the child to exit and reaps it; returns (exit code, signal).
@@ -267,7 +313,7 @@ private enum ProcessTree {
 
     /// Every live descendant of `root`, recursively (a child that moved to its
     /// own process group is still found through its parent).
-    static func snapshot(root: pid_t) -> [Member] {
+    static func descendants(of root: pid_t) -> [Member] {
         var members: [Member] = []
         var seen: Set<pid_t> = [root]
         var pending = [root]
@@ -284,10 +330,19 @@ private enum ProcessTree {
         return members
     }
 
-    /// Signals the group and each recorded member that is still the same process
-    /// (matching start time), so a recycled pid is never hit.
-    static func signal(group: pid_t, members: [Member], _ signal: Int32) {
-        kill(-group, signal)
+    /// The live members of process group `group`.
+    static func groupMembers(_ group: pid_t) -> [Member] {
+        let filter = UInt32(PROC_PGRP_ONLY)
+        let bytes = proc_listpids(filter, UInt32(group), nil, 0)
+        guard bytes > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(bytes) / MemoryLayout<pid_t>.size + 16)
+        let filled = proc_listpids(filter, UInt32(group), &pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        return pids.prefix(Int(max(0, filled)) / MemoryLayout<pid_t>.size).filter { $0 > 0 }.compactMap(identity(of:))
+    }
+
+    /// Signals each recorded member that is still the same process (matching
+    /// start time), so a recycled pid is never hit.
+    static func signal(_ members: [Member], _ signal: Int32) {
         for member in members where identity(of: member.pid) == member {
             kill(member.pid, signal)
         }

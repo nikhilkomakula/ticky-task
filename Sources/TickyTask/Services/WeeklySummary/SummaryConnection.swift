@@ -59,7 +59,15 @@ enum SummaryConnectionTarget: Hashable, Codable, Sendable {
     /// local servers of the same kind at different addresses differ.
     var catalogKey: String {
         guard isLocal else { return storageKey }
-        let digest = SHA256.hash(data: Data((localBaseURL ?? "").lowercased().utf8))
+        // Only the scheme and host are case-insensitive; paths and queries can differ by case.
+        var normalized = localBaseURL ?? ""
+        if var components = URLComponents(string: normalized) {
+            let scheme = components.scheme?.lowercased(), host = components.host?.lowercased()
+            components.scheme = scheme
+            components.host = host
+            normalized = components.string ?? normalized
+        }
+        let digest = SHA256.hash(data: Data(normalized.utf8))
         return storageKey + "-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -97,10 +105,9 @@ enum SummaryConnectionArguments {
         case credentialsInBaseURL
     }
 
-    /// Query parameters that carry credentials; such URLs are refused outright.
-    private static let credentialQueryNames: Set<String> = [
-        "token", "access_token", "key", "api_key", "apikey", "api-key", "secret", "password", "auth", "sig", "signature",
-    ]
+    /// A query parameter whose name contains any of these carries credentials
+    /// (`token`, `x-api-key`, `client_secret`, …); such URLs are refused outright.
+    private static let credentialNameFragments = ["key", "token", "secret", "password", "auth", "sig", "credential"]
 
     /// Codex arguments that select the connection. Applied to generation and to
     /// the model catalog so both see the same provider.
@@ -126,13 +133,18 @@ enum SummaryConnectionArguments {
         }
     }
 
+    /// Inherited variables that could redirect Codex's built-in local providers
+    /// away from the address shown in Settings; dropped for local connections.
+    static let inheritedLocalOverrides = ["CODEX_OSS_BASE_URL", "CODEX_OSS_PORT"]
+
     /// Extra child environment for the connection (the local server address for
     /// Codex's built-in Ollama/LM Studio providers, and the API key).
     static func environment(for target: SummaryConnectionTarget, apiKey: String?) -> [String: String] {
         guard case .local(let server, _) = target else { return [:] }
         var env: [String: String] = [:]
         let hasAPIKey = !(apiKey ?? "").isEmpty
-        if server.codexLocalProvider != nil, !hasAPIKey, let url = target.localBaseURL, url != server.defaultBaseURL {
+        // Always explicit, so generation reaches the same server the model list came from.
+        if server.codexLocalProvider != nil, !hasAPIKey, let url = target.localBaseURL {
             env["CODEX_OSS_BASE_URL"] = url
         }
         if hasAPIKey, let apiKey { env[apiKeyVariable] = apiKey }
@@ -158,7 +170,10 @@ enum SummaryConnectionArguments {
     static func containsCredentials(_ raw: String) -> Bool {
         guard let components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         if components.user != nil || components.password != nil { return true }
-        return components.queryItems?.contains { credentialQueryNames.contains($0.name.lowercased()) } ?? false
+        return components.queryItems?.contains { item in
+            let name = item.name.lowercased()
+            return credentialNameFragments.contains { name.contains($0) }
+        } ?? false
     }
 }
 
@@ -176,7 +191,12 @@ enum LocalModelListing {
 
     static func request(baseURL: String, apiKey: String?) throws -> URLRequest {
         let base = try SummaryConnectionArguments.validatedBaseURL(baseURL)
-        guard let url = URL(string: base.hasSuffix("/") ? base + "models" : base + "/models") else {
+        // Append to the path, keeping any routing query (`?tenant=A`) intact.
+        guard var components = URLComponents(string: base) else {
+            throw SummaryConnectionArguments.ValidationError.invalidBaseURL(base)
+        }
+        components.path = (components.path.hasSuffix("/") ? components.path : components.path + "/") + "models"
+        guard let url = components.url else {
             throw SummaryConnectionArguments.ValidationError.invalidBaseURL(base)
         }
         var request = URLRequest(url: url, timeoutInterval: 10)

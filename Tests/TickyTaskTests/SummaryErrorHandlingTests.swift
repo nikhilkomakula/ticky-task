@@ -468,10 +468,12 @@ struct SummaryConnectionTests {
         #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
     }
 
-    @Test("A custom base URL reaches the built-in providers via CODEX_OSS_BASE_URL; the default doesn't")
+    @Test("The built-in providers always get the chosen address via CODEX_OSS_BASE_URL, default included")
     func ossBaseURL() {
-        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: nil), apiKey: nil).isEmpty)
-        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: "http://localhost:11434/v1"), apiKey: nil).isEmpty)
+        #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: nil), apiKey: nil)
+                == ["CODEX_OSS_BASE_URL": "http://localhost:11434/v1"])
+        #expect(SummaryConnectionArguments.environment(for: .local(server: .lmStudio, baseURL: nil), apiKey: nil)
+                == ["CODEX_OSS_BASE_URL": "http://localhost:1234/v1"])
         #expect(SummaryConnectionArguments.environment(for: .local(server: .ollama, baseURL: "http://gpu-box:11434/v1"), apiKey: nil)
                 == ["CODEX_OSS_BASE_URL": "http://gpu-box:11434/v1"])
         #expect(SummaryConnectionArguments.environment(for: .chatGPTAccount, apiKey: "ignored").isEmpty)

@@ -49,9 +49,11 @@ struct LiveSummaryGenerator: SummaryGenerating {
 
     func generate(_ request: SummaryRequest) async throws -> SummaryResult {
         let executable = try await resolve()
-        let apiKey = request.config.connection.isLocal ? localAPIKey() : nil
-        let env = (await environment(executable))
-            .merging(SummaryConnectionArguments.environment(for: request.config.connection, apiKey: apiKey)) { _, new in new }
+        let connection = request.config.connection
+        let apiKey = connection.isLocal ? localAPIKey() : nil
+        var inherited = await environment(executable)
+        if connection.isLocal { SummaryConnectionArguments.inheritedLocalOverrides.forEach { inherited[$0] = nil } }
+        let env = inherited.merging(SummaryConnectionArguments.environment(for: connection, apiKey: apiKey)) { _, new in new }
         let version = await cache.version(for: executable) { await readVersion(executable, env: env) }
         let runDirectory = try makeRunDirectory()
         defer { try? FileManager.default.removeItem(at: runDirectory) }
@@ -79,8 +81,9 @@ struct LiveSummaryGenerator: SummaryGenerating {
                 timeout: Self.generationTimeout
             ))
             let message = try? String(contentsOf: lastMessage, encoding: .utf8)
-            return try CodexSummaryAdapter.parse(output, lastMessage: message, config: request.config,
-                                                 cliVersion: version, executablePath: executable.path).get()
+            return try CodexSummaryAdapter.parse(Self.removing(apiKey, from: output), lastMessage: message,
+                                                 config: request.config, cliVersion: version,
+                                                 executablePath: executable.path).get()
         } catch let error as CLIProcessError {
             throw Self.map(error, executable: executable, version: version)
         }
@@ -192,6 +195,15 @@ struct LiveSummaryGenerator: SummaryGenerating {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         return directory
+    }
+
+    /// The output with a configured API key blanked out, so a provider that echoes
+    /// it back ("Invalid API key provided: …") can't put it in the error details.
+    private static func removing(_ secret: String?, from output: CLIProcessOutput) -> CLIProcessOutput {
+        guard let secret, !secret.isEmpty else { return output }
+        let scrub = { (data: Data) in Data(SummaryRedactor.redact(String(decoding: data, as: UTF8.self), removing: [secret]).utf8) }
+        return CLIProcessOutput(exitCode: output.exitCode, signal: output.signal, stdout: scrub(output.stdout),
+                                stderr: scrub(output.stderr), duration: output.duration)
     }
 
     private static func detail(_ output: CLIProcessOutput, prefix: String, executable: URL, version: String?) -> SummaryErrorDetail {

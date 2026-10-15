@@ -191,7 +191,10 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool,
             weeklySummary: {
                 let values = SummaryPreferences.portableKeys.reduce(into: [String: String]()) { result, key in
-                    if let value = d.string(forKey: key) { result[key] = value }
+                    // A credential-bearing URL left by an older build never goes into a backup.
+                    if let value = d.string(forKey: key), !SummaryConnectionArguments.containsCredentials(value) {
+                        result[key] = value
+                    }
                 }
                 return values.isEmpty ? nil : values
             }()

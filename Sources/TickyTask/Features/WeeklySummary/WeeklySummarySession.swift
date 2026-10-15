@@ -154,6 +154,7 @@ final class WeeklySummarySession {
         var refreshError: String?
         do {
             let list = try await catalog.models(for: target, refresh: refresh)
+            guard id == modelLoadID else { return }
             modelLists[target.catalogKey] = list
             if list.isStale { refreshError = "Couldn't refresh the model list; showing the last one." }
         } catch let failure as WeeklySummaryError {
@@ -190,6 +191,13 @@ final class WeeklySummarySession {
 
     private func reconcileEffort() {
         let remembered = preferences.effort(for: connection, modelID: modelID)
+        // Without this connection's model list there's nothing to check against:
+        // keep the remembered choice rather than overwrite it.
+        guard modelLists[connection.catalogKey] != nil else {
+            effort = remembered ?? .cliDefault
+            effortNote = nil
+            return
+        }
         let reconciled = SummaryEffortResolver.reconcile(remembered: remembered, model: selectedModel)
         effort = reconciled.choice
         effortNote = reconciled.note
