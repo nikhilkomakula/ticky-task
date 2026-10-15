@@ -194,9 +194,9 @@ final class WeeklySummaryUITests: XCTestCase {
         let settings = app.buttons["toolbar-settings"].firstMatch
         let today = app.buttons["toolbar-today"].firstMatch
         XCTAssertTrue(settings.exists && search.exists && today.exists, "toolbar buttons should exist")
-        XCTAssertGreaterThan(search.frame.minX, settings.frame.minX, "Search sits right of Settings")
         XCTAssertGreaterThan(summary.frame.minX, search.frame.minX, "Weekly Summary follows Search")
-        XCTAssertGreaterThan(today.frame.minX, summary.frame.minX, "‹ Today › is at the far right")
+        XCTAssertGreaterThan(settings.frame.minX, summary.frame.minX, "Settings follows Weekly Summary")
+        XCTAssertGreaterThan(today.frame.minX, settings.frame.minX, "‹ Today › is at the far right")
         let window = app.windows.firstMatch.frame
         XCTAssertLessThan(window.maxX - today.frame.maxX, 80, "‹ Today › hugs the right edge")
     }

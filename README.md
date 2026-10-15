@@ -43,7 +43,7 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 - **Launch at login** — starts TickyTask automatically when you log in (**Settings › General**, on by default; also manageable in System Settings › General › Login Items).
 - **Software updates** — checks the project's GitHub Releases (latest stable **or pre-release**) for a newer version, manually or automatically (**Settings › General**).
 - **About & Help** — app version, GitHub/issue links, license, and quick tips (**Settings › About**).
-- **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and Settings, **Search**, **Weekly Summary**, then ‹ **Today** › navigation at the far right.
+- **Polished native UI** — material day/list cards (custom lists align under the day columns), hover affordances, and refined typography; task titles **wrap to the available width** (in week columns and custom lists); opens **maximized** with a single toolbar: Week/Month switcher (left), the current date range (center), and **Search**, **Weekly Summary**, Settings, then ‹ **Today** › navigation at the far right.
 - Clean gradient calendar app icon; first-run sample data.
 
 ## How it works

@@ -254,24 +254,8 @@ private struct TopToolbar: View {
 
                 Spacer()
 
-                // Right: Settings, search, Weekly Summary, then ‹ Today › at the far right.
+                // Right: search, Weekly Summary, Settings, then ‹ Today › at the far right.
                 HStack(spacing: 6) {
-                    // Always-available Settings entry — the only way to reach
-                    // Settings when the Dock icon is hidden (accessory mode).
-                    // Activate explicitly so it comes frontmost in accessory mode.
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openSettings()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help("Settings")
-                    .accessibilityIdentifier("toolbar-settings")
-
-                    // Search and Weekly Summary.
                     Button(action: onSearch) {
                         Image(systemName: "magnifyingglass")
                     }
@@ -290,6 +274,21 @@ private struct TopToolbar: View {
                     .help("Weekly Summary (⇧⌘Y)")
                     .accessibilityLabel("Weekly Summary")
                     .accessibilityIdentifier("toolbar-weekly-summary")
+
+                    // Always-available Settings entry — the only way to reach
+                    // Settings when the Dock icon is hidden (accessory mode).
+                    // Activate explicitly so it comes frontmost in accessory mode.
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Settings")
+                    .accessibilityIdentifier("toolbar-settings")
 
                     Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
                         .buttonStyle(.borderless)
