@@ -25,7 +25,7 @@ final class DragReorderUITests: XCTestCase {
         // week start, and weekends shown — otherwise a weekend "today" would be
         // filtered out of the week view and the seeded rows wouldn't appear.
         app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
-        app.launch()
+        app.launchWithMainWindow()
         return app
     }
 

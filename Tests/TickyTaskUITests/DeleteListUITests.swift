@@ -16,7 +16,7 @@ final class DeleteListUITests: XCTestCase {
             app = XCUIApplication()
         }
         app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
-        app.launch()
+        app.launchWithMainWindow()
         return app
     }
 

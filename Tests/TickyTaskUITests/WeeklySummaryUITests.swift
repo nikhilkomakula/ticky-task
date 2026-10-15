@@ -17,7 +17,7 @@ final class WeeklySummaryUITests: XCTestCase {
         }
         app.launchArguments = ["-uitest", "-uitestSummarySeed", "-calendarColumns", "7",
                                "-weekStartsMonday", "YES", "-showWeekends", "YES"] + extra
-        app.launch()
+        app.launchWithMainWindow()
         return app
     }
 
