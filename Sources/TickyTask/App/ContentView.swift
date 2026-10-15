@@ -41,7 +41,8 @@ struct ContentView: View {
         @Bindable var app = app
         ZStack {
             VStack(spacing: 0) {
-                TopToolbar(onSearch: { app.isSearchPresented = true })
+                TopToolbar(onSearch: { app.isSearchPresented = true },
+                           onWeeklySummary: { app.isWeeklySummaryPresented = true })
                 Divider()
                 switch app.viewMode {
                 case .week:
@@ -97,6 +98,9 @@ struct ContentView: View {
             carryForwardIfDayChanged()
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
+        .sheet(isPresented: $app.isWeeklySummaryPresented) {
+            WeeklySummarySheet(weekAnchor: app.weekAnchor)
+        }
     }
 
     /// Keep the drag controller's persistence context + sort config current.
@@ -226,6 +230,7 @@ private struct TopToolbar: View {
     @AppStorage("calendarColumns") private var calendarColumns = 5
     @AppStorage("showWeekends") private var showWeekends = false
     var onSearch: () -> Void = {}
+    var onWeeklySummary: () -> Void = {}
 
     private var columns: Int { max(1, min(12, calendarColumns)) }
 
@@ -237,15 +242,7 @@ private struct TopToolbar: View {
                 .font(.headline.weight(.semibold))
 
             HStack(spacing: 12) {
-                // Left: search + Week / Month switcher.
-                Button(action: onSearch) {
-                    Image(systemName: "magnifyingglass")
-                }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-                .help("Search tasks (⌘F)")
-
+                // Left: Week / Month switcher.
                 Picker("View", selection: $app.viewMode) {
                     ForEach(ViewMode.allCases) { mode in
                         Label(mode.label, systemImage: mode.symbol).tag(mode)
@@ -257,21 +254,26 @@ private struct TopToolbar: View {
 
                 Spacer()
 
-                // Right: navigation.
+                // Right: search, Weekly Summary, Settings, then ‹ Today › at the far right.
                 HStack(spacing: 6) {
-                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
-                    Button("Today") { app.goToToday() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Next week" : "Next month")
+                    Button(action: onSearch) {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Search tasks (⌘F)")
+                    .accessibilityIdentifier("toolbar-search")
+
+                    Button(action: onWeeklySummary) {
+                        Image(systemName: "text.badge.star")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Weekly Summary (⇧⌘Y)")
+                    .accessibilityLabel("Weekly Summary")
+                    .accessibilityIdentifier("toolbar-weekly-summary")
 
                     // Always-available Settings entry — the only way to reach
                     // Settings when the Dock icon is hidden (accessory mode).
@@ -286,6 +288,22 @@ private struct TopToolbar: View {
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
                     .help("Settings")
+                    .accessibilityIdentifier("toolbar-settings")
+
+                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                    Button("Today") { app.goToToday() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("toolbar-today")
+                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .help(app.viewMode == .week ? "Next week" : "Next month")
                 }
             }
         }

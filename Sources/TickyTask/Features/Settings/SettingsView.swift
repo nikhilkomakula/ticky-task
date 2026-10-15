@@ -20,6 +20,8 @@ struct SettingsView: View {
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             DataSettingsView(context: context)
                 .tabItem { Label("Data", systemImage: "externaldrive") }
+            AISettingsView()
+                .tabItem { Label("AI", systemImage: "sparkles") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }

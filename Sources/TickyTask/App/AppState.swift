@@ -27,6 +27,8 @@ final class AppState {
     /// Whether the task-search sheet is showing (toggled by the toolbar button
     /// and the ⌘F "Find Task" command).
     var isSearchPresented = false
+    /// Whether the Weekly Summary sheet is showing (toolbar button / ⇧⌘Y).
+    var isWeeklySummaryPresented = false
     /// A task to briefly highlight after a search jump. Holds the task's stable
     /// `id` — not the model — so it's safe if the task is later deleted; it
     /// auto-clears after the flash.

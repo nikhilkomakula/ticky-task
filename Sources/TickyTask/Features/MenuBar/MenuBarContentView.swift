@@ -76,6 +76,16 @@ struct MenuBarContentView: View {
                     .buttonStyle(.borderless)
                     .frame(width: 28, height: 28)
                     .help("Open TickyTask")
+                    // The only way to quit when running menu-bar-only (no Dock icon / app menu).
+                    Button { NSApp.terminate(nil) } label: {
+                        Image(systemName: "power")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .help("Quit TickyTask (⌘Q)")
+                    .keyboardShortcut("q", modifiers: .command)
+                    .accessibilityLabel("Quit TickyTask")
+                    .accessibilityIdentifier("menubar-quit")
                 }
 
                 MiniMonthCalendar(selectedDayKey: $selectedDayKey)

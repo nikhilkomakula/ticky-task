@@ -166,6 +166,10 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     var endOfDayReminderMinutes: Int? = nil
     var menuBarOnly: Bool? = nil
     var autoCheckUpdates: Bool? = nil
+    /// Weekly Summary choices (connection, models, efforts, custom instructions),
+    /// keyed by their UserDefaults key. Optional so older backups decode; the CLI
+    /// path and the local-server API key are never included.
+    var weeklySummary: [String: String]? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -184,7 +188,16 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             endOfDayReminderEnabled: d.object(forKey: "endOfDayReminderEnabled") as? Bool,
             endOfDayReminderMinutes: d.object(forKey: "endOfDayReminderMinutes") as? Int,
             menuBarOnly: d.object(forKey: "menuBarOnly") as? Bool,
-            autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool
+            autoCheckUpdates: d.object(forKey: "autoCheckUpdates") as? Bool,
+            weeklySummary: {
+                let values = SummaryPreferences.portableKeys.reduce(into: [String: String]()) { result, key in
+                    // A credential-bearing endpoint URL never goes into a backup.
+                    if let value = d.string(forKey: key), !SummaryPreferences.isUnsafeEndpoint(value, forKey: key) {
+                        result[key] = value
+                    }
+                }
+                return values.isEmpty ? nil : values
+            }()
         )
     }
 
@@ -197,7 +210,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "autoDeleteCompletedEnabled", "autoDeleteCompletedDays",
         "endOfDayReminderEnabled", "endOfDayReminderMinutes",
         "menuBarOnly", "autoCheckUpdates",
-    ]
+    ] + SummaryPreferences.portableKeys
 
     /// Reproduce the backed-up settings: clear every portable key first (so a
     /// preference the source left at its default resets any explicit value here to
@@ -218,6 +231,12 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = endOfDayReminderMinutes { d.set(v, forKey: "endOfDayReminderMinutes") }
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
+        // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
+        // A credential-bearing endpoint URL is never restored (it would land in plain defaults).
+        for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)
+            && !SummaryPreferences.isUnsafeEndpoint(value, forKey: key) {
+            d.set(value, forKey: key)
+        }
     }
 }
 
