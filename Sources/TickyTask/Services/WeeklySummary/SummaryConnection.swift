@@ -105,36 +105,15 @@ enum SummaryConnectionArguments {
         case credentialsInBaseURL
     }
 
-    /// A query parameter carries credentials when its name contains one of these
-    /// anywhere (`authtoken`, `client_secret`, `x-api-key`, `privatekey`, …) …
-    private static let credentialFragments = [
-        "token", "secret", "password", "passwd", "credential", "apikey", "accesskey", "privatekey",
+    /// A query parameter is treated as a credential — and the URL refused — when
+    /// its name, reduced to letters, contains any of these. Fail-closed on purpose:
+    /// `authkey`, `x-amz-signature`, `t_o_k_e_n`, and `key1` are all caught.
+    private static let credentialMarkers = ["key", "auth", "sig", "pwd", "pass", "token", "secret", "credential"]
+    /// Ordinary parameter names that merely contain a marker.
+    private static let ordinaryNames: Set<String> = [
+        "author", "authorname", "authenticationmethod", "design", "designmode", "assignment", "significant",
+        "monkey", "monkeycount", "keepalive", "keyboard", "keynote",
     ]
-    /// … or has one of these as a whole word (`key`, `x-auth`, `sig`), so
-    /// ordinary names like `author`, `design`, or `monkey` still pass.
-    /// Such URLs are refused outright.
-    private static let credentialWords: Set<String> = [
-        "key", "pwd", "auth", "authorization", "sig", "signature",
-    ]
-
-    /// `x-api-key` → x, api, key; `sessionToken` → session, token.
-    private static func words(of name: String) -> [String] {
-        var words: [String] = []
-        var current = ""
-        for character in name {
-            if !character.isLetter && !character.isNumber {
-                if !current.isEmpty { words.append(current) }
-                current = ""
-            } else if character.isUppercase, let last = current.last, last.isLowercase {
-                words.append(current)
-                current = String(character)
-            } else {
-                current.append(character)
-            }
-        }
-        if !current.isEmpty { words.append(current) }
-        return words.map { $0.lowercased() }
-    }
 
     /// Codex arguments that select the connection. Applied to generation and to
     /// the model catalog so both see the same provider.
@@ -198,9 +177,8 @@ enum SummaryConnectionArguments {
         guard let components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         if components.user != nil || components.password != nil { return true }
         return components.queryItems?.contains { item in
-            let compact = item.name.lowercased().filter { $0.isLetter || $0.isNumber }
-            return credentialFragments.contains { compact.contains($0) }
-                || words(of: item.name).contains(where: credentialWords.contains)
+            let letters = item.name.lowercased().filter(\.isLetter)
+            return !ordinaryNames.contains(letters) && credentialMarkers.contains { letters.contains($0) }
         } ?? false
     }
 }

@@ -5,12 +5,112 @@ import Testing
 @Suite("Codex round-3 sign-off regressions", .serialized)
 struct Round3SignoffRegressionTests {
     @Test func concatenatedCredentialNamesAreRejected() {
-        for name in ["authtoken", "clientsecret", "sessiontoken", "refreshtoken", "accesskey", "privatekey", "apisecret"] {
+        for name in ["authtoken", "clientsecret", "sessiontoken", "refreshtoken", "accesskey", "privatekey", "apisecret", "authkey"] {
             let endpoint = "https://models.example/v1?\(name)=round3-opaque-query-secret"
             #expect(SummaryConnectionArguments.containsCredentials(endpoint), "Credential query: \(name)")
             #expect(throws: SummaryConnectionArguments.ValidationError.self) {
                 try SummaryConnectionArguments.validatedBaseURL(endpoint)
             }
+        }
+    }
+
+    @Test("Codex's 86-name matrix: every credential-like name is refused, ordinary names pass")
+    func queryNameMatrix() {
+        let refused = [
+            "max_tokens",
+            "token_count",
+            "tokenizer",
+            "password_policy",
+            "secretary",
+            "credential_type",
+            "authtoken",
+            "clientsecret",
+            "sessiontoken",
+            "refreshtoken",
+            "accesskey",
+            "privatekey",
+            "apisecret",
+            "token",
+            "secret",
+            "password",
+            "passwd",
+            "credential",
+            "credentials",
+            "apikey",
+            "access_key",
+            "private-key",
+            "api_key",
+            "apiKey",
+            "APIKEY",
+            "X-Api-Key",
+            "access_token",
+            "clientSecret",
+            "sessionToken",
+            "X-Amz-Security-Token",
+            "X-Amz-Signature",
+            "X-Goog-Credential",
+            "Ocp-Apim-Subscription-Key",
+            "key",
+            "pwd",
+            "auth",
+            "authorization",
+            "sig",
+            "signature",
+            "x-auth",
+            "client_auth",
+            "clientSignature",
+            "%74oken",
+            "api%5Fkey",
+            "client%73ecret",
+            "t_o_k_e_n",
+            "p-a-s-s-w-o-r-d",
+            "?token",
+            "token[]",
+            "key1",
+            "pwd1",
+            "auth1",
+            "sig1",
+            "signature1",
+            "authorization1",
+            "authkey",
+            "AUTHKEY",
+            "sharedkey",
+            "subscriptionkey",
+            "authentication",
+            "authcode",
+            "clientauthorization",
+            "clientsignature",
+            "oauth",
+        ]
+        let ordinary = [
+            "author",
+            "design",
+            "monkey",
+            "keep_alive",
+            "tenant",
+            "region",
+            "api-version",
+            "deployment",
+            "route",
+            "model",
+            "organization",
+            "project",
+            "authorName",
+            "designMode",
+            "monkeyCount",
+            "keyboard",
+            "keynote",
+            "authentication_method",
+            "significant",
+            "assignment",
+            "author2",
+            "design2",
+        ]
+        for name in refused {
+            #expect(SummaryConnectionArguments.containsCredentials("https://models.example/v1?\(name)=x"), "\(name)")
+        }
+        for name in ordinary {
+            #expect(!SummaryConnectionArguments.containsCredentials("https://models.example/v1?\(name)=x"), "\(name)")
         }
     }
 
@@ -26,18 +126,19 @@ struct Round3SignoffRegressionTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = SummaryPreferences(defaults: defaults)
         let secret = "round3-opaque-query-secret"
-        let endpoint = "https://models.example/v1?authtoken=\(secret)"
-        preferences.localBaseURL = endpoint
-        #expect(preferences.localBaseURL.isEmpty)
-        #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
-        let backup = AppSettingsDTO.capture(from: defaults)
-        let encoded = try JSONEncoder().encode(backup)
-        #expect(!String(decoding: encoded, as: UTF8.self).contains(secret))
-        AppSettingsDTO(weeklySummary: ["weeklySummary.local.baseURL": endpoint]).apply(to: defaults)
-        #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
-        #expect(throws: SummaryConnectionArguments.ValidationError.self) {
-            try SummaryConnectionArguments.codexArguments(
-                for: .local(server: .openAICompatible, baseURL: endpoint), hasAPIKey: false)
+        for endpoint in ["https://models.example/v1?authtoken=\(secret)", "https://models.example/v1?authkey=\(secret)"] {
+            preferences.localBaseURL = endpoint
+            #expect(preferences.localBaseURL.isEmpty)
+            #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
+            let backup = AppSettingsDTO.capture(from: defaults)
+            let encoded = try JSONEncoder().encode(backup)
+            #expect(!String(decoding: encoded, as: UTF8.self).contains(secret))
+            AppSettingsDTO(weeklySummary: ["weeklySummary.local.baseURL": endpoint]).apply(to: defaults)
+            #expect(defaults.string(forKey: "weeklySummary.local.baseURL") == nil)
+            #expect(throws: SummaryConnectionArguments.ValidationError.self) {
+                try SummaryConnectionArguments.codexArguments(
+                    for: .local(server: .openAICompatible, baseURL: endpoint), hasAPIKey: false)
+            }
         }
     }
 
