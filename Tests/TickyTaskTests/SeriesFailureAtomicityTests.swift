@@ -258,9 +258,8 @@ struct SeriesFailureAtomicityTests {
         let now = date(2026, 1, 20, c)
         AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 10, now: now)
 
-        // A failed save with deletions pending can't be undone safely in SwiftData,
-        // so the complete purge stays pending for the next save — but nothing
-        // reached the disk.
+        // A failed save with deletions pending can't be undone in SwiftData (the app
+        // restarts without saving instead); nothing reached the disk.
         _ = beforeCount
         let reopened = try makeContext(at: tempDir)
         #expect(beforeSnapshot.matches(try snapshot(context: reopened)), "the stored data is unchanged")
@@ -306,7 +305,7 @@ struct SeriesFailureAtomicityTests {
         }
 
         // The existing store on disk is untouched (the replacement can't be undone in
-        // memory once it has deleted rows; it stays pending for the next save).
+        // memory once it has deleted rows; the app restarts without saving it).
         let reopened = try makeContext(at: tempDir)
         #expect(beforeSnapshot.matches(try snapshot(context: reopened)))
     }

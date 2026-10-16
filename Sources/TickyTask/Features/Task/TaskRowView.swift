@@ -92,6 +92,7 @@ struct TaskRowView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityLabel("Reminder")
                 }
 
                 if let minutes = task.timeMinutes, !compactView {

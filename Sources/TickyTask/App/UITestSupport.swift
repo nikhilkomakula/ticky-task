@@ -23,6 +23,12 @@ enum UITestSupport {
         return URL(fileURLWithPath: args[index + 1])
     }
 
+    #if DEBUG
+    /// `-uitestFailTaskSave`: the first editor Done fails to save, to exercise the
+    /// save-error path.
+    @MainActor static var failNextTaskSave = isRunning && ProcessInfo.processInfo.arguments.contains("-uitestFailTaskSave")
+    #endif
+
     /// A per-launch, emptied defaults suite for state the app persists itself
     /// (e.g. Weekly Summary choices), so each test starts clean.
     static let scratchDefaults: UserDefaults = {

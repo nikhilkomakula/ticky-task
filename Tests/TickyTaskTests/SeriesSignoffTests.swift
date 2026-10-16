@@ -133,15 +133,20 @@ struct SeriesSignoffTests {
     @Test("A failed transaction leaves the exact graph, in memory and after reopening", arguments: Operation.allCases)
     func failureAtomicity(_ operation: Operation) throws {
         let dir = try diskDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
         let c = cal()
         let before: Graph
-        // The first context lives until the end: releasing its container while it
-        // still holds a kept, unsaved change would tear the store out from under it.
-        var held: ModelContext?
+        var restarted = false
+        PersistenceRecovery.testHook = { restarted = true }
+        defer {
+            PersistenceRecovery.testHook = nil
+            // A discarded context stays alive, so its store file must too.
+            if !restarted { try? FileManager.default.removeItem(at: dir) }
+        }
         do {
             let context = try open(dir)
-            held = context
+            // The app quits instead of saving this context's change; here it's kept
+            // alive (releasing a container with unsaved changes crashes SwiftData).
+            DiscardedContexts.keep(context)
             let f = try fixture(context)
             if operation == .materializeLegacy {
                 // A pre-0.1.17 series row (rule + day + its own work) awaiting its split.
@@ -203,27 +208,16 @@ struct SeriesSignoffTests {
             case .ruleChangeFetchFails, .move, .materializeLegacy:
                 // Nothing was deleted, so the transaction was undone in place.
                 #expect(live == before, "\(operation): the live objects show the saved state")
-            case .combinedEdit:
-                // The save failed with a subtask removal pending, which SwiftData
-                // can't undo: the complete edit is kept for the next save — never a
-                // partial one.
-                let series = live.tasks.filter { $0.value.templateID == f.definition.id || $0.key == f.definition.id }
-                let renamed = series.values.allSatisfy { $0.title == "Renamed" && $0.timeMinutes == 600 }
-                #expect(renamed, "combined edit kept whole: every series row renamed")
-                #expect(live.tasks[jan7.id]?.notes == "changed")
-            case .deleteOccurrence, .deleteSeries, .deleteList, .autoDelete, .restore:
-                // Deletions pending: kept whole for the next save (see above). Every
-                // row that survives is untouched and every earlier record is still there.
-                for (id, row) in live.tasks where before.tasks[id] != nil && operation != .restore {
-                    #expect(row == before.tasks[id], "\(operation): survivor \(row.title) untouched")
-                }
-                #expect(operation == .restore || Set(before.records.keys).isSubset(of: live.records.keys))
-                #expect(live != before, "\(operation): the complete change is pending, not dropped")
+                #expect(!restarted, "\(operation): undone in place, no restart")
+            case .combinedEdit, .deleteOccurrence, .deleteSeries, .deleteList, .autoDelete, .restore:
+                // Deletions pending, which SwiftData can't undo: the app restarts
+                // without saving, and nothing may save this context before it does.
+                #expect(restarted, "\(operation): the app restarts to discard the change")
+                #expect(!context.autosaveEnabled, "\(operation): autosave can't commit it meanwhile")
             }
         }
         let reopened = try open(dir)
         #expect(try graph(reopened) == before, "\(operation): nothing reached the disk")
-        try held?.save()   // the kept change commits at the next save, as in the app
     }
 
     // MARK: - 2. Schema-2 backup: disk → backup → disk, exactly
@@ -401,6 +395,25 @@ struct SeriesSignoffTests {
         }
     }
 
+    @Test("A rule change that excludes the opened occurrence keeps it when the same Done adds its first subtask",
+          arguments: ["weekly", "stop"])
+    func subtaskWithRuleChangeKeepsOccurrence(_ change: String) throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let f = try fixture(context)
+        let row = f.byKey[key(1, 6)]!   // future, untouched, not a Thursday
+        #expect(row.occurrenceModified == false && row.subtasks.isEmpty)
+        let id = row.id
+        let rule = change == "weekly" ? RecurrenceRule(frequency: .weekly, weekdays: [5], startDate: date(1, 1))
+                                      : RecurrenceRule(frequency: .daily, end: .until(date(1, 5)), startDate: date(1, 1))
+        let shared = SharedAttributes(row)
+        try TaskEditCommit.commit(TaskEdit(originalShared: shared, editedShared: shared,
+                                           subtasks: [SubtaskDraft(id: UUID(), title: "agenda", isDone: false, sortIndex: 1)],
+                                           rule: .replace(rule)),
+                                  to: row, context: context, today: date(1, 5), horizon: date(1, 31), calendar: cal())
+        let kept = try #require(try context.fetch(FetchDescriptor<TaskItem>()).first { $0.id == id }, "the opened occurrence is kept")
+        #expect(kept.subtasks.map(\.title) == ["agenda"] && kept.occurrenceModified == true)
+    }
+
     // MARK: - 5. Offline catch-up and far-future reconciliation (exact sets)
 
     @Test("After days away, the old rule catches up through today and the new one starts tomorrow")
@@ -561,4 +574,12 @@ struct SeriesSignoffTests {
         #expect(try await matches(), "after a purge")
         #expect(client.pending[ReminderPlanner.identifierPrefix + f.oneOff.id.uuidString] != nil)
     }
+}
+
+/// Contexts whose failed change the app would discard by quitting; kept alive for the
+/// rest of the run, because releasing a container with unsaved changes crashes SwiftData.
+@MainActor
+enum DiscardedContexts {
+    private static var all: [ModelContext] = []
+    static func keep(_ context: ModelContext) { all.append(context) }
 }

@@ -7,11 +7,12 @@ extension ModelContext {
     ///
     /// SwiftData crashes when `rollback()` has to undo a deletion — reproduced with any
     /// deleted task that has subtasks — so transactions do every step that can fail
-    /// before deleting anything. If only the final save fails with deletions pending,
-    /// the complete change is kept and committed by the next save instead of undone.
+    /// before deleting anything. If the final save fails with deletions pending, the
+    /// app restarts without saving instead (`PersistenceRecovery`).
+    @MainActor
     func undoFailedTransaction() {
         guard deletedModelsArray.isEmpty else {
-            NSLog("TickyTask: a save failed; keeping the complete change for the next save (it can't be safely undone)")
+            PersistenceRecovery.discardByRelaunching(self)
             return
         }
         rollback()

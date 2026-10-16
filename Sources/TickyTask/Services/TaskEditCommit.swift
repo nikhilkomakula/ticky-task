@@ -93,6 +93,9 @@ enum TaskEditCommit {
                 try propagate(from: edit.originalShared, to: edit.editedShared,
                               across: seriesRows(of: task, context: context), context: context, now: now)
             }
+            // Edited subtasks are this occurrence's own work: mark it before a rule
+            // change, which removes only untouched occurrences.
+            if edit.subtasks != nil { task.markOccurrenceModified() }
             switch edit.rule {
             case .unchanged:
                 break

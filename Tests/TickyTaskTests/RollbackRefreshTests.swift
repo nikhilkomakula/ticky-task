@@ -33,19 +33,21 @@ struct RollbackRefreshTests {
         #expect(try context.fetch(FetchDescriptor<TaskItem>()).map(\.title) == ["saved"])
     }
 
-    @Test("A failed save with a deletion pending keeps the complete change instead of crashing")
-    func deletionIsKeptNotRolledBack() throws {
+    @Test("A failed save with a deletion pending restarts the app instead of crashing or saving it later")
+    func deletionIsDiscardedByRestarting() throws {
         let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        DiscardedContexts.keep(context)
         let task = TaskItem(title: "has subtasks", dayKey: "20260101")
         task.subtasks = [Subtask(title: "sub")]
         context.insert(task)
         try context.save()
 
+        var restarted = false
+        PersistenceRecovery.testHook = { restarted = true }
+        defer { PersistenceRecovery.testHook = nil }
         context.delete(task)               // rollback() would crash SwiftData here
         context.undoFailedTransaction()
-        #expect(context.hasChanges, "the deletion stays pending for the next save")
-        try context.save()
-        #expect(try context.fetch(FetchDescriptor<TaskItem>()).isEmpty)
-        #expect(try context.fetch(FetchDescriptor<Subtask>()).isEmpty)
+        #expect(restarted, "the app restarts to discard the change instead of saving it later")
+        #expect(!context.autosaveEnabled, "autosave can't commit it meanwhile")
     }
 }

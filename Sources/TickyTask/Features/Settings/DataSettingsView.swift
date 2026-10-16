@@ -156,34 +156,6 @@ struct DataSettingsView: View {
     }
 }
 
-/// Relaunches the app so a pending data-folder move can be applied at the next
-/// launch (the store is relocated before it's opened).
-private enum AppRelaunch {
-    /// Wait for this instance to fully exit — releasing the store — then relaunch,
-    /// so two instances never touch the store at once. Returns false if the helper
-    /// couldn't be started; the caller then stays open rather than quitting into
-    /// nothing (the pending data move still applies on the next manual launch).
-    @discardableResult
-    static func now() -> Bool {
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let script = "while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \(quoted(Bundle.main.bundlePath))"
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", script]
-        do {
-            try task.run()
-        } catch {
-            return false
-        }
-        NSApp.terminate(nil)
-        return true
-    }
-
-    private static func quoted(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-}
-
 private struct ImportPassphraseSheet: View {
     @Bindable var coordinator: BackupCoordinator
 

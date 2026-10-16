@@ -324,6 +324,12 @@ struct TaskEditorView: View {
         )
         let horizon = Calendar.current.date(byAdding: .day, value: RecurrenceMaterializer.defaultHorizonDays,
                                             to: Date()) ?? Date()
+        #if DEBUG
+        if UITestSupport.failNextTaskSave {
+            UITestSupport.failNextTaskSave = false
+            PersistenceFaults.armed.insert(.transaction)
+        }
+        #endif
         do {
             let scheduleChanged = try TaskEditCommit.commit(edit, to: task, context: context, horizon: horizon)
             if scheduleChanged { NotificationCenter.default.post(name: .tickyTaskSeriesChanged, object: nil) }

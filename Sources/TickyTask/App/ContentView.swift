@@ -26,6 +26,7 @@ struct ContentView: View {
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
     @State private var dragController = DragController()
+    @State private var showRelaunchNotice = PersistenceRecovery.didRelaunch
 
     /// The day key carry-forward last ran for. Lets a day rolling over while the
     /// app stays open (past midnight, without a relaunch or refocus) still trigger
@@ -60,6 +61,11 @@ struct ContentView: View {
         .background(WindowConfigurator(configure: maximize))
         .preferredColorScheme(preferredColorScheme)
         .task { await runLaunchTasks() }
+        .alert("TickyTask restarted", isPresented: $showRelaunchNotice) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("A change couldn’t be saved, so TickyTask restarted without it. Everything saved before that change is unchanged.")
+        }
         .onAppear {
             if !UITestSupport.isHostingUnitTests { GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow) }
             applyActivationPolicy()

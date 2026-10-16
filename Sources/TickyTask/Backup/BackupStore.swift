@@ -94,6 +94,9 @@ enum BackupStore {
     /// Replace the entire store with `store`'s contents in one transaction.
     static func restore(_ store: BackupStoreDTO, context: ModelContext) throws {
         try BackupValidator.validate(store)
+        // Commit unrelated pending edits first, outside the transaction, so a failure
+        // here undoes nothing of theirs.
+        try RecurrenceMaterializer.checkpoint(context)
         do {
             // Every step that can fail comes before the first deletion (see
             // `undoFailedTransaction`); older-format series are converted from the

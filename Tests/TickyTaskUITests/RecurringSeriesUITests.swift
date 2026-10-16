@@ -72,6 +72,13 @@ final class RecurringSeriesUITests: XCTestCase {
             .waitForExistence(timeout: 3)
     }
 
+    /// Show the week containing `date`.
+    private func show(_ app: XCUIApplication, _ date: Date) {
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: date)!.start
+        let weeks = calendar.dateComponents([.weekOfYear], from: monday(weeks: 0), to: weekStart).weekOfYear!
+        if weeks != shownWeek { go(app, weeks: weeks - shownWeek) }
+    }
+
     // MARK: - Rows
 
     private func columnFrame(_ app: XCUIApplication, _ dayKey: String) -> CGRect {
@@ -251,9 +258,19 @@ final class RecurringSeriesUITests: XCTestCase {
         let add = app.textFields["editor-add-subtask"]
         add.click()
         add.typeText("Prepare agenda\r")
+        add.typeText("Book room\r")
+        app.buttons["subtask-toggle-Prepare agenda"].click()
         done(app)
-        XCTAssertTrue(rowGlyphs(app, "Standup", on: mon).contains("0/1"), "badge on the edited occurrence")
-        XCTAssertFalse(rowGlyphs(app, "Standup", on: tue).contains("0/1"), "no badge on a sibling")
+        XCTAssertTrue(rowGlyphs(app, "Standup", on: mon).contains("1/2"), "badge on the edited occurrence")
+        XCTAssertFalse(rowGlyphs(app, "Standup", on: tue).contains { $0.contains("/") }, "no badge on a sibling")
+
+        open(app, "Standup", on: tue)
+        XCTAssertFalse(app.buttons["subtask-toggle-Prepare agenda"].exists, "the sibling has no subtasks")
+        done(app)
+        open(app, "Standup", on: mon)
+        XCTAssertTrue(app.buttons["subtask-toggle-Prepare agenda"].exists && app.buttons["subtask-toggle-Book room"].exists,
+                      "both subtasks are kept on their occurrence")
+        app.buttons["editor-cancel"].click()
     }
 
     /// 4. Scope captions appear on a series occurrence only; clearing the time hides the reminder.
@@ -304,19 +321,19 @@ final class RecurringSeriesUITests: XCTestCase {
         let firstKey = key(first)
         let secondKey = key(second)
 
-        // Navigate to the week containing the first occurrence if needed
-        if first < monday(weeks: 0) { go(app, weeks: -1) }
-
         // Add distinct notes to the second occurrence
+        show(app, second)
         open(app, "Standup", on: secondKey)
         typeNotes(app, "keep me")
         done(app)
 
-        // Delete the first (completed) occurrence
+        // Delete the first (completed) occurrence (on Tuesdays it is in the previous week)
+        show(app, first)
         delete(app, "Standup", on: firstKey, choice: "Delete This Occurrence")
         XCTAssertTrue(waitForRow(app, "Standup", on: firstKey, present: false), "the first occurrence is deleted")
 
         // The second occurrence should still have its notes
+        show(app, second)
         XCTAssertTrue(rowGlyphs(app, "Standup", on: secondKey).contains("Has notes"), "the second occurrence keeps its notes")
         open(app, "Standup", on: secondKey)
         XCTAssertTrue(notesValue(app).contains("keep me"), "exact notes text is preserved")
@@ -522,7 +539,7 @@ final class RecurringSeriesUITests: XCTestCase {
         let expected = (0..<7).map { day($0, from: monday(weeks: 0)) }.filter { $0 >= day(-2) }.count
         let rows = app.buttons.matching(identifier: "summary-task-Standup")
         XCTAssertEqual(rows.count, expected, "one selectable row per occurrence this week, no definition")
-        let selectSeries = app.buttons["Select series (\(expected))"]
+        let selectSeries = app.buttons.matching(identifier: "Select series (\(expected))").firstMatch
         if expected > 1 {
             XCTAssertTrue(selectSeries.exists)
             selectSeries.click()
@@ -575,20 +592,25 @@ final class RecurringSeriesUITests: XCTestCase {
         open(app, "Standup", on: mon)
         let timeToggle = app.switches["editor-time-toggle"]
         timeToggle.click()
-        XCTAssertTrue(app.switches["editor-reminder-toggle"].waitForExistence(timeout: 3), "reminder toggle appears with time")
+        let reminder = app.switches["editor-reminder-toggle"]
+        XCTAssertTrue(reminder.waitForExistence(timeout: 3), "reminder toggle appears with time")
+        reminder.click()
         done(app)
 
-        // The time is shared: Tuesday's occurrence shows it too.
+        // The time and reminder are shared: Tuesday's occurrence shows them too.
         XCTAssertTrue(rowGlyphs(app, "Standup", on: tue).contains("09:00"), "sibling shows the shared time")
+        XCTAssertTrue(rowGlyphs(app, "Standup", on: tue).contains("Reminder"), "sibling shows the shared reminder")
 
         // Remove the time from Tuesday
         open(app, "Standup", on: tue)
+        XCTAssertEqual(reminder.value as? Int, 1, "the sibling's editor shows the reminder on")
         timeToggle.click()
         XCTAssertTrue(waitForGone(app.switches["editor-reminder-toggle"]), "reminder toggle disappears when time is removed")
         done(app)
 
-        // Clearing the shared time on Tuesday clears it on Monday as well.
+        // Clearing the shared time on Tuesday clears it (and its reminder) on Monday as well.
         XCTAssertFalse(rowGlyphs(app, "Standup", on: mon).contains("09:00"), "clearing the time reaches every occurrence")
+        XCTAssertFalse(rowGlyphs(app, "Standup", on: mon).contains("Reminder"), "no reminder is left without a time")
     }
 
     /// 18. Deleting the entire series from a past completed row removes all occurrences across weeks and lists.
@@ -597,20 +619,19 @@ final class RecurringSeriesUITests: XCTestCase {
         let first = day(-2)
         let firstKey = key(first)
 
-        // Navigate to the past occurrence
-        if first < monday(weeks: 0) { go(app, weeks: -1) }
+        show(app, first)
 
         // Delete entire series from the completed past occurrence
         delete(app, "Standup", on: firstKey, choice: "Delete Entire Series")
 
         // Verify: no Standup in this week
         XCTAssertTrue(waitForRow(app, "Standup", on: firstKey, present: false), "past occurrence deleted")
-        for offset in [0, 1, 2, 3, 4, 5, 6] {
-            XCTAssertNil(row(app, "Standup", on: key(day(offset))), "all today's occurrences removed")
+        today(app)
+        for offset in 0..<7 {
+            XCTAssertNil(row(app, "Standup", on: key(day(offset, from: monday(weeks: 0)))), "this week's occurrences removed")
         }
 
         // Verify: no Standup in future weeks
-        today(app)
         go(app, weeks: 2)
         let anyFuture = (0..<7).contains { row(app, "Standup", on: key(day($0, from: monday(weeks: 2)))) != nil }
         XCTAssertFalse(anyFuture, "future occurrences removed by whole-series deletion")
@@ -630,11 +651,11 @@ final class RecurringSeriesUITests: XCTestCase {
 
         var app = launch(store)
 
-        // Navigate to first occurrence and mark it done (it already is), then delete it
-        if first < monday(weeks: 0) { go(app, weeks: -1) }
+        show(app, first)
         delete(app, "Standup", on: firstKey, choice: "Delete This Occurrence")
 
         // Add notes to the second occurrence
+        show(app, second)
         open(app, "Standup", on: secondKey)
         typeNotes(app, "persisted-notes-token")
         done(app)
@@ -642,15 +663,77 @@ final class RecurringSeriesUITests: XCTestCase {
         // Terminate and relaunch
         app.terminate()
         app = launch(store)
+        shownWeek = 0
 
         // Verify: first occurrence is still gone (skip persists)
-        if first < monday(weeks: 0) { go(app, weeks: -1) }
+        show(app, first)
+        XCTAssertTrue(columnFrame(app, firstKey) != .null, "the first occurrence's day is shown")
         XCTAssertTrue(waitForRow(app, "Standup", on: firstKey, present: false, timeout: 6), "skipped occurrence remains deleted")
 
         // Verify: second occurrence still has its notes
+        show(app, second)
         XCTAssertTrue(rowGlyphs(app, "Standup", on: secondKey).contains("Has notes"), "notes glyph persists")
         open(app, "Standup", on: secondKey)
         XCTAssertTrue(notesValue(app).contains("persisted-notes-token"), "exact notes content persists")
         done(app)
+    }
+
+    /// 20. A save that fails keeps the editor open with the edit; Cancel then discards
+    /// it, and a later unrelated save doesn't bring it back.
+    func testFailedSaveThenCancelDiscards() throws {
+        let app = launch(["-uitestFailTaskSave"])
+        let todayKey = key(Date()), tomorrow = day(1)
+        open(app, "Standup", on: todayKey)
+        setTitle(app, "Standup renamed")
+        app.buttons["editor-done"].click()
+        let ok = NSPredicate(format: "label == 'OK' AND elementType == %d", XCUIElement.ElementType.button.rawValue)
+        let alert = app.descendants(matching: .any).matching(ok)
+        let deadline = Date().addingTimeInterval(5)
+        while !alert.allElementsBoundByIndex.contains(where: \.isHittable) && Date() < deadline { usleep(250_000) }
+        let button = try XCTUnwrap(alert.allElementsBoundByIndex.first(where: \.isHittable), "the save error is shown")
+        button.click()
+        XCTAssertTrue(app.buttons["editor-done"].exists, "the editor stays open")
+        XCTAssertEqual(app.textFields["editor-title"].value as? String, "Standup renamed", "with the edit still in it")
+        app.buttons["editor-cancel"].click()
+        XCTAssertTrue(waitForGone(app.buttons["editor-done"]))
+
+        XCTAssertTrue(waitForRow(app, "Standup", on: todayKey), "the series keeps its saved title")
+        open(app, "Alpha", on: todayKey)
+        setTitle(app, "Alpha edited")
+        done(app)
+        XCTAssertTrue(waitForRow(app, "Alpha edited", on: todayKey))
+        show(app, tomorrow)
+        XCTAssertTrue(waitForRow(app, "Standup", on: key(tomorrow)), "the cancelled rename never reached a sibling")
+        XCTAssertNil(row(app, "Standup renamed", on: key(tomorrow)))
+    }
+
+    /// 21. A failed save that can't be undone in place (a rule change removing future
+    /// occurrences) restarts the app without it: the restart is explained, and the
+    /// saved daily schedule is unchanged.
+    func testFailedDestructiveSaveRestartsWithSavedData() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("TickyTaskUITest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ["-uitestStore", dir.appendingPathComponent("TickyTask.store").path]
+
+        let app = launch(store + ["-uitestFailTaskSave"])
+        go(app, weeks: 1)
+        open(app, "Standup", on: key(monday(weeks: 1)))
+        app.popUpButtons["repeat-frequency"].click()
+        app.menuItems["Weekly"].click()
+        app.buttons["editor-done"].click()
+
+        // The app quits without saving and opens again by itself (same isolated store).
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "the failing instance quits")
+        let relaunched = XCUIApplication()
+        XCTAssertTrue(relaunched.wait(for: .runningForeground, timeout: 40), "a new instance starts")
+        XCTAssertTrue(relaunched.staticTexts["TickyTask restarted"].waitForExistence(timeout: 20), "the restart is explained")
+        relaunched.terminate()
+
+        let fresh = launch(store)
+        shownWeek = 0
+        go(fresh, weeks: 1)
+        let shown = (0..<7).filter { waitForRow(fresh, "Standup", on: key(day($0, from: monday(weeks: 1))), timeout: 2) }
+        XCTAssertEqual(shown.count, 7, "still daily: the failed rule change never reached the disk")
     }
 }
