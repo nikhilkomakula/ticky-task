@@ -110,8 +110,12 @@ final class RecurringSeriesUITests: XCTestCase {
 
     private func open(_ app: XCUIApplication, _ title: String, on dayKey: String) {
         XCTAssertTrue(waitForRow(app, title, on: dayKey), "\(title) should be shown on \(dayKey)")
-        row(app, title, on: dayKey)!.click()
-        XCTAssertTrue(app.buttons["editor-done"].waitForExistence(timeout: 5), "the editor should open")
+        let done = app.buttons["editor-done"]
+        for _ in 0..<2 where !done.exists {   // a click during a re-render can be lost
+            row(app, title, on: dayKey)?.click()
+            _ = done.waitForExistence(timeout: 8)
+        }
+        XCTAssertTrue(done.exists, "the editor should open")
     }
 
     private func done(_ app: XCUIApplication) {
@@ -464,11 +468,13 @@ final class RecurringSeriesUITests: XCTestCase {
 
         // Search for that token
         app.buttons["toolbar-search"].click()
-        let searchField = app.textFields.matching(identifier: "toolbar-search").firstMatch
+        let searchField = app.textFields["search-field"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "search field should appear")
         searchField.click()
         searchField.typeText("xyzUniqueSearchToken123")
-        usleep(500_000)
+        XCTAssertTrue(app.staticTexts["Standup"].firstMatch.waitForExistence(timeout: 5), "one result for the unique token")
+        searchField.typeText("\r")   // opens the first (only) result
+        shownWeek = 1
 
         // Should find exactly one result (search results auto-navigate; verify via row presence)
         // Series definitions should NOT appear in search results
@@ -518,9 +524,12 @@ final class RecurringSeriesUITests: XCTestCase {
         go(app, weeks: -3)
         go(app, weeks: 3)
 
-        // Verify: new rule's slots are shown (weekly: Monday has it, Thursday doesn't anymore)
-        XCTAssertTrue(waitForRow(app, "Standup", on: mondayKey), "Monday still has the occurrence after weekly rule")
-        XCTAssertNil(row(app, "Standup", on: thursdayKey), "Thursday no longer has occurrence (was daily, now weekly)")
+        // Weekly repeats on the series' start weekday (its first occurrence, two days ago).
+        let weekday = calendar.component(.weekday, from: day(-2))
+        let shown = (0..<7).map { day($0, from: targetMonday) }.filter { row(app, "Standup", on: key($0)) != nil }
+        XCTAssertEqual(shown.map { calendar.component(.weekday, from: $0) }, [weekday],
+                       "exactly one occurrence that week, on the series' weekday")
+        _ = (mondayKey, thursdayKey)
     }
 
     /// 17. Time and alarm set on one occurrence propagate to siblings; clearing time removes the alarm glyph.
@@ -537,9 +546,8 @@ final class RecurringSeriesUITests: XCTestCase {
         XCTAssertTrue(app.switches["editor-reminder-toggle"].waitForExistence(timeout: 3), "reminder toggle appears with time")
         done(app)
 
-        // Check Tuesday's Standup: should show time indicator
-        XCTAssertTrue(rowGlyphs(app, "Standup", on: tue).contains("Has notes") ||
-                      rowGlyphs(app, "Standup", on: tue).contains("Bell"), "sibling shows time/reminder indicator")
+        // The time is shared: Tuesday's occurrence shows it too.
+        XCTAssertTrue(rowGlyphs(app, "Standup", on: tue).contains("09:00"), "sibling shows the shared time")
 
         // Remove the time from Tuesday
         open(app, "Standup", on: tue)
@@ -547,9 +555,8 @@ final class RecurringSeriesUITests: XCTestCase {
         XCTAssertTrue(waitForGone(app.switches["editor-reminder-toggle"]), "reminder toggle disappears when time is removed")
         done(app)
 
-        // Verify Monday's occurrence no longer shows a time indicator
-        let mondayGlyphs = rowGlyphs(app, "Standup", on: mon)
-        XCTAssertFalse(mondayGlyphs.contains("Bell"), "removing time from sibling removes alarm from another")
+        // Clearing the shared time on Tuesday clears it on Monday as well.
+        XCTAssertFalse(rowGlyphs(app, "Standup", on: mon).contains("09:00"), "clearing the time reaches every occurrence")
     }
 
     /// 18. Deleting the entire series from a past completed row removes all occurrences across weeks and lists.

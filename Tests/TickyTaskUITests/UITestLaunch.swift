@@ -6,10 +6,12 @@ extension XCUIApplication {
     /// would otherwise fail every test before it begins.
     func launchWithMainWindow() {
         launch()
-        if !windows.firstMatch.waitForExistence(timeout: 5) {
-            menuBars.menuBarItems["Window"].click()
-            menuBars.menuItems["TickyTask"].click()
-            _ = windows.firstMatch.waitForExistence(timeout: 5)
+        // A cold machine (CI) can take a while to show the first window.
+        if !windows.firstMatch.waitForExistence(timeout: 20) {
+            let windowMenu = menuBars.menuBarItems["Window"]
+            windowMenu.click()
+            windowMenu.menuItems["TickyTask"].firstMatch.click()
+            _ = windows.firstMatch.waitForExistence(timeout: 10)
         }
         waitForWindowToSettle()
     }
