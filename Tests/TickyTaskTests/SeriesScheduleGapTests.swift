@@ -9,14 +9,22 @@ import SwiftData
 @MainActor
 @Suite("Series schedule gaps")
 struct SeriesScheduleGapTests {
+    /// Every day key from `start` through `end`, inclusive.
+    private func keys(from start: (Int, Int, Int), through end: (Int, Int, Int)) -> [String] {
+        let c = calendar()
+        var day = c.date(from: DateComponents(year: start.0, month: start.1, day: start.2))!
+        let last = c.date(from: DateComponents(year: end.0, month: end.1, day: end.2))!
+        var out: [String] = []
+        while day <= last { out.append(WeekMath.dayKey(for: day, calendar: c)); day = c.date(byAdding: .day, value: 1, to: day)! }
+        return out
+    }
+
     private func makeContext() -> ModelContext {
         ModelContext(ModelContainerProvider.makeInMemoryContainer())
     }
 
     private func makeDiskContext(at url: URL) throws -> ModelContext {
-        let config = ModelConfiguration(url: url, isStoredInMemoryOnly: false)
-        let container = try ModelContainer(for: TaskItem.self, TaskOccurrence.self, Subtask.self, configurations: config)
-        return ModelContext(container)
+        ModelContext(try ModelContainerProvider.makeContainer(at: url.appendingPathComponent("TickyTask.store")))
     }
 
     private func calendar(_ tz: String = "America/New_York") -> Calendar {
@@ -75,7 +83,7 @@ struct SeriesScheduleGapTests {
         var occsAfter = try occurrences(of: definition, context)
 
         // 1. Old-rule slots owed through day 5 (Oct 1-5): 5 daily occurrences
-        let oldRuleSlots = Set(dayKey(2026, 10, 1)...dayKey(2026, 10, 5))
+        let oldRuleSlots = Set(keys(from: (2026, 10, 1), through: (2026, 10, 5)))
         let oldRuleOccs = occsAfter.filter { occSlot in
             guard let key = occSlot.occurrenceKey else { return false }
             return oldRuleSlots.contains(key) && key <= dayKey(day5, cal)

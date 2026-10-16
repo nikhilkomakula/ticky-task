@@ -109,6 +109,8 @@ xcodebuild test -project TickyTask.xcodeproj -scheme TickyTask \
 
 **Your data is safe while you develop:** the Debug configuration (the default for `⌘R` and `xcodebuild test`) uses its own bundle id, `com.tickytask.mac.dev`, and its own default data folder, `~/Library/Application Support/TickyTask-Dev/`, so it never opens the installed app's store, shares its preferences or reminders, or quits it. Unit tests run inside an in-memory store (their host app stays out of the Dock and never takes focus), and UI tests (`-uitest`) use an in-memory store or an explicitly isolated temporary one.
 
+**CI:** every pull request runs the unit tests ([`macos-ci.yml`](.github/workflows/macos-ci.yml)); the UI tests, which drive the real app with clicks, typing, and drags, run on a GitHub-hosted Mac for every push to a `feature/**` branch ([`ui-tests.yml`](.github/workflows/ui-tests.yml)) so they never take over a developer's screen.
+
 The only third-party dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (resolved via Swift Package Manager).
 
 ### Opening the unsigned build

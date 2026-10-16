@@ -9,9 +9,9 @@ import SwiftData
 @MainActor
 @Suite("Series failure atomicity", .serialized)
 struct SeriesFailureAtomicityTests {
-    private func makeContext(at path: URL) -> ModelContext {
-        let container = try! ModelContainerProvider.makeContainer(at: path)
-        return ModelContext(container)
+    /// A context on an on-disk store inside the test's temporary folder `dir`.
+    private func makeContext(at dir: URL) throws -> ModelContext {
+        ModelContext(try ModelContainerProvider.makeContainer(at: dir.appendingPathComponent("TickyTask.store")))
     }
 
     private func makeInMemoryContext() -> ModelContext {
@@ -45,7 +45,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
         let c = cal()
 
         // Create a legacy template with a first occurrence and a child.
@@ -73,7 +73,7 @@ struct SeriesFailureAtomicityTests {
         #expect(beforeSnapshot.matches(afterSnapshot))
 
         // Close and reopen the store to verify persistence.
-        let context2 = makeContext(at: tempDir)
+        let context2 = try makeContext(at: tempDir)
         let reopenSnapshot = try snapshot(context: context2)
         #expect(beforeSnapshot.matches(reopenSnapshot))
     }
@@ -84,7 +84,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
         let c = cal()
 
         // Create a series with a dated occurrence.
@@ -134,7 +134,7 @@ struct SeriesFailureAtomicityTests {
         #expect(beforeSnapshot.matches(afterSnapshot))
 
         // Close and reopen to verify persistence.
-        let context2 = makeContext(at: tempDir)
+        let context2 = try makeContext(at: tempDir)
         let reopenSnapshot = try snapshot(context: context2)
         #expect(beforeSnapshot.matches(reopenSnapshot))
     }
@@ -145,7 +145,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
         let c = cal()
 
         let seed = TaskItem(title: "Daily", dayKey: "20260101")
@@ -181,7 +181,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
         let c = cal()
 
         // Create a series with a completed occurrence.
@@ -225,7 +225,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
         let c = cal()
 
         // Create a series with a completed and old occurrence.
@@ -265,7 +265,7 @@ struct SeriesFailureAtomicityTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
 
         // Create an existing store with one task.
         let existing = TaskItem(title: "Existing", dayKey: "20260101")

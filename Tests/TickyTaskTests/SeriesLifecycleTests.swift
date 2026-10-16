@@ -8,6 +8,11 @@ import SwiftData
 @MainActor
 @Suite("Series lifecycle")
 struct SeriesLifecycleTests {
+    /// A context on an on-disk store in `dir` (reopened by calling this again).
+    private func makeDiskContext(at dir: URL) throws -> ModelContext {
+        ModelContext(try ModelContainerProvider.makeContainer(at: dir.appendingPathComponent("TickyTask.store")))
+    }
+
     private func makeContext() -> ModelContext {
         ModelContext(ModelContainerProvider.makeInMemoryContainer())
     }
@@ -955,14 +960,14 @@ struct SeriesLifecycleTests {
             #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 3) })
 
             // Take backup
-            let backup = try BackupStore.export(context: context)
-            backupData = try JSONEncoder().encode(backup)
+            let backup = try BackupStore.makeSnapshot(context: context)
+            backupData = try BackupCoding.encoder().encode(backup)
         }
 
         // Session 2: Reopen, materialize further, verify still purged
         do {
             let context = try makeDiskContext(at: tempDir)
-            var definition = try RecurrenceMaterializer.definitions(context).first!
+            let definition = try RecurrenceMaterializer.definitions(context).first!
 
             // Further materialize
             try RecurrenceMaterializer.materialize(context: context, through: date(2026, 2, 28, c), calendar: c)
@@ -981,8 +986,8 @@ struct SeriesLifecycleTests {
         // Session 3: Restore backup, verify still purged
         if let backupData = backupData {
             let context = try makeDiskContext(at: tempDir)
-            let backup = try JSONDecoder().decode(BackupModel.self, from: backupData)
-            try BackupStore.restore(backup: backup, context: context)
+            let backup = try BackupCoding.decoder().decode(BackupStoreDTO.self, from: backupData)
+            try BackupStore.restore(backup, context: context)
 
             let definition = try RecurrenceMaterializer.definitions(context).first!
             let remaining = try occurrences(of: definition, context)

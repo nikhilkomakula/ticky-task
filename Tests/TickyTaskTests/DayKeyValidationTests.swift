@@ -19,9 +19,9 @@ struct DayKeyValidationTests {
         ModelContext(ModelContainerProvider.makeInMemoryContainer())
     }
 
-    private func makeContext(at path: URL) -> ModelContext {
-        let container = try! ModelContainerProvider.makeContainer(at: path)
-        return ModelContext(container)
+    /// A context on an on-disk store inside the test's temporary folder `dir`.
+    private func makeContext(at dir: URL) throws -> ModelContext {
+        ModelContext(try ModelContainerProvider.makeContainer(at: dir.appendingPathComponent("TickyTask.store")))
     }
 
     // MARK: - WeekMath.date(fromDayKey:) validation
@@ -279,7 +279,7 @@ struct DayKeyValidationTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
 
         // Create an existing task in the store.
         let existing = TaskItem(title: "Existing", dayKey: "20260101")
@@ -332,7 +332,7 @@ struct DayKeyValidationTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
 
         // Create an existing task in the store.
         let existing = TaskItem(title: "Existing", dayKey: "20260101")
@@ -383,7 +383,7 @@ struct DayKeyValidationTests {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        let context = makeContext(at: tempDir)
+        let context = try makeContext(at: tempDir)
 
         // Create an existing task.
         let existing = TaskItem(title: "Existing", dayKey: "20260101")
