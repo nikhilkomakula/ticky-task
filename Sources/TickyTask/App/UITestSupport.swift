@@ -24,6 +24,10 @@ enum UITestSupport {
     }
 
     #if DEBUG
+    /// `-uitestFailPurgeSaves`: every auto-delete save fails (a store that keeps
+    /// rejecting saves), to exercise recovery without a restart loop.
+    static var failPurgeSaves: Bool { isRunning && ProcessInfo.processInfo.arguments.contains("-uitestFailPurgeSaves") }
+
     /// `-uitestFailTaskSave`: the first editor Done fails to save, to exercise the
     /// save-error path.
     @MainActor static var failNextTaskSave = isRunning && ProcessInfo.processInfo.arguments.contains("-uitestFailTaskSave")
@@ -63,6 +67,11 @@ enum UITestSupport {
             }
             if ProcessInfo.processInfo.arguments.contains("-uitestSummarySeed") {
                 try seedWeeklySummary(service)
+            }
+            if ProcessInfo.processInfo.arguments.contains("-uitestOldCompletion") {
+                // Completed a month ago: due for auto-delete.
+                let old = try service.addTask(title: "Done long ago", location: .day(seededDayKey))
+                old.setDone(true, at: Date(timeIntervalSinceNow: -30 * 86_400))
             }
             if ProcessInfo.processInfo.arguments.contains("-uitestRecurringSeed") {
                 try seedRecurringSeries(service)

@@ -41,6 +41,9 @@ enum AutoDeleteService {
             }
             // Roll back on failure so the deletions don't linger uncommitted in the
             // context (where an unrelated later save could commit them silently).
+            #if DEBUG
+            if UITestSupport.failPurgeSaves { PersistenceFaults.armed.insert(.transaction) }
+            #endif
             if deletedAny { try context.saveTransaction() }
         } catch {
             context.undoFailedTransaction()

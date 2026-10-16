@@ -771,4 +771,42 @@ final class RecurringSeriesUITests: XCTestCase {
         let shown = (0..<7).filter { waitForRow(fresh, "Standup", on: key(day($0, from: monday(weeks: 1))), timeout: 2) }
         XCTAssertEqual(shown.count, 7, "still daily: the failed rule change never reached the disk")
     }
+
+    /// 22. A store that keeps failing to save, with a task due for auto-delete: the
+    /// app restarts once, then stays usable — through edits and re-activation —
+    /// instead of restarting again and again.
+    func testPersistentPurgeFailureRestartsOnlyOnce() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("TickyTaskUITest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = XCUIApplication()
+        first.launchArguments = ["-uitest", "-uitestStore", dir.appendingPathComponent("TickyTask.store").path,
+                                 "-uitestOldCompletion", "-uitestFailPurgeSaves",
+                                 "-autoDeleteCompletedEnabled", "YES", "-autoDeleteCompletedDays", "1",
+                                 "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
+        first.launch()
+        XCTAssertTrue(first.wait(for: .notRunning, timeout: 40), "the failed purge restarts the app")
+
+        let app = XCUIApplication()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 40), "a new instance starts")
+        let notice = app.staticTexts["TickyTask restarted"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 20), "the restart is explained")
+        app.buttons["OK"].firstMatch.click()
+        let todayKey = key(Date())
+        XCTAssertTrue(waitForRow(app, "Done long ago", on: todayKey), "the failed purge never reached the disk")
+
+        open(app, "Alpha", on: todayKey)
+        setTitle(app, "Alpha after recovery")
+        done(app)
+        XCTAssertTrue(waitForRow(app, "Alpha after recovery", on: todayKey), "the recovered app saves normally")
+
+        XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
+        sleep(2)
+        app.activate()
+        sleep(6)
+        XCTAssertEqual(app.state, .runningForeground, "re-activation doesn't restart it")
+        XCTAssertFalse(notice.exists, "no second restart")
+        XCTAssertTrue(waitForRow(app, "Alpha after recovery", on: todayKey))
+        app.terminate()
+    }
 }

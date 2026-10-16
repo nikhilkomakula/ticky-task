@@ -45,6 +45,7 @@ struct RollbackRefreshTests {
         var restarted = false
         PersistenceRecovery.testHook = { restarted = true }
         defer { PersistenceRecovery.testHook = nil }
+        context.autosaveEnabled = true
         context.delete(task)               // rollback() would crash SwiftData here
         context.undoFailedTransaction()
         #expect(restarted, "the app restarts to discard the change instead of saving it later")
