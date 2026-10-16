@@ -43,7 +43,7 @@ struct SeriesRuleChangeTests {
         return (definitions, occurrences)
     }
 
-    // MARK: - Provenance matrix: nil/false/true × matched/unmatched × past/today/future
+    // MARK: - Provenance basic cases: nil/false/true (separate, not full matrix)
 
     @Test("Provenance nil matched: occurrence with no slot history is kept on rule change")
     func provenanceNilMatched() throws {

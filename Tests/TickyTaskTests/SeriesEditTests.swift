@@ -115,8 +115,9 @@ struct SeriesEditTests {
                                   horizon: date(2026, 2, 1, c), calendar: c)
 
         #expect(!def.isCritical)
-        let allMatch1 = children.allSatisfy(\.isCritical)
-        #expect(!allMatch1)
+        let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
+        let allCriticalFalse = updatedChildren.allSatisfy { !$0.isCritical }
+        #expect(allCriticalFalse)
     }
 
     @Test("Changing time minutes propagates everywhere")
@@ -293,15 +294,23 @@ struct SeriesEditTests {
         let c = cal()
         let (def, children) = try createDailySeries(context, c)
 
-        // Give each child unique notes
+        // Give each child unique notes and rich bytes
         for (i, child) in children.enumerated() {
             child.notes = "Notes for occurrence \(i)"
+            let doc = NotesDocument(blocks: [
+                NotesBlock(kind: .paragraph, runs: [NotesRun(text: "Rich content \(i)")])
+            ])
+            child.notesRich = try NotesCodec.encode(doc)
         }
         try context.save()
 
-        let edited = children[2]
-        let editedNotesAfter = edited.notes
+        // Store original rich bytes per child
+        var originalRichBytes: [UUID: Data?] = [:]
+        for child in children {
+            originalRichBytes[child.id] = child.notesRich
+        }
 
+        let edited = children[2]
         let original = SharedAttributes(edited)
         var changed = original
         changed.title = "Changed title"
@@ -310,11 +319,13 @@ struct SeriesEditTests {
         try TaskEditCommit.commit(edit, to: edited, context: context, today: date(2026, 1, 5, c),
                                   horizon: date(2026, 2, 1, c), calendar: c)
 
-        // Each child's notes must remain unchanged
+        // Each child's notes and rich bytes must remain unchanged
         let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
             .sorted { ($0.occurrenceKey ?? "") < ($1.occurrenceKey ?? "") }
         for (i, child) in updatedChildren.enumerated() {
             #expect(child.notes == "Notes for occurrence \(i)")
+            // Rich bytes must be exactly as stored
+            #expect(child.notesRich == originalRichBytes[child.id] ?? nil)
         }
     }
 
@@ -324,17 +335,18 @@ struct SeriesEditTests {
         let c = cal()
         let (def, children) = try createDailySeries(context, c)
 
-        // Give different subtasks to each occurrence
+        // Give different subtasks to each occurrence with distinct IDs/status/order
+        var subtasksByChild: [UUID: [Subtask]] = [:]
         for (i, child) in children.enumerated() {
-            let sub = Subtask(title: "Subtask for \(i)")
-            sub.sortIndex = Double(i)
+            var subs: [Subtask] = []
+            let sub = Subtask(id: UUID(), title: "Subtask for \(i)", isDone: i % 2 == 0, sortIndex: Double(i))
+            subs.append(sub)
             child.subtasks.append(sub)
+            subtasksByChild[child.id] = subs
         }
         try context.save()
 
         let edited = children[3]
-        let editedSubsBefore = edited.subtasks.map(\.title).sorted()
-
         let original = SharedAttributes(edited)
         var changed = original
         changed.priority = 5
@@ -343,11 +355,18 @@ struct SeriesEditTests {
         try TaskEditCommit.commit(edit, to: edited, context: context, today: date(2026, 1, 5, c),
                                   horizon: date(2026, 2, 1, c), calendar: c)
 
-        // All occurrences retain their original subtasks
+        // All occurrences retain their original subtasks: UUID, title, isDone, sortIndex
         let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
             .sorted { ($0.occurrenceKey ?? "") < ($1.occurrenceKey ?? "") }
         for (i, child) in updatedChildren.enumerated() {
-            #expect(child.subtasks.map(\.title) == ["Subtask for \(i)"])
+            let original = subtasksByChild[child.id]
+            #expect(child.subtasks.count == 1)
+            if child.subtasks.count > 0, let orig = original?.first {
+                #expect(child.subtasks[0].id == orig.id)
+                #expect(child.subtasks[0].title == "Subtask for \(i)")
+                #expect(child.subtasks[0].isDone == (i % 2 == 0))
+                #expect(child.subtasks[0].sortIndex == Double(i))
+            }
         }
     }
 
@@ -358,8 +377,9 @@ struct SeriesEditTests {
         let (def, children) = try createDailySeries(context, c)
 
         // Mark one occurrence done, leave others open
+        let completionDate = date(2026, 1, 3, c)
         let completedChild = children[2]
-        completedChild.setDone(true, at: date(2026, 1, 3, c))
+        completedChild.setDone(true, at: completionDate)
         try context.save()
 
         let edited = children[4]
@@ -374,8 +394,10 @@ struct SeriesEditTests {
         let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
         let updated2 = try #require(updatedChildren.first { $0.occurrenceKey == "20260103" })
         let updated4 = try #require(updatedChildren.first { $0.occurrenceKey == "20260105" })
-        #expect(updated2.isDone && updated2.completedAt != nil)
-        #expect(!updated4.isDone && updated4.completedAt == nil)
+        #expect(updated2.isDone)
+        #expect(updated2.completedAt == completionDate)
+        #expect(!updated4.isDone)
+        #expect(updated4.completedAt == nil)
     }
 
     @Test("Placement (dayKey, customList) remains independent after shared edits")
