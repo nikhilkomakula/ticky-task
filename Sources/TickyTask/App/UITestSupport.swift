@@ -68,11 +68,13 @@ enum UITestSupport {
             if ProcessInfo.processInfo.arguments.contains("-uitestSummarySeed") {
                 try seedWeeklySummary(service)
             }
+            #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-uitestOldCompletion") {
                 // Completed a month ago: due for auto-delete.
                 let old = try service.addTask(title: "Done long ago", location: .day(seededDayKey))
                 old.setDone(true, at: Date(timeIntervalSinceNow: -30 * 86_400))
             }
+            #endif
             if ProcessInfo.processInfo.arguments.contains("-uitestRecurringSeed") {
                 try seedRecurringSeries(service)
             }

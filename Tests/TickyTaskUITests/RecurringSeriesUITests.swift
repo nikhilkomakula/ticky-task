@@ -821,5 +821,13 @@ final class RecurringSeriesUITests: XCTestCase {
         XCTAssertFalse(notice.exists, "no second restart")
         XCTAssertTrue(waitForRow(app, "Alpha after recovery", on: todayKey))
         app.terminate()
+
+        // Reopened normally, the edit made after recovery is on disk.
+        let reopened = XCUIApplication()
+        reopened.launchArguments = ["-uitest", "-uitestStore", dir.appendingPathComponent("TickyTask.store").path,
+                                    "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
+        reopened.launchWithMainWindow()
+        XCTAssertTrue(waitForRow(reopened, "Alpha after recovery", on: todayKey, timeout: 20), "the recovered session's edit persisted")
+        reopened.terminate()
     }
 }
