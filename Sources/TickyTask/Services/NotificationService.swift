@@ -53,6 +53,7 @@ enum NotificationService {
     @MainActor
     private static func reconcile(context: ModelContext, client: some NotificationScheduling, now: Date) async {
         guard await client.isAuthorized(),
+              (try? PersistenceFaults.check(.reminderFetch)) != nil,
               let tasks = try? context.fetch(FetchDescriptor<TaskItem>()) else { return }
         let desired = ReminderPlanner.reminders(for: tasks, now: now)
         let desiredIDs = Set(desired.map(\.identifier))

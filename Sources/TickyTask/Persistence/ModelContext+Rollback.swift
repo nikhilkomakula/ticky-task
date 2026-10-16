@@ -30,7 +30,7 @@ extension ModelContext {
 /// precedes them; compiled out of Release builds.
 @MainActor
 enum PersistenceFaults {
-    enum Point { case checkpoint, transaction }
+    enum Point { case checkpoint, transaction, reminderFetch }
     struct InjectedFailure: Error {}
 
     #if DEBUG
