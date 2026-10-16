@@ -85,8 +85,9 @@ enum RecurrenceEngine {
     /// the anchor). Returns `nil` only when the underlying date math fails, which
     /// ends enumeration.
     private static func expand(rule: RecurrenceRule, anchor: Date, period: Int, calendar: Calendar) -> Period? {
-        let interval = max(1, rule.interval)
-        // A decoded rule can carry any interval; overflow ends enumeration safely.
+        // Every-weekday rules ignore the interval. Others use it as stored, and a
+        // decoded rule can carry any value: overflow ends enumeration safely.
+        let interval = rule.frequency == .weekdays ? 1 : max(1, rule.interval)
         let step = period.multipliedReportingOverflow(by: interval)
         guard !step.overflow else { return nil }
         switch rule.frequency {

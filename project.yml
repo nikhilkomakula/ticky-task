@@ -39,6 +39,11 @@ targets:
         INFOPLIST_FILE: Sources/TickyTask/Support/Info.plist
         PRODUCT_NAME: TickyTask
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        # Debug builds (and every test run) get their own bundle id, so they never
+        # share the installed app's preferences, reminders, or running instance.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.tickytask.mac.dev
     postBuildScripts:
       - name: Stamp version from latest git tag
         basedOnDependencyAnalysis: false

@@ -80,9 +80,7 @@ enum TaskEditCommit {
                        today: Date = Date(), horizon: Date, calendar: Calendar = .current,
                        save: (ModelContext) throws -> Void = { try $0.save() }) throws -> Bool {
         guard !edit.isEmpty else { return false }
-        // The context is shared by every window. Persist anything else already
-        // pending first, so rolling back a failed commit reverts only this edit.
-        if context.hasChanges { try context.save() }
+        try RecurrenceMaterializer.checkpoint(context)
         do {
             let now = Date()
             if let document = edit.notes {
@@ -146,6 +144,12 @@ enum TaskEditCommit {
             write(\.title, \.title)
             write(\.timeMinutes, \.timeMinutes)
             write(\.alarmEnabled, \.alarmEnabled)
+            // Clearing the time clears every reminder too, even on a row whose alarm
+            // differed from the edited one: a reminder needs a time.
+            if original.timeMinutes != nil, edited.timeMinutes == nil, row.alarmEnabled {
+                row.alarmEnabled = false
+                changed = true
+            }
             write(\.priority, \.priority)
             write(\.isCritical, \.isCritical)
             write(\.colorHex, \.colorHex)

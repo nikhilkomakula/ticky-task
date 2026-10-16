@@ -21,6 +21,15 @@ enum RecurrenceMaterializer {
     enum LifecycleError: Error {
         /// A definition is not an occurrence; only its series can be deleted.
         case notAnOccurrence
+        /// The task can no longer start a series (it already belongs to one, or it
+        /// is not on a calendar day) — another window changed it meanwhile.
+        case cannotStartSeries
+    }
+
+    /// The context is shared by every window. Persist anything else already pending
+    /// before a transaction, so rolling it back on failure reverts only its own work.
+    static func checkpoint(_ context: ModelContext) throws {
+        if context.hasChanges { try context.save() }
     }
 
     /// Normalize legacy rows, then generate any missing occurrences for every
@@ -31,6 +40,7 @@ enum RecurrenceMaterializer {
     static func materialize(context: ModelContext,
                             through horizon: Date,
                             calendar: Calendar = .current) throws -> Int {
+        try checkpoint(context)
         do {
             try RecurrenceNormalizer.normalize(context: context)
             var created = 0
@@ -56,6 +66,9 @@ enum RecurrenceMaterializer {
     @discardableResult
     static func startSeries(from task: TaskItem, rule: RecurrenceRule, through horizon: Date,
                             context: ModelContext, calendar: Calendar = .current) throws -> TaskItem {
+        guard task.recurrence == nil, task.templateID == nil, task.dayKey != nil, task.customList == nil else {
+            throw LifecycleError.cannotStartSeries
+        }
         let definition = TaskItem(title: task.title, timeMinutes: task.timeMinutes, colorHex: task.colorHex,
                                   priority: task.priority, alarmEnabled: task.alarmEnabled, recurrence: rule)
         definition.isCritical = task.isCritical
@@ -117,6 +130,7 @@ enum RecurrenceMaterializer {
     /// deletes the series or touches any other occurrence. Saves.
     static func deleteOccurrence(_ task: TaskItem, context: ModelContext) throws {
         guard task.recurrence == nil else { throw LifecycleError.notAnOccurrence }
+        try checkpoint(context)
         do {
             try skipSlot(of: task, context: context)
             context.delete(task)
@@ -130,6 +144,7 @@ enum RecurrenceMaterializer {
     /// Delete the whole series `task` belongs to: its definition, every occurrence
     /// in any day or list (past and completed included), and its skip records. Saves.
     static func deleteSeries(_ task: TaskItem, context: ModelContext) throws {
+        try checkpoint(context)
         do {
             guard let definition = try definition(for: task, context: context) else {
                 context.delete(task)   // an orphaned occurrence: it is its whole series

@@ -48,13 +48,19 @@ enum ModelContainerProvider {
 
     // MARK: - Data directory
 
-    /// Default data directory: `~/Library/Application Support/TickyTask/`.
+    /// Default data directory: `~/Library/Application Support/TickyTask/`. Debug
+    /// builds use `TickyTask-Dev/` instead, so a development build can never open
+    /// (and migrate) the user's real store.
     static func defaultDirectory() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
         )
+        #if DEBUG
+        return base.appendingPathComponent("TickyTask-Dev", isDirectory: true)
+        #else
         return base.appendingPathComponent("TickyTask", isDirectory: true)
+        #endif
     }
 
     /// Default store URL inside the default directory (used by callers/tests).

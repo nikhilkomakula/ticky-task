@@ -15,7 +15,9 @@ enum NotificationService {
 
     @discardableResult
     static func requestAuthorization() async -> Bool {
-        (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        // Tests share the real app's bundle id: never prompt or change its authorization.
+        guard !UITestSupport.isRunning, !UITestSupport.isHostingUnitTests else { return false }
+        return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
     private static func isAuthorized() async -> Bool {
