@@ -61,7 +61,7 @@ struct ContentView: View {
         .preferredColorScheme(preferredColorScheme)
         .task { await runLaunchTasks() }
         .onAppear {
-            GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow)
+            if !UITestSupport.isHostingUnitTests { GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow) }
             applyActivationPolicy()
             syncDragConfig()
         }
@@ -228,6 +228,8 @@ struct ContentView: View {
     }
 
     private func applyActivationPolicy() {
+        // Hosting unit tests: stay out of the Dock and never take focus.
+        guard !UITestSupport.isHostingUnitTests else { return }
         NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
     }
 }

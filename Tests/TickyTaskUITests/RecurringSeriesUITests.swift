@@ -98,6 +98,13 @@ final class RecurringSeriesUITests: XCTestCase {
         return false
     }
 
+    /// Whether the row whose title text is `text` shows the notes glyph.
+    private func hasNotes(_ app: XCUIApplication, _ text: XCUIElement) -> Bool {
+        let band = CGRect(x: text.frame.minX - 60, y: text.frame.minY - 4, width: text.frame.width + 400, height: text.frame.height + 8)
+        return app.images.matching(NSPredicate(format: "label == 'Has notes'")).allElementsBoundByIndex
+            .contains { band.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+    }
+
     /// Images (glyphs) on the same line as `title`'s row on `dayKey`.
     private func rowGlyphs(_ app: XCUIApplication, _ title: String, on dayKey: String) -> [String] {
         guard let text = row(app, title, on: dayKey) else { return [] }
@@ -108,8 +115,36 @@ final class RecurringSeriesUITests: XCTestCase {
         return images.map(\.label) + texts.compactMap { $0.value as? String }
     }
 
+    /// Scroll a busy day column until the row can be clicked (smaller screens, e.g.
+    /// CI, show fewer rows; an off-screen row exists but isn't hittable).
+    private func reveal(_ app: XCUIApplication, _ title: String, on dayKey: String) {
+        let scrollView = app.scrollViews.matching(identifier: "dayColumn-\(dayKey)").firstMatch
+        guard scrollView.exists else { return }
+        for delta in [-250.0, -250, -250, -250, 250, 250, 250, 250, 250, 250, 250, 250] {
+            guard let text = row(app, title, on: dayKey), !text.isHittable else { return }
+            scrollView.scroll(byDeltaX: 0, deltaY: delta)
+            usleep(250_000)
+        }
+    }
+
+    /// The title text of a `title` row shown in a custom list (below every day column).
+    private func listedRow(_ app: XCUIApplication, _ title: String) -> XCUIElement? {
+        let daysBottom = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'dayColumn-'"))
+            .allElementsBoundByIndex.map(\.frame.maxY).max() ?? 0
+        return app.staticTexts.matching(identifier: "taskRow-\(title)").allElementsBoundByIndex
+            .first { $0.frame.midY > daysBottom }
+    }
+
+    private func drag(_ element: XCUIElement, to target: XCUIElement) {
+        let start = element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.35, thenDragTo: end)
+        Thread.sleep(forTimeInterval: 1.2)
+    }
+
     private func open(_ app: XCUIApplication, _ title: String, on dayKey: String) {
         XCTAssertTrue(waitForRow(app, title, on: dayKey), "\(title) should be shown on \(dayKey)")
+        reveal(app, title, on: dayKey)
         let done = app.buttons["editor-done"]
         for _ in 0..<2 where !done.exists {   // a click during a re-render can be lost
             row(app, title, on: dayKey)?.click()
@@ -398,57 +433,54 @@ final class RecurringSeriesUITests: XCTestCase {
         XCTAssertNil(row(app, "Standup", on: key(monday(weeks: 1))))
     }
 
-    /// 12. Dragging a series occurrence day→day→custom list→day preserves series and avoids duplication.
+    /// 12. An occurrence dragged day → day → list → day keeps its own identity and
+    /// work; its original day isn't refilled and each destination keeps its own.
     func testDragSeriesOccurrenceDayToListAndBack() throws {
         let app = launch()
-        let todayKey = key(Date())
-        let tomorrowKey = key(day(1))
-        _ = key(day(7))  // unused: for future cross-list tests
+        let mon = key(monday(weeks: 1)), tue = key(day(1, from: monday(weeks: 1))), thu = key(day(3, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        open(app, "Standup", on: mon)
+        typeNotes(app, "travelling")
+        done(app)
 
-        // Navigate so today's column is visible
-        go(app, weeks: 0)
-        XCTAssertTrue(waitForRow(app, "Standup", on: todayKey))
+        drag(row(app, "Standup", on: mon)!, to: app.descendants(matching: .any).matching(identifier: "dayColumn-\(tue)").firstMatch)
+        XCTAssertTrue(waitForRow(app, "Standup", on: mon, present: false), "Monday is not refilled")
+        let tuesdayRows = app.staticTexts.matching(identifier: "taskRow-Standup").allElementsBoundByIndex
+            .filter { columnFrame(app, tue).contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        XCTAssertEqual(tuesdayRows.count, 2, "Tuesday shows the moved one and its own")
 
-        // Drag today's Standup to tomorrow (same week, different day)
-        let standupToday = row(app, "Standup", on: todayKey)!
-        // todayColumn positioning derived from standupToday
-        let tomorrowColumn = app.descendants(matching: .any).matching(identifier: "dayColumn-\(tomorrowKey)").firstMatch
-
-        let start = standupToday.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let dest = tomorrowColumn.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.35, thenDragTo: dest)
-        usleep(500_000)
-
-        // Today's occurrence should be gone, tomorrow's should still be a Standup (moved)
-        XCTAssertTrue(waitForRow(app, "Standup", on: tomorrowKey), "Standup moved to tomorrow")
-        XCTAssertNil(row(app, "Standup", on: todayKey), "today's occurrence moved away")
-
-        // Verify original tomorrow's series occurrence is intact (only the moved one is there)
-        let glyphs = rowGlyphs(app, "Standup", on: tomorrowKey)
-        XCTAssertTrue(glyphs.contains("Repeats"), "still marked as recurring")
+        let moved = try XCTUnwrap(tuesdayRows.first { hasNotes(app, $0) }, "the moved occurrence keeps its notes")
+        drag(moved, to: try XCTUnwrap(listedRow(app, "ListA")))
+        XCTAssertNotNil(listedRow(app, "Standup"), "now in the Inbox list")
+        drag(try XCTUnwrap(listedRow(app, "Standup")), to: app.descendants(matching: .any).matching(identifier: "dayColumn-\(thu)").firstMatch)
+        XCTAssertNil(listedRow(app, "Standup"), "left the list")
+        XCTAssertTrue(waitForRow(app, "Standup", on: mon, present: false), "Monday still not refilled")
+        let thursdayRows = app.staticTexts.matching(identifier: "taskRow-Standup").allElementsBoundByIndex
+            .filter { columnFrame(app, thu).contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        XCTAssertEqual(thursdayRows.count, 2, "Thursday shows the moved one and its own")
+        XCTAssertEqual(thursdayRows.filter { hasNotes(app, $0) }.count, 1, "its notes travelled with it")
     }
 
-    /// 13. Editing the repeat rule from a moved occurrence and a listed occurrence updates the series.
+    /// 13. The series rule can be edited from an occurrence sitting in a list.
     func testRuleEditFromMovedAndListedOccurrence() throws {
         let app = launch()
-        let todayKey = key(Date())
-        let tomorrowKey = key(day(1))
-
-        // Move today's Standup to a custom list (Inbox)
-        let standupToday = row(app, "Standup", on: todayKey)!
-        let inboxTask = row(app, "ListA", on: todayKey)!
-        let start = standupToday.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let dest = inboxTask.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.35, thenDragTo: dest)
-        usleep(500_000)
-
-        // Edit the rule from a listed occurrence
-        // (Note: This tests that the UI allows editing from a non-day occurrence; actual move behavior
-        // is covered by drag tests. Here we verify the occurrence still allows rule edits.)
-        open(app, "Standup", on: todayKey)
+        let tue = key(day(1, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        drag(try XCTUnwrap(row(app, "Standup", on: tue)), to: try XCTUnwrap(listedRow(app, "ListA")))
+        let listed = try XCTUnwrap(listedRow(app, "Standup"), "the occurrence is in the Inbox list")
+        listed.click()
+        XCTAssertTrue(app.buttons["editor-done"].waitForExistence(timeout: 8), "the listed occurrence opens")
         let frequency = app.popUpButtons["repeat-frequency"]
-        XCTAssertTrue(frequency.exists, "rule editing allowed on a listed occurrence")
+        XCTAssertEqual(frequency.value as? String, "Daily", "it shows the series rule")
+        frequency.click()
+        app.menuItems["Weekly"].click()
         done(app)
+
+        go(app, weeks: 1)
+        let weekday = calendar.component(.weekday, from: day(-2))
+        let shown = (0..<7).map { day($0, from: monday(weeks: 2)) }.filter { row(app, "Standup", on: key($0)) != nil }
+        XCTAssertEqual(shown.map { calendar.component(.weekday, from: $0) }, [weekday], "weekly from the listed row's edit")
+        XCTAssertNotNil(listedRow(app, "Standup"), "the listed occurrence itself is kept")
     }
 
     /// 14. Search finds a unique notes token on one series occurrence; the result navigates to that date.
@@ -481,22 +513,22 @@ final class RecurringSeriesUITests: XCTestCase {
         XCTAssertTrue(waitForRow(app, "Standup", on: targetKey, timeout: 3), "search navigates to the occurrence with matching notes")
     }
 
-    /// 15. Weekly Summary selects and groups occurrences by day; series definitions are absent.
+    /// 15. Weekly Summary lists each of this week's occurrences once, as dated rows,
+    /// and "Select series" selects exactly those.
     func testWeeklySummaryShowsOccurrencesNotDefinitions() throws {
-        let app = launch(["-uitestSummarySeed"])
-
-        // Open Weekly Summary
+        let app = launch()
         app.buttons["toolbar-weekly-summary"].click()
-        let summarySheet = app.sheets.firstMatch
-        XCTAssertTrue(summarySheet.waitForExistence(timeout: 5), "summary sheet should open")
-
-        // Verify: occurrences are selectable (identifiable by date), definitions are absent
-        // A "Standup" task on a specific day should appear; the series definition should not.
-        // This is covered by the summary UI logic; here we check that Standup appears as
-        // a selectable dated task, not as a series root.
-        let summaryContent = summarySheet.descendants(matching: .any)
-        XCTAssertFalse(summaryContent.staticTexts.matching(identifier: "summary-series-definition").firstMatch.exists,
-                       "series definitions should not appear in summary")
+        XCTAssertTrue(app.staticTexts["summary-week-range"].waitForExistence(timeout: 8), "summary sheet should open")
+        let expected = (0..<7).map { day($0, from: monday(weeks: 0)) }.filter { $0 >= day(-2) }.count
+        let rows = app.buttons.matching(identifier: "summary-task-Standup")
+        XCTAssertEqual(rows.count, expected, "one selectable row per occurrence this week, no definition")
+        let selectSeries = app.buttons["Select series (\(expected))"]
+        if expected > 1 {
+            XCTAssertTrue(selectSeries.exists)
+            selectSeries.click()
+            let selected = rows.allElementsBoundByIndex.filter { ($0.value as? String) == "selected" }
+            XCTAssertEqual(selected.count, expected, "the whole series in this week is selected")
+        }
     }
 
     /// 16. Navigating far ahead (beyond 60 days), editing the rule, navigating away, and back shows the new rule's slots.

@@ -89,11 +89,6 @@ enum TaskEditCommit {
                 task.updatedAt = now
                 task.markOccurrenceModified()
             }
-            if let subtasks = edit.subtasks {
-                apply(subtasks, to: task, context: context)
-                task.updatedAt = now
-                task.markOccurrenceModified()
-            }
             if edit.originalShared != edit.editedShared {
                 try propagate(from: edit.originalShared, to: edit.editedShared,
                               across: seriesRows(of: task, context: context), context: context, now: now)
@@ -110,10 +105,16 @@ enum TaskEditCommit {
                                                           through: horizon, context: context, calendar: calendar)
                 }
             }
+            // Subtask edits last: they may delete, which must follow every step that can fail.
+            if let subtasks = edit.subtasks {
+                apply(subtasks, to: task, context: context)
+                task.updatedAt = now
+                task.markOccurrenceModified()
+            }
             if let save { try save(context) } else { try context.saveTransaction() }
             return edit.rule != .unchanged
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }

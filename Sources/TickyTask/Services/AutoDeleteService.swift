@@ -28,12 +28,14 @@ enum AutoDeleteService {
         }
         var deletedAny = false
         do {
-            for task in completed where task.recurrence == nil {
-                guard let completedAt = task.completedAt, completedAt < cutoff else { continue }
-                if task.templateID != nil {
-                    guard task.occurrenceKey != nil else { continue }
-                    try RecurrenceMaterializer.skipSlot(of: task, context: context)
-                }
+            let purge = completed.filter { task in
+                guard task.recurrence == nil, let completedAt = task.completedAt, completedAt < cutoff else { return false }
+                return task.templateID == nil || task.occurrenceKey != nil   // keyless legacy occurrences are kept
+            }
+            for task in purge where task.templateID != nil {
+                try RecurrenceMaterializer.skipSlot(of: task, context: context)
+            }
+            for task in purge {
                 context.delete(task)
                 deletedAny = true
             }
@@ -41,7 +43,7 @@ enum AutoDeleteService {
             // context (where an unrelated later save could commit them silently).
             if deletedAny { try context.saveTransaction() }
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
         }
     }
 }

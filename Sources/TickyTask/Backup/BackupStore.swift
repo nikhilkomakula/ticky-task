@@ -95,14 +95,16 @@ enum BackupStore {
     static func restore(_ store: BackupStoreDTO, context: ModelContext) throws {
         try BackupValidator.validate(store)
         do {
-            try wipe(context: context)
-            insert(store.data, context: context)
-            // Convert series from an older backup in the same transaction, so a
-            // failure leaves the existing store untouched.
-            try RecurrenceNormalizer.normalize(context: context)
+            // Every step that can fail comes before the first deletion (see
+            // `undoFailedTransaction`); older-format series are converted from the
+            // inserted objects in the same transaction.
+            let existing = try fetchAll(context: context)
+            existing.forEach { context.delete($0) }
+            let inserted = insert(store.data, context: context)
+            RecurrenceNormalizer.normalize(inserted, context: context)
             try context.saveTransaction()
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
         // Apply preferences before notifying the app: the restore handler runs
@@ -124,17 +126,20 @@ enum BackupStore {
 
     // MARK: Private
 
-    private static func wipe(context: ModelContext) throws {
-        for t in try context.fetch(FetchDescriptor<TaskItem>()) { context.delete(t) }
-        for s in try context.fetch(FetchDescriptor<Subtask>()) { context.delete(s) }
-        for o in try context.fetch(FetchDescriptor<TaskOccurrence>()) { context.delete(o) }
-        for g in try context.fetch(FetchDescriptor<TaskTag>()) { context.delete(g) }
-        for l in try context.fetch(FetchDescriptor<CustomList>()) { context.delete(l) }
+    private static func fetchAll(context: ModelContext) throws -> [any PersistentModel] {
+        var all: [any PersistentModel] = []
+        all += try context.fetch(FetchDescriptor<TaskItem>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<Subtask>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<TaskOccurrence>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<TaskTag>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<CustomList>()) as [any PersistentModel]
+        return all
     }
 
     /// Insert in dependency order — lists & tags first, then tasks (which link
     /// to them), then children (subtasks, occurrences) that link to tasks.
-    private static func insert(_ data: BackupDataDTO, context: ModelContext) {
+    @discardableResult
+    private static func insert(_ data: BackupDataDTO, context: ModelContext) -> [TaskItem] {
         var listMap: [UUID: CustomList] = [:]
         for dto in data.customLists {
             let list = CustomList(id: dto.id, name: dto.name, sortIndex: dto.sortIndex)
@@ -187,6 +192,7 @@ enum BackupStore {
             occ.template = dto.templateId.flatMap { taskMap[$0] }
             context.insert(occ)
         }
+        return Array(taskMap.values)
     }
 
     private static var appVersion: String {

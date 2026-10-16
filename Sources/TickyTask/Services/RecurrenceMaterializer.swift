@@ -55,7 +55,7 @@ enum RecurrenceMaterializer {
             if context.hasChanges { try context.saveTransaction() }
             return created
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -119,13 +119,15 @@ enum RecurrenceMaterializer {
                                             calendar: calendar)
         let scheduled = Set(RecurrenceEngine.occurrenceDayKeys(for: rule, from: tomorrow, through: horizon,
                                                                calendar: calendar))
+        // Generate first (it can fail); removals come last so a failure never leaves
+        // a half-removed schedule behind.
+        try generateOccurrences(for: definition, through: horizon, context: context,
+                                sortCache: &cache, calendar: calendar)
         for child in existing {
             guard let key = child.occurrenceKey, key > todayKey, !scheduled.contains(key),
                   isUntouchedGenerated(child) else { continue }
             context.delete(child)
         }
-        try generateOccurrences(for: definition, through: horizon, context: context,
-                                sortCache: &cache, calendar: calendar)
     }
 
     /// Delete exactly one occurrence and skip its slot so it never regenerates. A
@@ -139,7 +141,7 @@ enum RecurrenceMaterializer {
             context.delete(task)
             try context.saveTransaction()
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -158,7 +160,7 @@ enum RecurrenceMaterializer {
             context.delete(definition)   // cascades its skip records
             try context.saveTransaction()
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -188,6 +190,7 @@ enum RecurrenceMaterializer {
 
     /// Every occurrence linked to `definition`, in any location.
     static func children(of definition: TaskItem, context: ModelContext) throws -> [TaskItem] {
+        try PersistenceFaults.check(.seriesFetch)
         let id: UUID? = definition.id
         return try context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.templateID == id }))
     }

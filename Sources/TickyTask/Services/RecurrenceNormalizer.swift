@@ -23,8 +23,13 @@ struct NormalizationReport: Equatable {
 enum RecurrenceNormalizer {
     @discardableResult
     static func normalize(context: ModelContext) throws -> NormalizationReport {
+        normalize(try context.fetch(FetchDescriptor<TaskItem>()), context: context)
+    }
+
+    /// Normalize exactly `all` (every task in the store), without fetching.
+    @discardableResult
+    static func normalize(_ all: [TaskItem], context: ModelContext) -> NormalizationReport {
         var report = NormalizationReport()
-        let all = try context.fetch(FetchDescriptor<TaskItem>())
         var childrenBySeries = Dictionary(grouping: all.filter { $0.templateID != nil }) { $0.templateID! }
         var sortCache: [String: Double] = [:]
 

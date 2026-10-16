@@ -52,6 +52,12 @@ struct LegacyFixtureMigrationTests {
             }
             return out
         }
+        /// Core Data stores dates as seconds since 2001 (REAL, or INTEGER when whole).
+        func storedDate(_ value: Any?) -> Date? {
+            if let seconds = value as? Double { return Date(timeIntervalSinceReferenceDate: seconds) }
+            if let seconds = value as? Int { return Date(timeIntervalSinceReferenceDate: Double(seconds)) }
+            return nil
+        }
         func uuid(_ value: Any?) -> UUID? {
             guard let data = value as? Data, data.count == 16 else { return nil }
             return data.withUnsafeBytes { UUID(uuid: $0.load(as: uuid_t.self)) }
@@ -82,8 +88,8 @@ struct LegacyFixtureMigrationTests {
                     listPK: $0[4] as? Int, isDone: ($0[5] as? Int ?? 0) != 0, critical: ($0[6] as? Int ?? 0) != 0,
                     notesRich: $0[7] as? Data, templateID: uuid($0[8]), isRoot: $0[9] != nil,
                     timeMinutes: $0[10] as? Int, alarmEnabled: ($0[11] as? Int ?? 0) != 0, colorHex: $0[12] as? String,
-                    priority: $0[13] as? Int ?? 0, completedAt: $0[14] as? Date,
-                    createdAt: $0[15] as? Date ?? Date(), updatedAt: $0[16] as? Date ?? Date(),
+                    priority: $0[13] as? Int ?? 0, completedAt: storedDate($0[14]),
+                    createdAt: storedDate($0[15]) ?? .distantPast, updatedAt: storedDate($0[16]) ?? .distantPast,
                     listId: ($0[4] as? Int).flatMap { pkToListId[$0] })
         }
 
@@ -141,6 +147,15 @@ struct LegacyFixtureMigrationTests {
 
     // MARK: Assertions shared by store and backup upgrades
 
+    /// Same instant, allowing the backup format's millisecond precision.
+    private func sameInstant(_ a: Date?, _ b: Date?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case let (a?, b?): return abs(a.timeIntervalSince(b)) < 0.001
+        default: return false
+        }
+    }
+
     private func assertUpgraded(_ context: ModelContext, from legacy: Legacy, tag: String) throws {
         let tasks = try context.fetch(FetchDescriptor<TaskItem>())
         let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
@@ -163,6 +178,13 @@ struct LegacyFixtureMigrationTests {
                 splitChildByRoot[old.id] = child
                 #expect(child.occurrenceModified == nil, "\(tag): split occurrence has unknown history")
                 #expect(child.isCritical == old.critical)
+                // The first occurrence keeps the old row's own metadata and placement.
+                #expect(child.timeMinutes == old.timeMinutes && child.alarmEnabled == old.alarmEnabled
+                        && child.colorHex == old.colorHex && child.priority == old.priority, "\(tag): \(old.title) first-occurrence fields")
+                #expect(sameInstant(child.completedAt, old.completedAt), "\(tag): \(old.title) first-occurrence completedAt")
+                #expect(sameInstant(child.createdAt, old.createdAt) && sameInstant(child.updatedAt, old.updatedAt),
+                        "\(tag): \(old.title) first-occurrence timestamps")
+                #expect(child.customList?.id == old.listId, "\(tag): \(old.title) first-occurrence list")
                 // Definition also inherits metadata from the series row
                 #expect(row.timeMinutes == old.timeMinutes, "\(tag): definition \(old.title) timeMinutes")
                 #expect(row.alarmEnabled == old.alarmEnabled, "\(tag): definition \(old.title) alarmEnabled")
@@ -182,15 +204,9 @@ struct LegacyFixtureMigrationTests {
                 #expect(row.alarmEnabled == old.alarmEnabled, "\(tag): \(old.title) alarmEnabled")
                 #expect(row.colorHex == old.colorHex, "\(tag): \(old.title) colorHex")
                 #expect(row.priority == old.priority, "\(tag): \(old.title) priority")
-                if let completedAt = old.completedAt {
-                    #expect(row.completedAt != nil, "\(tag): \(old.title) completedAt not preserved")
-                    #expect(abs(row.completedAt!.timeIntervalSince(completedAt)) < 0.001, "\(tag): \(old.title) completedAt precision")
-                }
-                // Note: completedAt may be present in restored rows even if not in the legacy fixture reading,
-                // since v0.1.15+ backups capture completion dates that older schema readers might not extract
-                // Verify timestamps exist (preservation test; exact precision varies across migration paths/formats)
-                #expect(row.createdAt.timeIntervalSince1970 > 0, "\(tag): \(old.title) createdAt invalid")
-                #expect(row.updatedAt.timeIntervalSince1970 > 0, "\(tag): \(old.title) updatedAt invalid")
+                #expect(sameInstant(row.completedAt, old.completedAt), "\(tag): \(old.title) completedAt")
+                #expect(sameInstant(row.createdAt, old.createdAt), "\(tag): \(old.title) createdAt")
+                #expect(sameInstant(row.updatedAt, old.updatedAt), "\(tag): \(old.title) updatedAt")
             }
         }
 

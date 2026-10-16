@@ -74,7 +74,7 @@ struct DataService {
         } catch {
             // Never leave a half-applied move (reassigned container + renumbered
             // siblings) in the context if the save fails.
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -97,7 +97,7 @@ struct DataService {
             try context.save()
         } catch {
             // Never leave a half-applied renumber in the context if the save fails.
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
         return true
@@ -109,7 +109,7 @@ struct DataService {
         do {
             try context.save()
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -154,7 +154,7 @@ struct DataService {
             context.delete(list)
             try context.saveTransaction()
         } catch {
-            context.rollbackAndRefresh()
+            context.undoFailedTransaction()
             throw error
         }
     }
