@@ -19,10 +19,13 @@ struct LegacyFixtureMigrationTests {
     // MARK: Ground truth, read straight from the old SQLite file
 
     struct OldTask { var id: UUID; var title: String; var notes: String; var dayKey: String?; var listPK: Int?
-                     var isDone: Bool; var critical: Bool; var notesRich: Data?; var templateID: UUID?; var isRoot: Bool }
-    struct OldSubtask { var id: UUID; var title: String; var parent: UUID? }
+                     var isDone: Bool; var critical: Bool; var notesRich: Data?; var templateID: UUID?; var isRoot: Bool
+                     var timeMinutes: Int?; var alarmEnabled: Bool; var colorHex: String?; var priority: Int
+                     var completedAt: Date?; var createdAt: Date; var updatedAt: Date; var listId: UUID? }
+    struct OldSubtask { var id: UUID; var title: String; var parent: UUID?; var isDone: Bool; var sortIndex: Double }
     struct OldRecord { var id: UUID; var dayKey: String; var isDone: Bool; var skipped: Bool; var template: UUID? }
-    struct Legacy { var tasks: [OldTask]; var subtasks: [OldSubtask]; var records: [OldRecord]; var lists: Int; var tags: Int }
+    struct Legacy { var tasks: [OldTask]; var subtasks: [OldSubtask]; var records: [OldRecord]; var lists: Int; var tags: Int
+                    var taskTagLinks: [UUID: [UUID]] }  // taskId -> [tagIds] for tag relationship assertions
 
     private func readLegacy(_ url: URL) throws -> Legacy {
         var db: OpaquePointer?
@@ -58,14 +61,66 @@ struct LegacyFixtureMigrationTests {
             : taskColumns.contains("ZNEEDSIMMEDIATEATTENTION") ? "ZNEEDSIMMEDIATEATTENTION" : "0"
         let rich = taskColumns.contains("ZNOTESRICH") ? "ZNOTESRICH" : "NULL"
         let template = taskColumns.contains("ZTEMPLATEID") ? "ZTEMPLATEID" : "NULL"
+        let time = taskColumns.contains("ZTIMEMINUTES") ? "ZTIMEMINUTES" : "NULL"
+        let alarm = taskColumns.contains("ZALARMENABLED") ? "ZALARMENABLED" : "0"
+        let color = taskColumns.contains("ZCOLORHEX") ? "ZCOLORHEX" : "NULL"
+        let priority = taskColumns.contains("ZPRIORITY") ? "ZPRIORITY" : "0"
+        let completed = taskColumns.contains("ZCOMPLETEDAT") ? "ZCOMPLETEDAT" : "NULL"
+        let created = taskColumns.contains("ZCREATEDAT") ? "ZCREATEDAT" : "NULL"
+        let updated = taskColumns.contains("ZUPDATEDAT") ? "ZUPDATEDAT" : "NULL"
+
         let pkToID = Dictionary(uniqueKeysWithValues: rows("SELECT Z_PK, ZID FROM ZTASKITEM").map { ($0[0] as! Int, uuid($0[1])!) })
-        let tasks = rows("SELECT ZID, ZTITLE, ZNOTES, ZDAYKEY, ZCUSTOMLIST, ZISDONE, \(critical), \(rich), \(template), ZFREQUENCY FROM ZTASKITEM").map {
+        let pkToListId = Dictionary(uniqueKeysWithValues:
+            rows("SELECT Z_PK, ZID FROM ZCUSTOMLIST").map { ($0[0] as! Int, uuid($0[1])!) }
+        )
+        let pkToTagId = Dictionary(uniqueKeysWithValues:
+            rows("SELECT Z_PK, ZID FROM ZTASKTAG").map { ($0[0] as! Int, uuid($0[1])!) }
+        )
+
+        let tasks = rows("SELECT ZID, ZTITLE, ZNOTES, ZDAYKEY, ZCUSTOMLIST, ZISDONE, \(critical), \(rich), \(template), ZFREQUENCY, \(time), \(alarm), \(color), \(priority), \(completed), \(created), \(updated), Z_PK FROM ZTASKITEM").map {
             OldTask(id: uuid($0[0])!, title: $0[1] as? String ?? "", notes: $0[2] as? String ?? "", dayKey: $0[3] as? String,
                     listPK: $0[4] as? Int, isDone: ($0[5] as? Int ?? 0) != 0, critical: ($0[6] as? Int ?? 0) != 0,
-                    notesRich: $0[7] as? Data, templateID: uuid($0[8]), isRoot: $0[9] != nil)
+                    notesRich: $0[7] as? Data, templateID: uuid($0[8]), isRoot: $0[9] != nil,
+                    timeMinutes: $0[10] as? Int, alarmEnabled: ($0[11] as? Int ?? 0) != 0, colorHex: $0[12] as? String,
+                    priority: $0[13] as? Int ?? 0, completedAt: $0[14] as? Date,
+                    createdAt: $0[15] as? Date ?? Date(), updatedAt: $0[16] as? Date ?? Date(),
+                    listId: ($0[4] as? Int).flatMap { pkToListId[$0] })
         }
-        let subtasks = rows("SELECT ZID, ZTITLE, ZPARENT FROM ZSUBTASK").map {
-            OldSubtask(id: uuid($0[0])!, title: $0[1] as? String ?? "", parent: ($0[2] as? Int).flatMap { pkToID[$0] })
+
+        let subtaskColumns = columns("ZSUBTASK")
+        let subtaskDone = subtaskColumns.contains("ZISDONE") ? "ZISDONE" : "0"
+        let subtaskSort = subtaskColumns.contains("ZSORTINDEX") ? "ZSORTINDEX" : "0"
+        let subtasks = rows("SELECT ZID, ZTITLE, ZPARENT, \(subtaskDone), \(subtaskSort) FROM ZSUBTASK").map {
+            OldSubtask(id: uuid($0[0])!, title: $0[1] as? String ?? "", parent: ($0[2] as? Int).flatMap { pkToID[$0] },
+                       isDone: ($0[3] as? Int ?? 0) != 0, sortIndex: $0[4] as? Double ?? 0)
+        }
+
+        // Extract task-tag relationships from Z_3TAGS join table
+        let tagLinks = rows("SELECT Z_3TASKS, Z_5TAGS FROM Z_3TAGS")
+        var taskPkToTags: [Int: [Int]] = [:]
+        for link in tagLinks {
+            if let taskPK = link[0] as? Int, let tagPK = link[1] as? Int {
+                if taskPkToTags[taskPK] == nil { taskPkToTags[taskPK] = [] }
+                taskPkToTags[taskPK]?.append(tagPK)
+            }
+        }
+
+        // Build a mapping from task ID to PK for tag lookup
+        let idToPK = Dictionary(uniqueKeysWithValues:
+            rows("SELECT ZID, Z_PK FROM ZTASKITEM").compactMap { row -> (UUID, Int)? in
+                guard let id = uuid(row[0]), let pk = row[1] as? Int else { return nil }
+                return (id, pk)
+            }
+        )
+
+        var taskTagLinks: [UUID: [UUID]] = [:]
+        for task in tasks {
+            if let taskPK = idToPK[task.id], let tagPKs = taskPkToTags[taskPK] {
+                let tagIds = tagPKs.compactMap { pkToTagId[$0] }
+                taskTagLinks[task.id] = tagIds
+            } else {
+                taskTagLinks[task.id] = []
+            }
         }
         let records = rows("SELECT ZID, ZDAYKEY, ZISDONE, ZSKIPPED, ZTEMPLATE FROM ZTASKOCCURRENCE").map {
             OldRecord(id: uuid($0[0])!, dayKey: $0[1] as? String ?? "", isDone: ($0[2] as? Int ?? 0) != 0,
@@ -73,7 +128,7 @@ struct LegacyFixtureMigrationTests {
         }
         let lists = rows("SELECT COUNT(*) FROM ZCUSTOMLIST").first?[0] as? Int ?? 0
         let tags = rows("SELECT COUNT(*) FROM ZTASKTAG").first?[0] as? Int ?? 0
-        return Legacy(tasks: tasks, subtasks: subtasks, records: records, lists: lists, tags: tags)
+        return Legacy(tasks: tasks, subtasks: subtasks, records: records, lists: lists, tags: tags, taskTagLinks: taskTagLinks)
     }
 
     private func workingCopy(of tag: String) throws -> (store: URL, cleanup: () -> Void) {
@@ -108,12 +163,34 @@ struct LegacyFixtureMigrationTests {
                 splitChildByRoot[old.id] = child
                 #expect(child.occurrenceModified == nil, "\(tag): split occurrence has unknown history")
                 #expect(child.isCritical == old.critical)
+                // Definition also inherits metadata from the series row
+                #expect(row.timeMinutes == old.timeMinutes, "\(tag): definition \(old.title) timeMinutes")
+                #expect(row.alarmEnabled == old.alarmEnabled, "\(tag): definition \(old.title) alarmEnabled")
+                #expect(row.colorHex == old.colorHex, "\(tag): definition \(old.title) colorHex")
+                #expect(row.priority == old.priority, "\(tag): definition \(old.title) priority")
             } else {
                 #expect(row.notes == old.notes && row.isDone == old.isDone && row.dayKey == old.dayKey, "\(tag): \(old.title) payload")
                 #expect(row.isCritical == old.critical, "\(tag): \(old.title) critical flag")
                 #expect(row.notesRich == old.notesRich, "\(tag): \(old.title) rich notes")
                 #expect(row.templateID == old.templateID, "\(tag): \(old.title) series link")
                 #expect((row.customList != nil) == (old.listPK != nil), "\(tag): \(old.title) list placement")
+                if let listId = old.listId {
+                    #expect(row.customList?.id == listId, "\(tag): \(old.title) exact list identity")
+                }
+                // Verify all metadata fields preserved
+                #expect(row.timeMinutes == old.timeMinutes, "\(tag): \(old.title) timeMinutes")
+                #expect(row.alarmEnabled == old.alarmEnabled, "\(tag): \(old.title) alarmEnabled")
+                #expect(row.colorHex == old.colorHex, "\(tag): \(old.title) colorHex")
+                #expect(row.priority == old.priority, "\(tag): \(old.title) priority")
+                if let completedAt = old.completedAt {
+                    #expect(row.completedAt != nil, "\(tag): \(old.title) completedAt not preserved")
+                    #expect(abs(row.completedAt!.timeIntervalSince(completedAt)) < 0.001, "\(tag): \(old.title) completedAt precision")
+                }
+                // Note: completedAt may be present in restored rows even if not in the legacy fixture reading,
+                // since v0.1.15+ backups capture completion dates that older schema readers might not extract
+                // Verify timestamps exist (preservation test; exact precision varies across migration paths/formats)
+                #expect(row.createdAt.timeIntervalSince1970 > 0, "\(tag): \(old.title) createdAt invalid")
+                #expect(row.updatedAt.timeIntervalSince1970 > 0, "\(tag): \(old.title) updatedAt invalid")
             }
         }
 
@@ -121,7 +198,9 @@ struct LegacyFixtureMigrationTests {
         let subByID = Dictionary(uniqueKeysWithValues: subtasks.map { ($0.id, $0) })
         for old in legacy.subtasks {
             let sub = try #require(subByID[old.id], "\(tag): subtask \(old.title) was lost")
-            #expect(sub.title == old.title)
+            #expect(sub.title == old.title, "\(tag): subtask \(old.title) title")
+            #expect(sub.isDone == old.isDone, "\(tag): subtask \(old.title) isDone")
+            #expect(sub.sortIndex == old.sortIndex, "\(tag): subtask \(old.title) sortIndex")
             let expectedParent = old.parent.flatMap { splitChildByRoot[$0]?.id ?? $0 }
             #expect(sub.parent?.id == expectedParent, "\(tag): subtask \(old.title) stays with its occurrence")
         }
@@ -130,6 +209,14 @@ struct LegacyFixtureMigrationTests {
         #expect(Set(records.map(\.id)) == Set(legacy.records.map(\.id)), "\(tag): every skip/override record kept")
         #expect(try context.fetchCount(FetchDescriptor<CustomList>()) == legacy.lists)
         #expect(try context.fetchCount(FetchDescriptor<TaskTag>()) == legacy.tags)
+
+        // Verify tag relationships: each task has exactly the tags it had in the legacy store
+        for (taskId, expectedTagIds) in legacy.taskTagLinks {
+            let row = try #require(byID[taskId], "\(tag): task with tags was lost")
+            let actualTagIds = Set(row.tags.map(\.id))
+            let expectedSet = Set(expectedTagIds)
+            #expect(actualTagIds == expectedSet, "\(tag): task \(taskId) tag relationships differ")
+        }
 
         // A skipped slot never gets an occurrence; a completed pre-0.1.13 override
         // becomes a completed occurrence (without an invented completion date).
