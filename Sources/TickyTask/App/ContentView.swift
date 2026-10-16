@@ -307,6 +307,7 @@ private struct TopToolbar: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                         .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                        .accessibilityIdentifier("toolbar-previous")
                     Button("Today") { app.goToToday() }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -316,6 +317,7 @@ private struct TopToolbar: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                         .help(app.viewMode == .week ? "Next week" : "Next month")
+                        .accessibilityIdentifier("toolbar-next")
                 }
             }
         }

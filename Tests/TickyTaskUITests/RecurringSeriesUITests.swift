@@ -1,551 +1,382 @@
 import XCTest
-import Foundation
 
-/// Comprehensive tests for recurring series behavior in TickyTask v0.1.17.
-/// Journeys cover isolation (notes, subtasks), shared attributes (title, time),
-/// deletion (occurrence vs series), rule changes, and persistence across relaunches.
-/// Each test launches fresh with `-uitestRecurringSeed` to get a deterministic set
-/// of recurring series (Standup, Paycheck, Meeting).
+/// End-to-end journeys for recurring series (v0.1.17), driving the real editor,
+/// row menus, and toolbar. `-uitestRecurringSeed` adds a daily "Standup" (started
+/// two days ago, first occurrence done), a "Paycheck" on the 1st and 15th, and a
+/// weekly "Meeting" — all generated through the app's own series code.
+///
+/// SwiftUI copies a container's accessibility identifier onto its children, so a
+/// day column is found as the union of the elements tagged `dayColumn-<key>`, and a
+/// row as the title text tagged `taskRow-<title>` that sits inside that column.
 final class RecurringSeriesUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launchedApp(_ extra: [String] = []) -> XCUIApplication {
-        let app: XCUIApplication
-        if let path = ProcessInfo.processInfo.environment["UITEST_APP_PATH"], !path.isEmpty {
-            app = XCUIApplication(url: URL(fileURLWithPath: path))
-        } else {
-            app = XCUIApplication()
-        }
+    // MARK: - Launch and navigation
+
+    private func launch(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
         app.launchArguments = ["-uitest", "-uitestRecurringSeed", "-calendarColumns", "7",
                                "-weekStartsMonday", "YES", "-showWeekends", "YES"] + extra
         app.launchWithMainWindow()
+        XCTAssertTrue(app.staticTexts["Alpha"].waitForExistence(timeout: 20), "seeded board should render")
         return app
     }
 
-    /// Navigate forward by `days` days using the week toolbar (› button).
-    private func navigateForward(_ app: XCUIApplication, _ days: Int) {
-        for _ in 0..<days {
-            let next = app.buttons["toolbar-next-week"].firstMatch
-            XCTAssertTrue(next.waitForExistence(timeout: 5))
-            next.click()
-            Thread.sleep(forTimeInterval: 0.2)
+    private var calendar: Calendar {
+        var c = Calendar.current
+        c.firstWeekday = 2   // the tests launch with weekStartsMonday
+        return c
+    }
+
+    private func key(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar.current
+        f.timeZone = TimeZone.current
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: date)
+    }
+
+    private func day(_ offset: Int, from base: Date = Date()) -> Date {
+        calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: base))!
+    }
+
+    /// Monday of the week `weeks` after the current one.
+    private func monday(weeks: Int) -> Date {
+        let thisMonday = calendar.dateInterval(of: .weekOfYear, for: Date())!.start
+        return calendar.date(byAdding: .weekOfYear, value: weeks, to: thisMonday)!
+    }
+
+    /// The week (relative to the current one) on screen; navigation keeps it in step
+    /// and waits for that week's Monday column after every click.
+    private var shownWeek = 0
+
+    private func go(_ app: XCUIApplication, weeks: Int) {
+        let button = app.buttons[weeks > 0 ? "toolbar-next" : "toolbar-previous"]
+        for _ in 0..<abs(weeks) {
+            XCTAssertTrue(button.waitForExistence(timeout: 5))
+            let target = shownWeek + (weeks > 0 ? 1 : -1)
+            let column = app.descendants(matching: .any).matching(identifier: "dayColumn-\(key(monday(weeks: target)))").firstMatch
+            for _ in 0..<3 where !column.exists {
+                button.click()
+                _ = column.waitForExistence(timeout: 3)
+            }
+            XCTAssertTrue(column.exists, "week \(target) should be shown")
+            shownWeek = target
         }
     }
 
-    /// Navigate backward by `days` days using the week toolbar (‹ button).
-    private func navigateBackward(_ app: XCUIApplication, _ days: Int) {
-        for _ in 0..<days {
-            let prev = app.buttons["toolbar-previous-week"].firstMatch
-            XCTAssertTrue(prev.waitForExistence(timeout: 5))
-            prev.click()
-            Thread.sleep(forTimeInterval: 0.2)
-        }
+    private func today(_ app: XCUIApplication) {
+        app.buttons["toolbar-today"].click()
+        shownWeek = 0
+        _ = app.descendants(matching: .any).matching(identifier: "dayColumn-\(key(monday(weeks: 0)))").firstMatch
+            .waitForExistence(timeout: 3)
     }
 
-    /// Click the "Today" button to return to the current week.
-    private func navigateToToday(_ app: XCUIApplication) {
-        let today = app.buttons["toolbar-today"].firstMatch
-        XCTAssertTrue(today.waitForExistence(timeout: 5))
-        today.click()
-        Thread.sleep(forTimeInterval: 0.2)
+    // MARK: - Rows
+
+    private func columnFrame(_ app: XCUIApplication, _ dayKey: String) -> CGRect {
+        app.descendants(matching: .any).matching(identifier: "dayColumn-\(dayKey)").allElementsBoundByIndex
+            .map(\.frame).reduce(CGRect.null) { $0.union($1) }
     }
 
-    /// Find a task row by title within a specific day column.
-    private func taskInColumn(_ app: XCUIApplication, title: String, dayKey: String) -> XCUIElement {
-        let column = app.descendants(matching: .any).matching(identifier: "dayColumn-\(dayKey)").firstMatch
-        return column.descendants(matching: .any).matching(identifier: "taskRow-\(title)").firstMatch
+    /// The title text of the `title` row on `dayKey`, if it is shown there.
+    private func row(_ app: XCUIApplication, _ title: String, on dayKey: String) -> XCUIElement? {
+        let column = columnFrame(app, dayKey)
+        guard !column.isNull else { return nil }
+        return app.staticTexts.matching(identifier: "taskRow-\(title)").allElementsBoundByIndex
+            .first { column.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
     }
 
-    /// Find any task row by title.
-    private func taskAny(_ app: XCUIApplication, title: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: "taskRow-\(title)").firstMatch
-    }
-
-    /// Poll until exactly `count` instances of `title` are visible (for series occurrences).
-    private func waitForCount(_ app: XCUIApplication, title: String,
-                              exactly count: Int, timeout: TimeInterval = 5) -> Bool {
+    @discardableResult
+    private func waitForRow(_ app: XCUIApplication, _ title: String, on dayKey: String,
+                            present: Bool = true, timeout: TimeInterval = 6) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let visible = app.staticTexts.matching(identifier: title).count
-            if visible == count { return true }
-            usleep(200_000)
-        }
+        repeat {
+            if (row(app, title, on: dayKey) != nil) == present { return true }
+            usleep(250_000)
+        } while Date() < deadline
         return false
     }
 
-    /// Read the value of an editor field (static text or text field).
-    private func editorFieldValue(_ field: XCUIElement) -> String {
-        (field.value as? String) ?? field.label
+    /// Images (glyphs) on the same line as `title`'s row on `dayKey`.
+    private func rowGlyphs(_ app: XCUIApplication, _ title: String, on dayKey: String) -> [String] {
+        guard let text = row(app, title, on: dayKey) else { return [] }
+        let column = columnFrame(app, dayKey)
+        let band = CGRect(x: column.minX, y: text.frame.minY - 4, width: column.width, height: text.frame.height + 8)
+        let images = app.images.allElementsBoundByIndex.filter { band.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        let texts = app.staticTexts.allElementsBoundByIndex.filter { band.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        return images.map(\.label) + texts.compactMap { $0.value as? String }
     }
 
-    /// Get the current day key (yyyyMMdd format) for a given date offset from today.
-    /// Offset 0 = today, -1 = yesterday, 1 = tomorrow, etc.
-    private func dayKeyOffset(_ offset: Int) -> String {
-        let calendar = Calendar(identifier: .gregorian)
-        let target = calendar.date(byAdding: .day, value: offset, to: Date())!
-        let fmt = DateFormatter()
-        fmt.calendar = calendar
-        fmt.timeZone = calendar.timeZone
-        fmt.dateFormat = "yyyyMMdd"
-        return fmt.string(from: target)
+    private func open(_ app: XCUIApplication, _ title: String, on dayKey: String) {
+        XCTAssertTrue(waitForRow(app, title, on: dayKey), "\(title) should be shown on \(dayKey)")
+        row(app, title, on: dayKey)!.click()
+        XCTAssertTrue(app.buttons["editor-done"].waitForExistence(timeout: 5), "the editor should open")
     }
 
-    /// Today's day key in yyyyMMdd format.
-    private var todayKey: String { dayKeyOffset(0) }
-
-    // MARK: - Test 1: Rename from a later occurrence
-
-    func testRenameFromLaterOccurrence() throws {
-        let app = launchedApp()
-
-        // Find a "Standup" occurrence (daily series started 2 days ago, so today should have one).
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20), "Standup should exist in the visible week")
-
-        // Open the editor and rename it.
-        standup.click()
-        let titleField = app.textFields["editor-title"].firstMatch
-        XCTAssertTrue(titleField.waitForExistence(timeout: 5), "editor should open")
-        titleField.click()
-        titleField.typeKey("a", modifierFlags: .command)  // select all
-        titleField.typeText("StandupRenamed")
+    private func done(_ app: XCUIApplication) {
         app.buttons["editor-done"].click()
-
-        // Verify the new title is visible in the current week.
-        XCTAssertTrue(waitForCount(app, title: "StandupRenamed", exactly: 1, timeout: 5),
-                      "renamed title should appear")
-        XCTAssertTrue(waitForCount(app, title: "Standup", exactly: 0, timeout: 5),
-                      "old title should be gone")
-
-        // Navigate forward to verify future occurrences also have the new name.
-        navigateForward(app, 7)
-        XCTAssertTrue(taskAny(app, title: "StandupRenamed").waitForExistence(timeout: 5),
-                      "renamed title should persist to future weeks")
+        XCTAssertTrue(waitForGone(app.buttons["editor-done"]), "the editor should close")
     }
 
-    // MARK: - Test 2: Notes isolation
-
-    func testNotesIsolation() throws {
-        let app = launchedApp()
-
-        // Open today's Standup and add notes.
-        let standup1 = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup1.waitForExistence(timeout: 20))
-        standup1.click()
-        let notesEditor = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        XCTAssertTrue(notesEditor.waitForExistence(timeout: 5))
-        notesEditor.click()
-        notesEditor.typeText("Notes for today")
-        app.buttons["Done"].click()
-
-        // Verify the notes glyph appears on today's Standup.
-        let todayStandup = taskAny(app, title: "Standup")
-        XCTAssertTrue(todayStandup.descendants(matching: .any).matching(identifier: "notesIcon").firstMatch
-                      .waitForExistence(timeout: 5), "notes glyph should appear on today's occurrence")
-
-        // Navigate forward and open tomorrow's Standup.
-        navigateForward(app, 1)
-        let tomorrowStandup = taskAny(app, title: "Standup")
-        XCTAssertTrue(tomorrowStandup.waitForExistence(timeout: 5))
-        tomorrowStandup.click()
-
-        let notesEditor2 = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        XCTAssertTrue(notesEditor2.waitForExistence(timeout: 5))
-        notesEditor2.click()
-        notesEditor2.typeText("Different notes")
-        app.buttons["Done"].click()
-
-        // Verify tomorrow's Standup has the notes glyph.
-        XCTAssertTrue(taskAny(app, title: "Standup").descendants(matching: .any)
-                      .matching(identifier: "notesIcon").firstMatch.waitForExistence(timeout: 5),
-                      "tomorrow's occurrence should have its own notes glyph")
-
-        // Navigate back to today and verify its notes glyph is still there.
-        navigateBackward(app, 1)
-        XCTAssertTrue(taskAny(app, title: "Standup").descendants(matching: .any)
-                      .matching(identifier: "notesIcon").firstMatch.waitForExistence(timeout: 5),
-                      "today's notes glyph should still be there")
-
-        // Navigate forward again and open tomorrow's Standup to verify its notes are separate.
-        navigateForward(app, 1)
-        let tomorrow = taskAny(app, title: "Standup")
-        tomorrow.click()
-        let notesField = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        XCTAssertTrue(notesField.waitForExistence(timeout: 5))
-        let notesValue = (notesField.value as? String) ?? ""
-        XCTAssertTrue(notesValue.contains("Different notes"), "tomorrow's notes should be preserved")
-        XCTAssertFalse(notesValue.contains("Notes for today"), "today's notes should not leak here")
-        app.buttons["Cancel"].click()
+    private func waitForGone(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while element.exists && Date() < deadline { usleep(200_000) }
+        return !element.exists
     }
 
-    // MARK: - Test 3: Subtask isolation
-
-    func testSubtaskIsolation() throws {
-        let app = launchedApp()
-
-        // Open today's Standup and add a subtask.
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20))
-        standup.click()
-        let addSubtaskField = app.textFields["editor-add-subtask"].firstMatch
-        XCTAssertTrue(addSubtaskField.waitForExistence(timeout: 5))
-        addSubtaskField.click()
-        addSubtaskField.typeText("Subtask 1")
-        addSubtaskField.typeKey(.return, modifierFlags: [])
-        app.buttons["Done"].click()
-
-        // Verify today's Standup shows the subtask badge.
-        let todayRow = taskAny(app, title: "Standup")
-        let badgeQuery = todayRow.staticTexts.matching(NSPredicate(format: "label CONTAINS '1/1'"))
-        XCTAssertGreaterThan(badgeQuery.count, 0, "today's Standup should show 1/1 badge")
-
-        // Navigate to tomorrow and verify no badge.
-        navigateForward(app, 1)
-        let tomorrowRow = taskAny(app, title: "Standup")
-        XCTAssertTrue(tomorrowRow.waitForExistence(timeout: 5))
-        let tomorrowBadgeQuery = tomorrowRow.staticTexts.matching(NSPredicate(format: "label CONTAINS '/'"))
-        XCTAssertEqual(tomorrowBadgeQuery.count, 0, "tomorrow's Standup should not have a subtask badge")
+    private func setTitle(_ app: XCUIApplication, _ text: String) {
+        let field = app.textFields["editor-title"]
+        field.click()
+        field.typeKey("a", modifierFlags: .command)
+        field.typeText(text)
     }
 
-    // MARK: - Test 4: Captions visibility and time toggle
+    private func typeNotes(_ app: XCUIApplication, _ text: String) {
+        let notes = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
+        notes.click()
+        notes.typeText(text)
+    }
 
-    func testCaptionsVisibleOnSeries() throws {
-        let app = launchedApp()
+    private func notesValue(_ app: XCUIApplication) -> String {
+        app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch.value as? String ?? ""
+    }
 
-        // Open today's Standup (a series occurrence).
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20))
-        standup.click()
-
-        // Verify captions are present.
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "caption-shared").firstMatch
-                      .waitForExistence(timeout: 5), "caption-shared should be visible")
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "caption-details").firstMatch
-                      .waitForExistence(timeout: 5), "caption-details should be visible")
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "caption-subtasks").firstMatch
-                      .waitForExistence(timeout: 5), "caption-subtasks should be visible")
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "caption-repeat").firstMatch
-                      .waitForExistence(timeout: 5), "caption-repeat should be visible")
-
-        app.buttons["Cancel"].click()
-
-        // Open a one-off task (Alpha) and verify captions are absent.
-        let alpha = taskAny(app, title: "Alpha")
-        XCTAssertTrue(alpha.waitForExistence(timeout: 5))
-        alpha.click()
-
-        let captions = ["caption-shared", "caption-details", "caption-subtasks", "caption-repeat"]
-        for captionId in captions {
-            XCTAssertFalse(app.descendants(matching: .any).matching(identifier: captionId).firstMatch.exists,
-                          "\(captionId) should not be visible for a one-off task")
+    private func delete(_ app: XCUIApplication, _ title: String, on dayKey: String, choice: String) {
+        XCTAssertTrue(waitForRow(app, title, on: dayKey))
+        let button = app.sheets.buttons[choice].firstMatch
+        for _ in 0..<2 where !button.exists {
+            row(app, title, on: dayKey)!.rightClick()
+            let item = app.menuItems["context-delete"].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5))
+            item.click()
+            _ = button.waitForExistence(timeout: 4)
         }
-
-        app.buttons["Cancel"].click()
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "the delete dialog should offer \(choice)")
+        button.click()
     }
 
-    func testTimeToggleHidesReminderToggle() throws {
-        let app = launchedApp()
+    // MARK: - Journeys
 
-        // Open today's Standup.
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20))
-        standup.click()
+    /// 1. A rename from a later occurrence reaches past, completed, and future ones.
+    func testRenameFromLaterOccurrenceUpdatesEverywhere() throws {
+        let app = launch()
+        let nextMonday = key(monday(weeks: 1))
+        go(app, weeks: 1)
+        open(app, "Standup", on: nextMonday)
+        setTitle(app, "Daily sync")
+        done(app)
 
-        // Verify the time toggle and reminder toggle are present.
-        let timeToggle = app.switches.matching(identifier: "Set time").firstMatch
-        XCTAssertTrue(timeToggle.waitForExistence(timeout: 5))
-
-        let reminderToggle = app.switches.matching(identifier: "Remind me at this time").firstMatch
-        _ = reminderToggle.exists  // Verify the reminder toggle exists when time is set
-
-        app.buttons["Cancel"].click()
-    }
-
-    // MARK: - Test 5: Repeat section from a past/completed occurrence
-
-    func testEditRuleFromCompletedOccurrence() throws {
-        let app = launchedApp()
-
-        // The Standup from 2 days ago is marked done in the seed.
-        // Navigate back to find it.
-        navigateBackward(app, 1)
-        let pastStandup = taskAny(app, title: "Standup")
-        XCTAssertTrue(pastStandup.waitForExistence(timeout: 5), "past Standup should exist")
-
-        // Verify it's struck through (done).
-        let titleQuery = pastStandup.staticTexts.matching(NSPredicate(format: "label == 'Standup'"))
-        XCTAssertGreaterThan(titleQuery.count, 0, "Standup text should exist")
-
-        // Open the editor and verify the repeat section is accessible.
-        pastStandup.click()
-        let frequencyPicker = app.pickers["Frequency"].firstMatch
-        XCTAssertTrue(frequencyPicker.waitForExistence(timeout: 5), "Repeat/Frequency picker should be visible")
-        app.buttons["Cancel"].click()
-    }
-
-    // MARK: - Test 6: First-occurrence deletion preserves notes on next
-
-    func testFirstOccurrenceDeletionPreservesNextNotes() throws {
-        let app = launchedApp()
-
-        // Navigate back to the first Standup (2 days ago).
-        navigateBackward(app, 1)
-        let firstStandup = taskAny(app, title: "Standup")
-        XCTAssertTrue(firstStandup.waitForExistence(timeout: 5))
-
-        // Navigate forward to today and add notes to today's Standup.
-        navigateForward(app, 1)
-        let todayStandup = taskAny(app, title: "Standup")
-        todayStandup.click()
-        let notesEditor = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        XCTAssertTrue(notesEditor.waitForExistence(timeout: 5))
-        notesEditor.click()
-        notesEditor.typeText("Important: follow-up notes")
-        app.buttons["Done"].click()
-
-        // Verify the notes glyph appears.
-        XCTAssertTrue(taskAny(app, title: "Standup").descendants(matching: .any)
-                      .matching(identifier: "notesIcon").firstMatch.waitForExistence(timeout: 5),
-                      "notes glyph should be visible")
-
-        // Navigate back and delete the first occurrence.
-        navigateBackward(app, 1)
-        let firstRow = taskAny(app, title: "Standup")
-        firstRow.rightClick()
-        let deleteItem = app.menuItems["context-delete"].firstMatch
-        XCTAssertTrue(deleteItem.waitForExistence(timeout: 5))
-        deleteItem.click()
-
-        let deleteThisButton = app.sheets.buttons["Delete This Occurrence"].firstMatch
-        XCTAssertTrue(deleteThisButton.waitForExistence(timeout: 5))
-        deleteThisButton.click()
-
-        // Navigate forward to today and verify the notes glyph is still there.
-        navigateForward(app, 1)
-        XCTAssertTrue(taskAny(app, title: "Standup").descendants(matching: .any)
-                      .matching(identifier: "notesIcon").firstMatch.waitForExistence(timeout: 5),
-                      "notes glyph should persist on the next occurrence")
-    }
-
-    // MARK: - Test 7: Deletion choices (Cancel, This Occurrence, Entire Series)
-
-    func testDeletionChoices() throws {
-        let app = launchedApp()
-
-        // Test Cancel: open Standup's delete dialog and press Cancel.
-        let standup1 = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup1.waitForExistence(timeout: 20))
-        standup1.rightClick()
-        let deleteItem1 = app.menuItems["context-delete"].firstMatch
-        XCTAssertTrue(deleteItem1.waitForExistence(timeout: 5))
-        deleteItem1.click()
-
-        let cancelButton = app.sheets.buttons["Cancel"].firstMatch
-        XCTAssertTrue(cancelButton.waitForExistence(timeout: 5))
-        cancelButton.click()
-
-        // Verify Standup still exists.
-        XCTAssertTrue(waitForCount(app, title: "Standup", exactly: 1, timeout: 5),
-                      "Standup should still exist after Cancel")
-
-        // Test This Occurrence: delete only today's occurrence.
-        let standup2 = taskAny(app, title: "Standup")
-        standup2.rightClick()
-        let deleteItem2 = app.menuItems["context-delete"].firstMatch
-        deleteItem2.click()
-        let deleteThisButton = app.sheets.buttons["Delete This Occurrence"].firstMatch
-        deleteThisButton.click()
-
-        // Verify today's is gone but tomorrow's still exists.
-        XCTAssertTrue(waitForCount(app, title: "Standup", exactly: 0, timeout: 5),
-                      "today's Standup should be deleted")
-        navigateForward(app, 1)
-        XCTAssertTrue(taskAny(app, title: "Standup").waitForExistence(timeout: 5),
-                      "tomorrow's Standup should still exist")
-
-        // Test Entire Series: navigate back and delete the entire series via a fresh app.
-        navigateBackward(app, 1)
-
-        // Re-seed and test the Paycheck series.
-        let paycheck = taskAny(app, title: "Paycheck")
-        XCTAssertTrue(paycheck.waitForExistence(timeout: 5))
-        paycheck.rightClick()
-        let deletePaycheck = app.menuItems["context-delete"].firstMatch
-        deletePaycheck.click()
-        let deleteSeriesButton = app.sheets.buttons["Delete Entire Series"].firstMatch
-        XCTAssertTrue(deleteSeriesButton.waitForExistence(timeout: 5))
-        deleteSeriesButton.click()
-
-        // Verify Paycheck is gone.
-        XCTAssertTrue(waitForCount(app, title: "Paycheck", exactly: 0, timeout: 5),
-                      "entire Paycheck series should be deleted")
-    }
-
-    // MARK: - Test 8: Stop repeating
-
-    func testStopRepeating() throws {
-        let app = launchedApp()
-
-        // Open today's Meeting and click Stop Repeating.
-        let meeting = taskAny(app, title: "Meeting")
-        XCTAssertTrue(meeting.waitForExistence(timeout: 20))
-        meeting.click()
-
-        let stopButton = app.buttons["repeat-stop"].firstMatch
-        XCTAssertTrue(stopButton.waitForExistence(timeout: 5), "Stop Repeating button should be visible")
-        stopButton.click()
-        app.buttons["Done"].click()
-
-        // Navigate forward to verify future occurrences are gone.
-        navigateForward(app, 7)
-        XCTAssertTrue(waitForCount(app, title: "Meeting", exactly: 0, timeout: 5),
-                      "future Meeting occurrences should be gone")
-
-        // Navigate back to today and verify today's still exists.
-        navigateToToday(app)
-        XCTAssertTrue(taskAny(app, title: "Meeting").waitForExistence(timeout: 5),
-                      "today's Meeting should still exist (it's the boundary)")
-    }
-
-    func testStopRepeatingWithFutureNotes() throws {
-        let app = launchedApp()
-
-        // Navigate forward and add notes to a future Meeting.
-        navigateForward(app, 7)
-        let futureMeeting = taskAny(app, title: "Meeting")
-        XCTAssertTrue(futureMeeting.waitForExistence(timeout: 5))
-        futureMeeting.click()
-        let notesEditor = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        XCTAssertTrue(notesEditor.waitForExistence(timeout: 5))
-        notesEditor.click()
-        notesEditor.typeText("Important future notes")
-        app.buttons["Done"].click()
-
-        // Navigate back to today and stop repeating.
-        navigateToToday(app)
-        let meeting = taskAny(app, title: "Meeting")
-        meeting.click()
-        let stopButton = app.buttons["repeat-stop"].firstMatch
-        stopButton.click()
-        app.buttons["Done"].click()
-
-        // Navigate forward and verify the future Meeting with notes is still there.
-        navigateForward(app, 7)
-        let keptMeeting = taskAny(app, title: "Meeting")
-        XCTAssertTrue(keptMeeting.waitForExistence(timeout: 5),
-                      "future Meeting with notes should be kept after Stop Repeating")
-    }
-
-    // MARK: - Test 9: No-op imported rule
-
-    func testNoOpImportedRule() throws {
-        let app = launchedApp()
-
-        // Open a Paycheck occurrence and verify the month-days caption shows "1, 15".
-        let paycheck = taskAny(app, title: "Paycheck")
-        XCTAssertTrue(paycheck.waitForExistence(timeout: 20))
-        paycheck.click()
-
-        let monthDaysCaption = app.descendants(matching: .any).matching(identifier: "repeat-month-days").firstMatch
-        XCTAssertTrue(monthDaysCaption.waitForExistence(timeout: 5), "month-days should be shown for daysOfMonth frequency")
-        let captionValue = (monthDaysCaption.value as? String) ?? monthDaysCaption.label
-        XCTAssertTrue(captionValue.contains("1") && captionValue.contains("15"),
-                      "caption should show days 1 and 15")
-
-        app.buttons["Done"].click()
-
-        // Navigate forward a month and verify Paycheck still appears on the 1st and 15th.
-        navigateForward(app, 28)
-        XCTAssertTrue(waitForCount(app, title: "Paycheck", exactly: 1, timeout: 5),
-                      "Paycheck should appear in the next month")
-    }
-
-    // MARK: - Test 10: Cancel/Esc discards edits
-
-    func testCancelDiscards() throws {
-        let app = launchedApp()
-
-        // Open Standup and modify the title and notes.
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20))
-        standup.click()
-
-        let titleField = app.textFields["editor-title"].firstMatch
-        XCTAssertTrue(titleField.waitForExistence(timeout: 5))
-        titleField.click()
-        titleField.typeKey("a", modifierFlags: .command)
-        titleField.typeText("Modified Title")
-
-        let notesEditor = app.descendants(matching: .any).matching(identifier: "editor-notes").firstMatch
-        notesEditor.click()
-        notesEditor.typeText("Modified notes")
-
-        // Press Cancel.
-        app.buttons["Cancel"].click()
-
-        // Verify the changes are discarded.
-        let standup2 = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup2.waitForExistence(timeout: 5), "Standup title should be unchanged")
-        XCTAssertFalse(taskAny(app, title: "Modified Title").exists, "Modified title should not exist")
-    }
-
-    func testEscapeDiscards() throws {
-        let app = launchedApp()
-
-        // Open Standup and press Escape.
-        let standup = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup.waitForExistence(timeout: 20))
-        standup.click()
-
-        let titleField = app.textFields["editor-title"].firstMatch
-        XCTAssertTrue(titleField.waitForExistence(timeout: 5))
-        app.keys["escape"].press(forDuration: 0.1)
-
-        // Verify the editor is closed and no changes were saved.
-        XCTAssertFalse(titleField.exists, "editor should be closed")
-        XCTAssertTrue(taskAny(app, title: "Standup").waitForExistence(timeout: 5),
-                      "Standup should still exist with original title")
-    }
-
-    // MARK: - Test 11: Disk-store relaunch persistence
-
-    func testDiskStoreRelaunchPersistence() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let testStore = tempDir.appendingPathComponent("uitest-recurring-\(UUID().uuidString)", isDirectory: true)
-
-        defer {
-            try? FileManager.default.removeItem(at: testStore)
+        for offset in 0..<7 {
+            let k = key(day(offset, from: monday(weeks: 1)))
+            XCTAssertTrue(waitForRow(app, "Daily sync", on: k), "renamed on \(k)")
+            XCTAssertNil(row(app, "Standup", on: k), "old title gone on \(k)")
         }
+        let first = day(-2)   // the completed first occurrence
+        today(app)
+        if first < monday(weeks: 0) { go(app, weeks: -1) }
+        XCTAssertTrue(waitForRow(app, "Daily sync", on: key(first)), "the completed first occurrence is renamed too")
+    }
 
-        // First launch: seed the store and rename a series.
-        var app = launchedApp(["-uitestStore", testStore.path])
-        let standup1 = taskAny(app, title: "Standup")
-        XCTAssertTrue(standup1.waitForExistence(timeout: 20))
+    /// 2. Notes stay on their own occurrence, even through a shared edit.
+    func testNotesStayOnTheirOccurrence() throws {
+        let app = launch()
+        let mon = key(monday(weeks: 1)), tue = key(day(1, from: monday(weeks: 1))), wed = key(day(2, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        open(app, "Standup", on: mon)
+        typeNotes(app, "monday-only")
+        done(app)
+        open(app, "Standup", on: tue)
+        XCTAssertEqual(notesValue(app).trimmingCharacters(in: .whitespacesAndNewlines), "", "a sibling starts with empty notes")
+        typeNotes(app, "tuesday-only")
+        done(app)
 
-        standup1.click()
-        let titleField = app.textFields["editor-title"].firstMatch
-        XCTAssertTrue(titleField.waitForExistence(timeout: 5))
-        titleField.click()
-        titleField.typeKey("a", modifierFlags: .command)
-        titleField.typeText("StandupRenamed")
-        app.buttons["Done"].click()
+        open(app, "Standup", on: wed)   // a shared edit from a third occurrence
+        setTitle(app, "Standup v2")
+        done(app)
 
-        // Verify the rename persisted visually.
-        XCTAssertTrue(waitForCount(app, title: "StandupRenamed", exactly: 1, timeout: 5),
-                      "rename should be visible before terminating")
+        XCTAssertTrue(rowGlyphs(app, "Standup v2", on: mon).contains("Has notes"))
+        XCTAssertTrue(rowGlyphs(app, "Standup v2", on: tue).contains("Has notes"))
+        XCTAssertFalse(rowGlyphs(app, "Standup v2", on: wed).contains("Has notes"))
+        open(app, "Standup v2", on: mon)
+        XCTAssertTrue(notesValue(app).contains("monday-only"))
+        XCTAssertFalse(notesValue(app).contains("tuesday-only"))
+    }
 
-        // Terminate the app.
+    /// 3. Subtasks belong to one occurrence.
+    func testSubtasksStayOnTheirOccurrence() throws {
+        let app = launch()
+        let mon = key(monday(weeks: 1)), tue = key(day(1, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        open(app, "Standup", on: mon)
+        let add = app.textFields["editor-add-subtask"]
+        add.click()
+        add.typeText("Prepare agenda\r")
+        done(app)
+        XCTAssertTrue(rowGlyphs(app, "Standup", on: mon).contains("0/1"), "badge on the edited occurrence")
+        XCTAssertFalse(rowGlyphs(app, "Standup", on: tue).contains("0/1"), "no badge on a sibling")
+    }
+
+    /// 4. Scope captions appear on a series occurrence only; clearing the time hides the reminder.
+    func testCaptionsAndTimeToggle() throws {
+        let app = launch()
+        let todayKey = key(Date())
+        open(app, "Standup", on: todayKey)
+        for id in ["caption-shared", "caption-details", "caption-subtasks", "caption-repeat"] {
+            XCTAssertTrue(app.staticTexts[id].exists, "\(id) on a series occurrence")
+        }
+        XCTAssertTrue(app.buttons["repeat-stop"].exists)
+        app.buttons["editor-cancel"].click()
+        XCTAssertTrue(waitForGone(app.buttons["editor-done"]))
+
+        open(app, "Alpha", on: todayKey)
+        XCTAssertFalse(app.staticTexts["caption-shared"].exists, "no series caption on a one-off")
+        XCTAssertTrue(app.switches["repeat-toggle"].exists, "a one-off can start repeating")
+        let timeToggle = app.switches["editor-time-toggle"]
+        timeToggle.click()
+        XCTAssertTrue(app.switches["editor-reminder-toggle"].waitForExistence(timeout: 3))
+        timeToggle.click()
+        XCTAssertTrue(waitForGone(app.switches["editor-reminder-toggle"]), "no reminder without a time")
+    }
+
+    /// 5. The rule can be changed from the completed first occurrence.
+    func testRuleEditFromCompletedOccurrence() throws {
+        let app = launch()
+        let first = day(-2)
+        if first < monday(weeks: 0) { go(app, weeks: -1) }
+        open(app, "Standup", on: key(first))
+        let frequency = app.popUpButtons["repeat-frequency"]
+        XCTAssertEqual(frequency.value as? String, "Daily", "the series rule is shown on a past occurrence")
+        frequency.click()
+        app.menuItems["Weekly"].click()
+        done(app)
+
+        today(app)
+        go(app, weeks: 1)
+        let shown = (0..<7).filter { row(app, "Standup", on: key(day($0, from: monday(weeks: 1)))) != nil }
+        XCTAssertEqual(shown.count, 1, "weekly from next week on")
+    }
+
+    /// 6. Deleting the first occurrence leaves the next one's work alone.
+    func testDeletingOneOccurrenceKeepsTheNextOnesNotes() throws {
+        let app = launch()
+        let mon = key(monday(weeks: 1)), tue = key(day(1, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        open(app, "Standup", on: tue)
+        typeNotes(app, "keep me")
+        done(app)
+        delete(app, "Standup", on: mon, choice: "Delete This Occurrence")
+        XCTAssertTrue(waitForRow(app, "Standup", on: mon, present: false), "only that occurrence is gone")
+        XCTAssertTrue(rowGlyphs(app, "Standup", on: tue).contains("Has notes"), "the next occurrence keeps its notes")
+    }
+
+    /// 7. Cancel changes nothing; Entire Series removes every occurrence.
+    func testDeleteChoices() throws {
+        let app = launch()
+        let todayKey = key(Date())
+        row(app, "Meeting", on: todayKey)!.rightClick()
+        app.menuItems["context-delete"].firstMatch.click()
+        let cancel = app.sheets.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        cancel.click()
+        XCTAssertTrue(waitForRow(app, "Meeting", on: todayKey), "Cancel keeps the occurrence")
+
+        delete(app, "Meeting", on: todayKey, choice: "Delete Entire Series")
+        XCTAssertTrue(waitForRow(app, "Meeting", on: todayKey, present: false))
+        go(app, weeks: 1)
+        let anyLeft = (0..<7).contains { row(app, "Meeting", on: key(day($0, from: monday(weeks: 1)))) != nil }
+        XCTAssertFalse(anyLeft, "every occurrence is gone")
+    }
+
+    /// 8. Stop Repeating removes untouched future occurrences but keeps worked-on ones.
+    func testStopRepeatingKeepsChangedFutureWork() throws {
+        let app = launch()
+        let wed = key(day(2, from: monday(weeks: 1)))
+        go(app, weeks: 1)
+        open(app, "Standup", on: wed)
+        typeNotes(app, "planned")
+        done(app)
+        today(app)
+        open(app, "Standup", on: key(Date()))
+        app.buttons["repeat-stop"].click()
+        done(app)
+
+        go(app, weeks: 1)
+        XCTAssertTrue(waitForRow(app, "Standup", on: wed), "the occurrence with notes is kept")
+        for offset in [0, 1, 3, 4, 5, 6] {
+            XCTAssertNil(row(app, "Standup", on: key(day(offset, from: monday(weeks: 1)))), "untouched future occurrence removed")
+        }
+        go(app, weeks: 1)
+        go(app, weeks: -1)
+        XCTAssertNil(row(app, "Standup", on: key(monday(weeks: 1))), "nothing regenerates after navigating")
+    }
+
+    /// 9. Opening an imported "1st and 15th" rule and pressing Done keeps both days.
+    func testNoOpDoneKeepsDaysOfMonthRule() throws {
+        let app = launch()
+        func paychecks(weeks: Int) -> [String] {
+            var found: [String] = []
+            for week in 0..<weeks {
+                for offset in 0..<7 {
+                    let k = key(day(offset, from: monday(weeks: week)))
+                    if row(app, "Paycheck", on: k) != nil { found.append(k) }
+                }
+                go(app, weeks: 1)
+            }
+            go(app, weeks: -weeks)
+            return found
+        }
+        let before = paychecks(weeks: 7)
+        XCTAssertGreaterThanOrEqual(before.count, 3, "the 1st and the 15th both repeat")
+        let target = before.first { $0 != key(Date()) }!
+        let weeksAhead = (0..<7).first { w in (0..<7).contains { key(day($0, from: monday(weeks: w))) == target } }!
+        go(app, weeks: weeksAhead)
+        open(app, "Paycheck", on: target)
+        XCTAssertTrue((app.staticTexts["repeat-month-days"].value as? String ?? "").contains("1, 15"))
+        done(app)
+        go(app, weeks: -weeksAhead)
+        XCTAssertEqual(paychecks(weeks: 7), before, "Done without changes leaves the schedule as it was")
+    }
+
+    /// 10. Cancel and Escape discard title and notes edits.
+    func testCancelAndEscapeDiscard() throws {
+        let app = launch()
+        let todayKey = key(Date())
+        open(app, "Standup", on: todayKey)
+        setTitle(app, "Discarded title")
+        typeNotes(app, "discarded notes")
+        app.buttons["editor-cancel"].click()
+        XCTAssertTrue(waitForGone(app.buttons["editor-done"]))
+        XCTAssertTrue(waitForRow(app, "Standup", on: todayKey))
+        XCTAssertNil(row(app, "Discarded title", on: todayKey))
+
+        open(app, "Standup", on: todayKey)
+        XCTAssertFalse(notesValue(app).contains("discarded notes"))
+        setTitle(app, "Escaped title")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitForGone(app.buttons["editor-done"]), "Esc closes the editor")
+        XCTAssertNil(row(app, "Escaped title", on: todayKey))
+    }
+
+    /// 11. A rename survives quitting and relaunching on an on-disk store.
+    func testRenamePersistsAcrossRelaunch() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("TickyTaskUITest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ["-uitestStore", dir.appendingPathComponent("TickyTask.store").path]
+        let todayKey = key(Date())
+
+        var app = launch(store)
+        open(app, "Standup", on: todayKey)
+        setTitle(app, "Persisted sync")
+        done(app)
+        XCTAssertTrue(waitForRow(app, "Persisted sync", on: todayKey))
         app.terminate()
-        Thread.sleep(forTimeInterval: 1)
 
-        // Relaunch with the same store.
-        app = launchedApp(["-uitestStore", testStore.path])
-        let renamedAfterRelaunch = taskAny(app, title: "StandupRenamed")
-        XCTAssertTrue(renamedAfterRelaunch.waitForExistence(timeout: 20),
-                      "renamed series should persist across relaunch")
-        XCTAssertFalse(taskAny(app, title: "Standup").exists,
-                       "original title should not exist after relaunch")
-
-        app.terminate()
+        app = launch(store)
+        XCTAssertTrue(waitForRow(app, "Persisted sync", on: todayKey), "the rename is still there after relaunch")
+        go(app, weeks: 1)
+        XCTAssertTrue(waitForRow(app, "Persisted sync", on: key(monday(weeks: 1))), "and on future occurrences")
+        XCTAssertNil(row(app, "Standup", on: key(monday(weeks: 1))))
     }
 }

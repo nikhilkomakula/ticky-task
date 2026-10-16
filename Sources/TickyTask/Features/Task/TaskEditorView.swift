@@ -123,9 +123,11 @@ struct TaskEditorView: View {
     private var attributesSection: some View {
         Section {
             Toggle("Set time", isOn: timeEnabled)
+                .accessibilityIdentifier("editor-time-toggle")
             if shared.timeMinutes != nil {
                 DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
                 Toggle("Remind me at this time", isOn: $shared.alarmEnabled)
+                    .accessibilityIdentifier("editor-reminder-toggle")
             }
             Picker("Priority", selection: priorityBinding) {
                 ForEach(TaskPriority.allCases) { priority in
