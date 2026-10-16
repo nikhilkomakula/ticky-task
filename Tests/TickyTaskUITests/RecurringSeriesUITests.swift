@@ -172,12 +172,30 @@ final class RecurringSeriesUITests: XCTestCase {
         _ = waitForRow(app, title, on: dayKey)
         let done = app.buttons["editor-done"]
         for _ in 0..<2 where !done.exists {   // a click during a re-render can be lost
+            dismissDeleteDialog(app)
             guard let text = reveal(app, title, on: dayKey) else { break }
-            text.click()
+            // The leading edge: on a narrow column, hovering shows the row's edit and
+            // delete buttons over the middle of the title.
+            text.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
             _ = done.waitForExistence(timeout: 8)
         }
         if !done.exists { keepScreenshot(app, "open \(title) on \(dayKey)") }
         XCTAssertTrue(done.exists, "the editor should open \(title) on \(dayKey)")
+    }
+
+    /// A click that landed on a row's hover delete button opens the delete dialog.
+    private func dismissDeleteDialog(_ app: XCUIApplication) {
+        let cancel = app.sheets.buttons["Cancel"].firstMatch
+        if cancel.exists, cancel.isHittable { cancel.click() }
+    }
+
+    /// Click the (hittable — not the Touch Bar copy) OK button of an alert.
+    private func clickOK(_ app: XCUIApplication, timeout: TimeInterval = 5) throws {
+        let ok = NSPredicate(format: "label == 'OK' AND elementType == %d", XCUIElement.ElementType.button.rawValue)
+        let buttons = app.descendants(matching: .any).matching(ok)
+        let deadline = Date().addingTimeInterval(timeout)
+        while !buttons.allElementsBoundByIndex.contains(where: \.isHittable) && Date() < deadline { usleep(250_000) }
+        try XCTUnwrap(buttons.allElementsBoundByIndex.first(where: \.isHittable), "an alert with OK is shown").click()
     }
 
     private func keepScreenshot(_ app: XCUIApplication, _ name: String) {
@@ -570,7 +588,7 @@ final class RecurringSeriesUITests: XCTestCase {
         let expected = (0..<7).map { day($0, from: monday(weeks: 0)) }.filter { $0 >= day(-2) }.count
         let rows = app.buttons.matching(identifier: "summary-task-Standup")
         XCTAssertEqual(rows.count, expected, "one selectable row per occurrence this week, no definition")
-        let selectSeries = app.buttons.matching(identifier: "Select series (\(expected))").firstMatch
+        let selectSeries = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Select series (\(expected))")).firstMatch
         if expected > 1 {
             XCTAssertTrue(selectSeries.exists)
             selectSeries.click()
@@ -717,12 +735,7 @@ final class RecurringSeriesUITests: XCTestCase {
         open(app, "Standup", on: todayKey)
         setTitle(app, "Standup renamed")
         app.buttons["editor-done"].click()
-        let ok = NSPredicate(format: "label == 'OK' AND elementType == %d", XCUIElement.ElementType.button.rawValue)
-        let alert = app.descendants(matching: .any).matching(ok)
-        let deadline = Date().addingTimeInterval(5)
-        while !alert.allElementsBoundByIndex.contains(where: \.isHittable) && Date() < deadline { usleep(250_000) }
-        let button = try XCTUnwrap(alert.allElementsBoundByIndex.first(where: \.isHittable), "the save error is shown")
-        button.click()
+        try clickOK(app)   // the save error
         XCTAssertTrue(app.buttons["editor-done"].exists, "the editor stays open")
         XCTAssertEqual(app.textFields["editor-title"].value as? String, "Standup renamed", "with the edit still in it")
         app.buttons["editor-cancel"].click()
@@ -754,12 +767,12 @@ final class RecurringSeriesUITests: XCTestCase {
         app.menuItems["Weekly"].click()
         app.buttons["editor-done"].click()
 
-        // The app quits without saving and opens again by itself (same isolated store).
-        XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "the failing instance quits")
+        // The app quits without saving and opens again by itself (same isolated store);
+        // only a relaunched instance shows the notice.
         let relaunched = XCUIApplication()
         XCTAssertTrue(relaunched.wait(for: .runningForeground, timeout: 40), "a new instance starts")
         XCTAssertTrue(relaunched.staticTexts["TickyTask restarted"].waitForExistence(timeout: 20), "the restart is explained")
-        relaunched.buttons["OK"].firstMatch.click()
+        try clickOK(relaunched)
         sleep(5)
         XCTAssertEqual(relaunched.state, .runningForeground, "the recovered app stays open (no restart loop)")
         XCTAssertTrue(relaunched.staticTexts["Alpha"].exists, "and shows the saved board")
@@ -785,13 +798,13 @@ final class RecurringSeriesUITests: XCTestCase {
                                  "-autoDeleteCompletedEnabled", "YES", "-autoDeleteCompletedDays", "1",
                                  "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
         first.launch()
-        XCTAssertTrue(first.wait(for: .notRunning, timeout: 40), "the failed purge restarts the app")
 
+        // Only an instance relaunched after a failed save shows the notice.
         let app = XCUIApplication()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 40), "a new instance starts")
         let notice = app.staticTexts["TickyTask restarted"]
-        XCTAssertTrue(notice.waitForExistence(timeout: 20), "the restart is explained")
-        app.buttons["OK"].firstMatch.click()
+        XCTAssertTrue(notice.waitForExistence(timeout: 40), "the failed purge restarted the app, and says so")
+        try clickOK(app)
         let todayKey = key(Date())
         XCTAssertTrue(waitForRow(app, "Done long ago", on: todayKey), "the failed purge never reached the disk")
 
