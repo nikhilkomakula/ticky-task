@@ -53,6 +53,8 @@ struct DataService {
     /// Covers in-place reorder and moves across days and lists.
     func dropTask(_ draggedID: UUID, into target: TaskLocation, before beforeID: UUID?, siblings: [TaskItem]) throws {
         guard beforeID != draggedID, let task = fetchTask(draggedID) else { return }
+        // Moving an occurrence is acting on it; its scheduled slot stays where it was.
+        task.markOccurrenceModified()
         switch target {
         case .day(let key):         task.dayKey = key; task.customList = nil
         case .customList(let list): task.customList = list; task.dayKey = nil
@@ -140,8 +142,19 @@ struct DataService {
         return list
     }
 
-    func delete(_ list: CustomList) {
-        context.delete(list)
+    /// Delete a list and (by cascade) its tasks. Recurring occurrences in it are
+    /// skipped first, so their slots are not regenerated on the calendar. Saves.
+    func delete(_ list: CustomList) throws {
+        do {
+            for task in list.tasks where task.templateID != nil {
+                try RecurrenceMaterializer.skipSlot(of: task, context: context)
+            }
+            context.delete(list)
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     // MARK: - Persistence

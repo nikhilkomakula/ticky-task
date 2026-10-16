@@ -139,7 +139,11 @@ struct CustomListColumn: View {
     }
 
     private func deleteList() {
-        context.delete(list)
-        try? context.save()
+        do {
+            try DataService(context).delete(list)
+            Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+        } catch {
+            NSLog("TickyTask: deleting a list failed: \(error.localizedDescription)")
+        }
     }
 }

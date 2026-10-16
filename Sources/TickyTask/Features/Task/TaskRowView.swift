@@ -152,10 +152,10 @@ struct TaskRowView: View {
         }
         .confirmationDialog("This task repeats.", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
             Button("Delete This Occurrence", role: .destructive) { deleteThisOccurrence() }
-            Button("Delete the Whole Series", role: .destructive) { deleteSeries() }
+            Button("Delete Entire Series", role: .destructive) { deleteSeries() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Delete just this day, or every occurrence of the series?")
+            Text(deleteMessage)
         }
         .accessibilityIdentifier("taskRow-\(task.title.isEmpty ? "Untitled" : task.title)")
     }
@@ -177,13 +177,29 @@ struct TaskRowView: View {
         }
     }
 
+    private var deleteMessage: String {
+        var text = "Delete This Occurrence deletes this task and its notes and subtasks; other occurrences stay."
+        if task.occurrenceKey != nil, task.dayKey != task.occurrenceKey {
+            text += " It was moved, so its original day won’t get a new copy."
+        }
+        return text + " Delete Entire Series deletes every occurrence, including past and completed ones, with all their notes and subtasks."
+    }
+
     private func deleteThisOccurrence() {
-        try? RecurrenceMaterializer.deleteOccurrence(task, context: context)
+        do {
+            try RecurrenceMaterializer.deleteOccurrence(task, context: context)
+        } catch {
+            NSLog("TickyTask: deleting an occurrence failed: \(error.localizedDescription)")
+        }
         resyncReminders()
     }
 
     private func deleteSeries() {
-        try? RecurrenceMaterializer.deleteSeries(task, context: context)
+        do {
+            try RecurrenceMaterializer.deleteSeries(task, context: context)
+        } catch {
+            NSLog("TickyTask: deleting a series failed: \(error.localizedDescription)")
+        }
         resyncReminders()
     }
 

@@ -12,7 +12,6 @@ import UserNotifications
 enum NotificationService {
     private static var center: UNUserNotificationCenter { .current() }
     private static let endOfDayIdentifier = "tickytask.endOfDay"
-    private static let taskPrefix = "task."
 
     @discardableResult
     static func requestAuthorization() async -> Bool {
@@ -23,46 +22,53 @@ enum NotificationService {
         await center.notificationSettings().authorizationStatus == .authorized
     }
 
-    private static func timeLabel(_ minutes: Int) -> String {
-        String(format: "%02d:%02d", minutes / 60, minutes % 60)
-    }
+    /// The latest reminder reconciliation; each sync waits for the previous one, so
+    /// an older snapshot can never land after a newer one.
+    @MainActor private static var latestSync: Task<Void, Never>?
 
-    /// Rebuild all per-task reminders for future, alarm-enabled, unfinished tasks.
+    /// Reconcile per-task reminders with the store. Never runs under tests, where
+    /// the app shares the real app's bundle id (and so its notification center).
     @MainActor
     static func syncTaskReminders(context: ModelContext) async {
-        guard await isAuthorized() else { return }
+        guard !UITestSupport.isRunning, !UITestSupport.isHostingUnitTests else { return }
+        await syncTaskReminders(context: context, client: SystemNotificationClient())
+    }
 
-        let pending = await center.pendingNotificationRequests()
-        let staleTaskIDs = pending.map(\.identifier).filter { $0.hasPrefix(taskPrefix) }
-        center.removePendingNotificationRequests(withIdentifiers: staleTaskIDs)
+    @MainActor
+    static func syncTaskReminders(context: ModelContext, client: some NotificationScheduling,
+                                  now: Date? = nil) async {
+        let previous = latestSync
+        let sync = Task { @MainActor in
+            await previous?.value
+            await reconcile(context: context, client: client, now: now ?? Date())
+        }
+        latestSync = sync
+        await sync.value
+    }
 
-        let all = (try? context.fetch(FetchDescriptor<TaskItem>())) ?? []
-        let now = Date()
-        for task in all {
-            guard task.alarmEnabled, !task.isDone,
-                  let key = task.dayKey, let minutes = task.timeMinutes,
-                  let day = WeekMath.date(fromDayKey: key),
-                  let fire = Calendar.current.date(bySettingHour: minutes / 60,
-                                                   minute: minutes % 60, second: 0, of: day),
-                  fire > now else { continue }
-
-            let content = UNMutableNotificationContent()
-            content.title = task.title.isEmpty ? "Task reminder" : task.title
-            content.body = "Scheduled for \(timeLabel(minutes))"
-            content.sound = .default
-
-            let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
-            let request = UNNotificationRequest(
-                identifier: "\(taskPrefix)\(task.id.uuidString)",
-                content: content,
-                trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-            )
-            try? await center.add(request)
+    /// Build the desired set first, so a failed fetch leaves existing reminders in
+    /// place; then drop only stale task reminders and (re)add the desired ones.
+    @MainActor
+    private static func reconcile(context: ModelContext, client: some NotificationScheduling, now: Date) async {
+        guard await client.isAuthorized(),
+              let tasks = try? context.fetch(FetchDescriptor<TaskItem>()) else { return }
+        let desired = ReminderPlanner.reminders(for: tasks, now: now)
+        let desiredIDs = Set(desired.map(\.identifier))
+        let stale = await client.pendingIdentifiers()
+            .filter { $0.hasPrefix(ReminderPlanner.identifierPrefix) && !desiredIDs.contains($0) }
+        client.remove(stale)
+        for reminder in desired {
+            do {
+                try await client.add(reminder)
+            } catch {
+                NSLog("TickyTask: scheduling reminder \(reminder.identifier) failed: \(error.localizedDescription)")
+            }
         }
     }
 
     /// Schedule (or clear) the daily end-of-day unfinished-tasks reminder.
     static func scheduleEndOfDayReminder(enabled: Bool, minutes: Int) async {
+        guard !UITestSupport.isRunning, !UITestSupport.isHostingUnitTests else { return }
         center.removePendingNotificationRequests(withIdentifiers: [endOfDayIdentifier])
         guard enabled, await isAuthorized() else { return }
 
@@ -80,5 +86,74 @@ enum NotificationService {
             trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
         )
         try? await center.add(request)
+    }
+}
+
+/// One per-task reminder the store calls for. The identifier is the task UUID, so
+/// re-adding a reminder replaces that task's pending request.
+struct TaskReminder: Equatable, Sendable {
+    let identifier: String
+    let title: String
+    let body: String
+    let fireDate: DateComponents
+}
+
+/// Which tasks get a reminder: dated, timed, alarm-on, open, and in the future.
+/// Pure, so the rules are unit-tested; a listed occurrence or a recurring series'
+/// hidden definition has no date and therefore no reminder.
+enum ReminderPlanner {
+    static let identifierPrefix = "task."
+
+    @MainActor
+    static func reminders(for tasks: [TaskItem], now: Date, calendar: Calendar = .current) -> [TaskReminder] {
+        tasks.compactMap { task in
+            guard task.alarmEnabled, !task.isDone, task.recurrence == nil,
+                  let key = task.dayKey, let minutes = task.timeMinutes,
+                  let day = WeekMath.date(fromDayKey: key, calendar: calendar),
+                  let fire = calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: day),
+                  fire > now else { return nil }
+            return TaskReminder(
+                identifier: identifierPrefix + task.id.uuidString,
+                title: task.title.isEmpty ? "Task reminder" : task.title,
+                body: "Scheduled for \(String(format: "%02d:%02d", minutes / 60, minutes % 60))",
+                fireDate: calendar.dateComponents([.year, .month, .day, .hour, .minute], from: fire))
+        }
+    }
+}
+
+/// The notification-center surface reminder sync uses; tests substitute a fake.
+@MainActor
+protocol NotificationScheduling {
+    func isAuthorized() async -> Bool
+    func pendingIdentifiers() async -> [String]
+    func remove(_ identifiers: [String])
+    func add(_ reminder: TaskReminder) async throws
+}
+
+@MainActor
+struct SystemNotificationClient: NotificationScheduling {
+    private var center: UNUserNotificationCenter { .current() }
+
+    func isAuthorized() async -> Bool {
+        await center.notificationSettings().authorizationStatus == .authorized
+    }
+
+    func pendingIdentifiers() async -> [String] {
+        await center.pendingNotificationRequests().map(\.identifier)
+    }
+
+    func remove(_ identifiers: [String]) {
+        guard !identifiers.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+
+    func add(_ reminder: TaskReminder) async throws {
+        let content = UNMutableNotificationContent()
+        content.title = reminder.title
+        content.body = reminder.body
+        content.sound = .default
+        try await center.add(UNNotificationRequest(
+            identifier: reminder.identifier, content: content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: reminder.fireDate, repeats: false)))
     }
 }

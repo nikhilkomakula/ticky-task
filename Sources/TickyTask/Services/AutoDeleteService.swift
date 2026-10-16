@@ -5,7 +5,9 @@ import SwiftData
 /// ago (Settings › Behavior). Opt-in and **off by default** — when disabled,
 /// completed tasks stay untouched. Based on `TaskItem.completedAt`, so tasks
 /// completed before this feature existed (a `nil` timestamp) are never removed
-/// until they're completed again, and recurring templates are always kept.
+/// until they're completed again. A recurring occurrence's slot is skipped before
+/// it is purged so it never regenerates; series definitions are never purged, and
+/// legacy occurrences whose slot is unknown are kept.
 enum AutoDeleteService {
     @MainActor
     static func purgeCompleted(context: ModelContext,
@@ -19,16 +21,21 @@ enum AutoDeleteService {
         guard let completed = try? context.fetch(descriptor) else { return }
 
         var deletedAny = false
-        for task in completed where task.recurrence == nil {
-            if let completedAt = task.completedAt, completedAt < cutoff {
+        do {
+            for task in completed where task.recurrence == nil {
+                guard let completedAt = task.completedAt, completedAt < cutoff else { continue }
+                if task.templateID != nil {
+                    guard task.occurrenceKey != nil else { continue }
+                    try RecurrenceMaterializer.skipSlot(of: task, context: context)
+                }
                 context.delete(task)
                 deletedAny = true
             }
-        }
-        if deletedAny {
-            // Roll back on save failure so the deletions don't linger uncommitted in
-            // the context (where an unrelated later save could commit them silently).
-            do { try context.save() } catch { context.rollback() }
+            // Roll back on failure so the deletions don't linger uncommitted in the
+            // context (where an unrelated later save could commit them silently).
+            if deletedAny { try context.save() }
+        } catch {
+            context.rollback()
         }
     }
 }

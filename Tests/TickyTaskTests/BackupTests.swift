@@ -315,15 +315,15 @@ struct BackupTests {
         #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
     }
 
-    @Test("Two occurrences for the same template+day are rejected")
-    func duplicateOccurrenceRejected() {
+    @Test("Several records for one series+day are accepted (older releases created them)")
+    func duplicateOccurrenceAccepted() throws {
         var store = makeFixture()
         let existing = store.data.taskOccurrences[0]
         store.data.taskOccurrences.append(
-            TaskOccurrenceDTO(id: UUID(), dayKey: existing.dayKey, isDone: false, skipped: false,
+            TaskOccurrenceDTO(id: UUID(), dayKey: existing.dayKey, isDone: false, skipped: true,
                               titleOverride: nil, timeOverride: nil, templateId: existing.templateId)
         )
-        #expect(throws: BackupError.self) { try BackupValidator.validate(store) }
+        try BackupValidator.validate(store)
     }
 
     @Test("Decoder accepts both whole-second and fractional ISO-8601 dates")
@@ -362,16 +362,25 @@ struct BackupRestoreTests {
 
         try BackupStore.restore(fixture(), context: context)
 
+        // The fixture's recurring day-task is a pre-0.1.17 series row (rule + day), so
+        // restore splits it: a hidden definition plus its first occurrence.
         let tasks = try context.fetch(FetchDescriptor<TaskItem>())
-        #expect(tasks.count == 2)
+        #expect(tasks.count == 3)
         #expect(!tasks.contains { $0.title == "stale" })
 
+        let definition = try #require(tasks.first { $0.recurrence != nil })
+        #expect(definition.dayKey == nil && definition.customList == nil)
+        #expect(definition.recurrence?.frequency == .customWeekdays)
+        #expect(definition.occurrences.count == 1)
+        #expect(definition.tags.first?.name == "work")
+        #expect(definition.notes.isEmpty && definition.subtasks.isEmpty)
+
         let dayTask = try #require(tasks.first { $0.dayKey != nil })
+        #expect(dayTask.templateID == definition.id && dayTask.occurrenceKey == dayTask.dayKey)
         #expect(dayTask.tags.count == 1)
         #expect(dayTask.tags.first?.name == "work")
         #expect(dayTask.subtasks.count == 1)
-        #expect(dayTask.occurrences.count == 1)
-        #expect(dayTask.recurrence?.frequency == .customWeekdays)
+        #expect(dayTask.notes == "**bold** notes")
 
         let listTask = try #require(tasks.first { $0.customList != nil })
         #expect(listTask.customList?.name == "Groceries")

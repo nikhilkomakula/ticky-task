@@ -107,6 +107,8 @@ final class DragController {
             } catch {
                 return  // DataService rolled the move back — leave the sort mode alone.
             }
+            // A moved task's reminder follows it (or is cancelled in a list).
+            Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
             // Only a within-container reorder needs manual sort so the dropped
             // position survives the view's re-sort; otherwise a time/priority sort
             // re-sorts it away (the "reordering within a day/list does nothing"

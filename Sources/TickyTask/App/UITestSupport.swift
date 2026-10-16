@@ -8,6 +8,21 @@ import SwiftData
 enum UITestSupport {
     static var isRunning: Bool { ProcessInfo.processInfo.arguments.contains("-uitest") }
 
+    /// The app is the unit tests' host process (`TEST_HOST`). It must then open an
+    /// in-memory store and skip launch work, or every test run would rewrite the
+    /// user's real store and clear the real app's pending reminders.
+    static var isHostingUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// `-uitestStore <path>`: an isolated on-disk store for UI tests that relaunch
+    /// the app to check persistence. Never the user's store.
+    static var diskStoreURL: URL? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestStore"), index + 1 < args.count else { return nil }
+        return URL(fileURLWithPath: args[index + 1])
+    }
+
     /// A per-launch, emptied defaults suite for state the app persists itself
     /// (e.g. Weekly Summary choices), so each test starts clean.
     static let scratchDefaults: UserDefaults = {

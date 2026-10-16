@@ -18,8 +18,10 @@ struct TickyTaskApp: App {
     private let containerResult: Result<ModelContainer, Error>
 
     init() {
-        // UI tests run against an isolated in-memory store so real data is never touched.
-        if UITestSupport.isRunning {
+        // Tests run against an isolated store so real data is never touched.
+        if let url = UITestSupport.diskStoreURL {
+            containerResult = Result { try ModelContainerProvider.makeContainer(at: url) }
+        } else if UITestSupport.isRunning || UITestSupport.isHostingUnitTests {
             containerResult = .success(ModelContainerProvider.makeInMemoryContainer())
         } else {
             containerResult = Result { try ModelContainerProvider.makeContainer() }

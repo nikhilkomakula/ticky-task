@@ -1,16 +1,15 @@
 import Foundation
 import SwiftData
 
-/// A per-occurrence override for a recurring task template.
-///
-/// The week view computes virtual occurrences from `TaskItem.recurrence`; only
-/// when the user completes or edits a *specific* instance do we persist one of
-/// these (keyed by `dayKey`). This avoids the legacy app's per-date
-/// materialization (`repeating_events_by_date`) and keeps the store lean.
+/// A record about one scheduled slot of a recurring series, owned by its
+/// definition. `skipped` marks a slot whose occurrence the user deleted, so it is
+/// never regenerated. Releases before 0.1.13 computed occurrences virtually and
+/// stored completion/title/time overrides here; `RecurrenceNormalizer` turns those
+/// into real occurrences, and the fields are kept so old data round-trips.
 @Model
 final class TaskOccurrence {
     var id: UUID = UUID()
-    /// `"yyyyMMdd"` of the occurrence being overridden.
+    /// `"yyyyMMdd"` of the scheduled slot (not where a moved occurrence now sits).
     var dayKey: String = ""
     var isDone: Bool = false
     /// The user removed this single occurrence from the series.

@@ -91,6 +91,12 @@ struct ContentView: View {
             runMaterialize(through: defaultHorizon)
             runCarryForward()
         }
+        // A series was started or its rule changed: drop the session horizon so the
+        // ranges already shown (including far-future ones) are generated again.
+        .onReceive(NotificationCenter.default.publisher(for: .tickyTaskSeriesChanged)) { _ in
+            materializedThroughKey = ""
+            runMaterialize(through: max(defaultHorizon, navigationHorizon))
+        }
         // Catch the date rolling over while the app is left open, so unfinished
         // tasks still carry forward — and new occurrences appear — at midnight
         // without a relaunch or refocus.
@@ -126,6 +132,8 @@ struct ContentView: View {
 
     @MainActor
     private func runLaunchTasks() async {
+        // Hosting unit tests: the in-memory store needs no launch work.
+        guard !UITestSupport.isHostingUnitTests else { return }
         if UITestSupport.isRunning {
             UITestSupport.seed(context)
         } else {
@@ -195,8 +203,12 @@ struct ContentView: View {
         let key = WeekMath.dayKey(for: horizon)
         guard key > materializedThroughKey else { return }
         do {
-            try RecurrenceMaterializer.materialize(context: context, through: horizon)
+            let created = try RecurrenceMaterializer.materialize(context: context, through: horizon)
             materializedThroughKey = key
+            // New occurrences (navigation, midnight, restore) need their reminders too.
+            if created > 0 {
+                Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+            }
         } catch {
             NSLog("TickyTask: recurrence materialize failed: \(error.localizedDescription)")
         }

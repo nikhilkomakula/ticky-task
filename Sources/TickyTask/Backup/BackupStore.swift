@@ -97,6 +97,9 @@ enum BackupStore {
         do {
             try wipe(context: context)
             insert(store.data, context: context)
+            // Convert series from an older backup in the same transaction, so a
+            // failure leaves the existing store untouched.
+            try RecurrenceNormalizer.normalize(context: context)
             try context.save()
         } catch {
             context.rollback()
@@ -161,6 +164,9 @@ enum BackupStore {
             task.isCritical = dto.needsImmediateAttention ?? false
             task.completedAt = dto.completedAt
             task.templateID = dto.templateId
+            task.occurrenceKey = dto.occurrenceKey
+            task.recurrenceEffectiveFromKey = dto.recurrenceEffectiveFromKey
+            task.occurrenceModified = dto.occurrenceModified
             task.createdAt = dto.createdAt
             task.updatedAt = dto.updatedAt
             task.tags = dto.tagIds.compactMap { tagMap[$0] }
