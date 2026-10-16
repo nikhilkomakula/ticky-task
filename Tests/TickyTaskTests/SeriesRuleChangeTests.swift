@@ -315,8 +315,8 @@ struct SeriesRuleChangeTests {
     func noNewPastOccurrences() throws {
         let cal = calendar()
         let context = makeContext()
-        let start = date(2026, 9, 1, cal: cal)
-        let today = date(2026, 10, 15, cal: cal)
+        let start = date(2026, 9, 1, cal: cal)  // Thursday
+        let today = date(2026, 10, 15, cal: cal) // Wednesday
         let startOfToday = cal.startOfDay(for: today)
         let horizon = date(2026, 10, 22, cal: cal)
 
@@ -329,7 +329,8 @@ struct SeriesRuleChangeTests {
         // Materialize only through today
         try RecurrenceMaterializer.materialize(context: context, through: startOfToday, calendar: cal)
 
-        let beforeChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
+        let occsBefore = try RecurrenceMaterializer.children(of: definition, context: context)
+        let keysBefore = Set(occsBefore.compactMap(\.occurrenceKey))
 
         // Change to weekly
         let rule2 = RecurrenceRule(frequency: .weekly, startDate: start)
@@ -337,10 +338,22 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let afterChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
+        let occsAfter = try RecurrenceMaterializer.children(of: definition, context: context)
+        let keysAfter = Set(occsAfter.compactMap(\.occurrenceKey))
 
-        // Only future occurrences should be added, not past ones
-        #expect(afterChangeCount >= beforeChangeCount)
+        // All past daily slots should remain
+        let pastSlots = keysBefore.filter { $0 <= dayKey(startOfToday, cal) }
+        for key in pastSlots {
+            #expect(keysAfter.contains(key),
+                   "Past daily slot \(key) should be retained, not removed")
+        }
+
+        // No new past slots should be added
+        let newPastSlots = keysAfter.filter { key in
+            key <= dayKey(startOfToday, cal) && !keysBefore.contains(key)
+        }
+        #expect(newPastSlots.isEmpty,
+               "Should never add new past occurrences; found: \(newPastSlots)")
     }
 
     // MARK: - Offline gap: reconciliation with existing far-future rows
@@ -349,10 +362,10 @@ struct SeriesRuleChangeTests {
     func offlineGapReconciliation() throws {
         let cal = calendar()
         let context = makeContext()
-        let start = date(2026, 1, 1, cal: cal)
-        let today = date(2026, 10, 15, cal: cal)
+        let start = date(2026, 1, 1, cal: cal)  // Thursday
+        let today = date(2026, 10, 15, cal: cal)  // Wednesday
         let startOfToday = cal.startOfDay(for: today)
-        let farFuture = date(2026, 12, 31, cal: cal)
+        let horizon = date(2026, 12, 31, cal: cal)
 
         // Daily rule
         let rule1 = RecurrenceRule(frequency: .daily, startDate: start)
@@ -361,20 +374,50 @@ struct SeriesRuleChangeTests {
         try context.save()
 
         // Materialize up to far future (simulating earlier navigation)
-        try RecurrenceMaterializer.materialize(context: context, through: farFuture, calendar: cal)
+        try RecurrenceMaterializer.materialize(context: context, through: horizon, calendar: cal)
 
-        let beforeChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
+        let occsBefore = try RecurrenceMaterializer.children(of: definition, context: context)
+        let keysBefore = Set(occsBefore.compactMap(\.occurrenceKey))
+
+        // Count future untouched daily slots
+        let futureUntouchedDailyBefore = keysBefore.filter { key in
+            key > dayKey(startOfToday, cal) &&
+            occsBefore.first(where: { $0.occurrenceKey == key })?.occurrenceModified == false
+        }.count
 
         // Change to weekly
         let rule2 = RecurrenceRule(frequency: .weekly, startDate: start)
         try RecurrenceMaterializer.changeRule(of: definition, to: rule2, today: startOfToday,
-                                            through: today, context: context, calendar: cal)
+                                            through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let afterChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
+        let occsAfter = try RecurrenceMaterializer.children(of: definition, context: context)
+        let keysAfter = Set(occsAfter.compactMap(\.occurrenceKey))
 
-        // Should reconcile at least to the previous far future
-        #expect(afterChangeCount <= beforeChangeCount)  // Removed untouched daily ones
+        // All past slots should remain
+        let pastSlots = keysBefore.filter { $0 <= dayKey(startOfToday, cal) }
+        for key in pastSlots {
+            #expect(keysAfter.contains(key),
+                   "Past daily slot \(key) should be retained after rule change")
+        }
+
+        // Future untouched daily slots should be removed
+        let futureUntouchedDailyAfter = keysAfter.filter { key in
+            key > dayKey(startOfToday, cal) &&
+            occsAfter.first(where: { $0.occurrenceKey == key })?.occurrenceModified == false
+        }.count
+        #expect(futureUntouchedDailyAfter < futureUntouchedDailyBefore,
+               "Untouched future daily slots should be removed when changing to weekly")
+
+        // Verify weekly pattern in future
+        let futureKeys = keysAfter.filter { $0 > dayKey(startOfToday, cal) }
+        for key in futureKeys {
+            if let occ = occsAfter.first(where: { $0.occurrenceKey == key }), occ.occurrenceModified == false {
+                let d = WeekMath.date(fromDayKey: key, calendar: cal)!
+                let dow = cal.component(.weekday, from: d)
+                #expect(dow == 5, "Future untouched slot \(key) should be Thursday (weekly rule)")
+            }
+        }
     }
 
     // MARK: - Stop repeating + resuming

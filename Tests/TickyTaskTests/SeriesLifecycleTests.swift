@@ -604,37 +604,100 @@ struct SeriesLifecycleTests {
         #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 2) })
     }
 
-    @Test("Auto-delete never purges definitions")
-    func autoDeleteNeverPurgesDefinition() throws {
+    @Test("Auto-delete never purges definitions but removes eligible completed occurrences")
+    func autoDeleteNeverPurgesDefinitionButPurgesOccurrences() throws {
         let context = makeContext()
         let c = cal()
-        let (_, definition) = try startDaily(context, c)
+        let (_, definition) = try startDaily(context, c, through: (2026, 1, 31))
+
+        // Mark some occurrences as done and old
+        let jan1 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 1) })
+        let jan2 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 2) })
+        let jan5 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 5) })
+
+        jan1.setDone(true, at: date(2026, 1, 1, c))
+        jan2.setDone(true, at: date(2026, 1, 2, c))
+        jan5.setDone(true, at: date(2026, 1, 5, c))
+
+        // Add a control one-off task to verify it's also purged
+        let oneOff = TaskItem(title: "One-off", dayKey: dayKey(2026, 1, 3))
+        oneOff.setDone(true, at: date(2026, 1, 3, c))
+        context.insert(oneOff)
 
         // Artificially mark definition as done (shouldn't happen, but let's test safety)
         definition.setDone(true, at: date(2026, 1, 1, c))
         try context.save()
 
-        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 0, now: date(2026, 2, 1, c))
+        let jan1ID = jan1.id
+        let jan2ID = jan2.id
+        let oneOffID = oneOff.id
 
+        // Now = Jan 20, cutoff = Jan 13, so jan1 (Jan 1), jan2 (Jan 2), oneOff (Jan 3) are all > 7 days old
+        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 7, now: date(2026, 1, 20, c))
+
+        // Definition must survive
         #expect(try RecurrenceMaterializer.definition(for: definition, context: context) != nil)
+
+        // But eligible completed occurrences and one-offs must be purged
+        let remaining = try context.fetch(FetchDescriptor<TaskItem>())
+        #expect(!remaining.contains { $0.id == jan1ID }, "Jan 1 occurrence should be purged")
+        #expect(!remaining.contains { $0.id == jan2ID }, "Jan 2 occurrence should be purged")
+        #expect(!remaining.contains { $0.id == oneOffID }, "One-off should be purged")
+
+        // jan5 (Jan 5) is only 15 days old at Jan 20, so it should NOT be purged (cutoff is 7 days = Jan 13)
+        let jan5After = remaining.first { $0.occurrenceKey == dayKey(2026, 1, 5) }
+        #expect(jan5After != nil, "Jan 5 occurrence should survive (too recent)")
+
+        // Verify skip records were created for purged occurrences
+        #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 1) })
+        #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 2) })
     }
 
-    @Test("Auto-delete skips keyless legacy completed occurrences")
-    func autoDeleteSkipsKeylessLegacy() throws {
+    @Test("Auto-delete skips keyless legacy completed occurrences but purges keyed ones")
+    func autoDeleteSkipsKeylessLegacyAndPurgesKeyed() throws {
         let context = makeContext()
         let c = cal()
-        let (_, definition) = try startDaily(context, c)
+        let (_, definition) = try startDaily(context, c, through: (2026, 1, 31))
+
+        // Create a keyless legacy completed occurrence (should be skipped)
         let legacy = TaskItem(title: "Water plants")
         legacy.templateID = definition.id
         legacy.occurrenceKey = nil
         legacy.occurrenceModified = nil
         legacy.setDone(true, at: date(2026, 1, 1, c))
         context.insert(legacy)
+
+        // Create a keyed completed occurrence (should be purged)
+        let jan3 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 3) })
+        jan3.setDone(true, at: date(2026, 1, 3, c))
+
+        // Create a keyed moved occurrence (should be purged)
+        let jan4 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 4) })
+        jan4.setDone(true, at: date(2026, 1, 4, c))
         try context.save()
 
-        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 0, now: date(2026, 2, 1, c))
+        let legacyID = legacy.id
+        let jan3ID = jan3.id
+        let jan4ID = jan4.id
 
-        #expect(!(try context.fetch(FetchDescriptor<TaskItem>()).filter { $0.id == legacy.id }.isEmpty))
+        // Now = Jan 20, cutoff = Jan 13
+        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 7, now: date(2026, 1, 20, c))
+
+        let remaining = try context.fetch(FetchDescriptor<TaskItem>())
+
+        // Legacy keyless should survive (no occurrenceKey means we can't track it)
+        #expect(!remaining.filter { $0.id == legacyID }.isEmpty,
+               "Legacy keyless completed occurrence should survive")
+
+        // Keyed completed occurrences should be purged
+        #expect(remaining.filter { $0.id == jan3ID }.isEmpty,
+               "Keyed completed occurrence should be purged")
+        #expect(remaining.filter { $0.id == jan4ID }.isEmpty,
+               "Keyed completed occurrence should be purged")
+
+        // Skip records should exist for keyed purged slots
+        #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 3) })
+        #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 4) })
     }
 
     // MARK: - Section 8: Carry-forward
@@ -805,5 +868,225 @@ struct SeriesLifecycleTests {
         let countSecond = secondPass.count
 
         #expect(countFirst == countSecond)
+    }
+
+    // MARK: - Section 11: Comprehensive auto-delete lifecycle
+
+    @Test("Auto-delete with moved completed occurrences from multiple series")
+    func autoDeleteWithMovedMultipleSeries() throws {
+        let context = makeContext()
+        let c = cal()
+
+        // Series 1: daily
+        let (_, def1) = try startDaily(context, c, through: (2026, 1, 31))
+        let series1Jan3 = try #require(try occurrences(of: def1, context).first { $0.occurrenceKey == dayKey(2026, 1, 3) })
+        series1Jan3.setDone(true, at: date(2026, 1, 3, c))
+
+        // Series 2: weekly on Thursday
+        let series2Seed = TaskItem(title: "Review", dayKey: dayKey(2026, 1, 1))
+        context.insert(series2Seed)
+        let rule2 = RecurrenceRule(frequency: .weekly, weekdays: [5], end: .afterCount(10),
+                                   startDate: date(2026, 1, 1, c))
+        let def2 = try RecurrenceMaterializer.startSeries(
+            from: series2Seed, rule: rule2, through: date(2026, 3, 31, c), context: context, calendar: c)
+        try context.save()
+
+        let series2Occ = try occurrences(of: def2, context).first!
+        series2Occ.setDone(true, at: date(2026, 1, 1, c))
+
+        // Move series1Jan3 to a list
+        let list = try DataService(context).addCustomList(name: "Archive")
+        try DataService(context).dropTask(series1Jan3.id, into: .customList(list), before: nil, siblings: [])
+
+        // Move series2Occ to another location
+        let jan15 = try #require(try context.fetch(FetchDescriptor<TaskItem>()).first { $0.dayKey == dayKey(2026, 1, 15) })
+        try DataService(context).dropTask(series2Occ.id, into: .day(dayKey(2026, 1, 15)), before: nil, siblings: [jan15])
+
+        // Add one-off one-off task to list
+        let oneOff = TaskItem(title: "One-time", customList: list)
+        oneOff.setDone(true, at: date(2026, 1, 2, c))
+        context.insert(oneOff)
+        try context.save()
+
+        let series1Jan3ID = series1Jan3.id
+        let series2OccID = series2Occ.id
+        let oneOffID = oneOff.id
+
+        // Auto-delete with 7-day cutoff on Jan 20
+        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 7, now: date(2026, 1, 20, c))
+
+        let remaining = try context.fetch(FetchDescriptor<TaskItem>())
+
+        // All eligible completed tasks should be purged
+        #expect(remaining.filter { $0.id == series1Jan3ID }.isEmpty)
+        #expect(remaining.filter { $0.id == series2OccID }.isEmpty)
+        #expect(remaining.filter { $0.id == oneOffID }.isEmpty)
+
+        // Skip records should exist
+        #expect(def1.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 3) })
+        #expect(def2.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 1) })
+    }
+
+    @Test("Auto-delete + materialize + reopen + restore: nothing resurrects")
+    func autoDeleteNoResurrectionAfterReopenRestore() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TickyTaskTests-\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let c = cal()
+
+        // Session 1: Create series, complete and purge
+        var backupData: Data?
+        do {
+            let context = try makeDiskContext(at: tempDir)
+            let (_, definition) = try startDaily(context, c, through: (2026, 1, 31))
+
+            let jan2 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 2) })
+            let jan3 = try #require(try occurrences(of: definition, context).first { $0.occurrenceKey == dayKey(2026, 1, 3) })
+            jan2.setDone(true, at: date(2026, 1, 2, c))
+            jan3.setDone(true, at: date(2026, 1, 3, c))
+            try context.save()
+
+            AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 7, now: date(2026, 1, 20, c))
+
+            var remaining = try occurrences(of: definition, context)
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 2) })
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 3) })
+
+            // Take backup
+            let backup = try BackupStore.export(context: context)
+            backupData = try JSONEncoder().encode(backup)
+        }
+
+        // Session 2: Reopen, materialize further, verify still purged
+        do {
+            let context = try makeDiskContext(at: tempDir)
+            var definition = try RecurrenceMaterializer.definitions(context).first!
+
+            // Further materialize
+            try RecurrenceMaterializer.materialize(context: context, through: date(2026, 2, 28, c), calendar: c)
+
+            let remaining = try occurrences(of: definition, context)
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 2) },
+                   "Purged slot should not regenerate after materialize")
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 3) },
+                   "Purged slot should not regenerate after materialize")
+
+            // Verify skip records exist
+            #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 2) })
+            #expect(definition.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 3) })
+        }
+
+        // Session 3: Restore backup, verify still purged
+        if let backupData = backupData {
+            let context = try makeDiskContext(at: tempDir)
+            let backup = try JSONDecoder().decode(BackupModel.self, from: backupData)
+            try BackupStore.restore(backup: backup, context: context)
+
+            let definition = try RecurrenceMaterializer.definitions(context).first!
+            let remaining = try occurrences(of: definition, context)
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 2) },
+                   "Restored backup should preserve purged slots")
+            #expect(!remaining.contains { $0.occurrenceKey == dayKey(2026, 1, 3) })
+        }
+    }
+
+    // MARK: - Section 12: Enhanced list deletion lifecycle
+
+    @Test("Delete list with mixed series occurrences and one-offs: exact tracking across materialize/reopen")
+    func deleteListMixedWithExactTracking() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TickyTaskTests-\(UUID())")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let c = cal()
+
+        // Session 1: Create list with mixed content and delete
+        do {
+            let context = try makeDiskContext(at: tempDir)
+
+            // Series 1
+            let (_, def1) = try startDaily(context, c, through: (2026, 1, 31))
+
+            // Series 2
+            let seed2 = TaskItem(title: "Weekly", dayKey: dayKey(2026, 1, 1))
+            context.insert(seed2)
+            let rule2 = RecurrenceRule(frequency: .weekly, startDate: date(2026, 1, 1, c))
+            let def2 = try RecurrenceMaterializer.startSeries(from: seed2, rule: rule2,
+                                                             through: date(2026, 2, 28, c), context: context, calendar: c)
+            try context.save()
+
+            // Create list and move tasks there
+            let list = try DataService(context).addCustomList(name: "Inbox")
+
+            let def1Jan4 = try #require(try occurrences(of: def1, context).first { $0.occurrenceKey == dayKey(2026, 1, 4) })
+            let def1Jan5 = try #require(try occurrences(of: def1, context).first { $0.occurrenceKey == dayKey(2026, 1, 5) })
+            let def2Jan1 = try #require(try occurrences(of: def2, context).first { $0.occurrenceKey == dayKey(2026, 1, 1) })
+
+            try DataService(context).dropTask(def1Jan4.id, into: .customList(list), before: nil, siblings: [])
+            try DataService(context).dropTask(def1Jan5.id, into: .customList(list), before: nil, siblings: list.tasks)
+            try DataService(context).dropTask(def2Jan1.id, into: .customList(list), before: nil, siblings: list.tasks)
+
+            // Add one-off
+            let oneOff = TaskItem(title: "One-off", customList: list)
+            context.insert(oneOff)
+            try context.save()
+
+            let def1Jan4ID = def1Jan4.id
+            let def1Jan5ID = def1Jan5.id
+            let def2Jan1ID = def2Jan1.id
+            let oneOffID = oneOff.id
+
+            // Delete list
+            try DataService(context).delete(list)
+
+            // Verify deletions and skip records
+            let remaining = try context.fetch(FetchDescriptor<TaskItem>())
+            #expect(remaining.filter { $0.id == def1Jan4ID }.isEmpty)
+            #expect(remaining.filter { $0.id == def1Jan5ID }.isEmpty)
+            #expect(remaining.filter { $0.id == def2Jan1ID }.isEmpty)
+            #expect(remaining.filter { $0.id == oneOffID }.isEmpty)
+
+            #expect(def1.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 4) })
+            #expect(def1.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 5) })
+            #expect(def2.occurrences.contains { $0.skipped && $0.dayKey == dayKey(2026, 1, 1) })
+        }
+
+        // Session 2: Reopen and verify skip records persist
+        do {
+            let context = try makeDiskContext(at: tempDir)
+            let definitions = try RecurrenceMaterializer.definitions(context)
+
+            for definition in definitions {
+                let occs = try occurrences(of: definition, context)
+                let skipRecords = definition.occurrences.filter(\.skipped)
+                #expect(!skipRecords.isEmpty, "Skip records should persist across reopen")
+
+                // Verify no occurrence exists for skipped slots
+                for skipRec in skipRecords {
+                    #expect(!occs.contains { $0.occurrenceKey == skipRec.dayKey },
+                           "Skipped slot \(skipRec.dayKey) should not have an occurrence")
+                }
+            }
+        }
+
+        // Session 3: Materialize further and verify no resurrection
+        do {
+            let context = try makeDiskContext(at: tempDir)
+            try RecurrenceMaterializer.materialize(context: context, through: date(2026, 2, 28, c), calendar: c)
+
+            let definitions = try RecurrenceMaterializer.definitions(context)
+            for definition in definitions {
+                let occs = try occurrences(of: definition, context)
+                let skipRecords = definition.occurrences.filter(\.skipped)
+
+                for skipRec in skipRecords {
+                    #expect(!occs.contains { $0.occurrenceKey == skipRec.dayKey },
+                           "Skipped slots should never resurrect after materialize")
+                }
+            }
+        }
     }
 }
