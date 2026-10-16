@@ -1,0 +1,225 @@
+{
+  "tag": "v0.1.8",
+  "generatedAt": "2026-10-16T10:08:32.289973",
+  "scenario": {
+    "inbox": "11111111-1111-1111-1111-111111111111",
+    "someday": "22222222-2222-2222-2222-222222222222",
+    "work_tag": "33333333-3333-3333-3333-333333333333",
+    "one_off_dated": "44444444-4444-4444-4444-444444444444",
+    "one_off_listed": "55555555-5555-5555-5555-555555555555",
+    "done_one_off": "66666666-6666-6666-6666-666666666666",
+    "critical_one_off": "77777777-7777-7777-7777-777777777777",
+    "daily_standup": "88888888-8888-8888-8888-888888888888",
+    "weekly_review": "99999999-9999-9999-9999-999999999999",
+    "paycheck": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "od_sub1": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    "od_sub2": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+    "t_sub1": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    "t_sub2": "10101010-1010-1010-1010-101010101010"
+  },
+  "fixtures": {
+    "taskItems": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "title": "Inbox",
+        "name": "Inbox",
+        "isDone": false,
+        "sortIndex": 1.0,
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "22222222-2222-2222-2222-222222222222",
+        "title": "Someday",
+        "name": "Someday",
+        "isDone": false,
+        "sortIndex": 2.0,
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "44444444-4444-4444-4444-444444444444",
+        "title": "One-off dated",
+        "notes": "one-off notes",
+        "isDone": false,
+        "dayKey": "20260907",
+        "timeMinutes": 600,
+        "priority": 2,
+        "tagIds": [
+          "33333333-3333-3333-3333-333333333333"
+        ],
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "55555555-5555-5555-5555-555555555555",
+        "title": "One-off listed",
+        "notes": "listed notes",
+        "isDone": false,
+        "customListId": "11111111-1111-1111-1111-111111111111",
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "title": "Done one-off",
+        "isDone": true,
+        "dayKey": "20260901",
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "77777777-7777-7777-7777-777777777777",
+        "title": "Critical one-off",
+        "isDone": false,
+        "dayKey": "20260902",
+        "needsImmediateAttention": true,
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "88888888-8888-8888-8888-888888888888",
+        "title": "Daily standup",
+        "notes": "template notes",
+        "isDone": true,
+        "dayKey": "20260901",
+        "timeMinutes": 570,
+        "priority": 1,
+        "alarmEnabled": true,
+        "tagIds": [
+          "33333333-3333-3333-3333-333333333333"
+        ],
+        "recurrence": {
+          "frequency": "daily",
+          "interval": 1
+        },
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "99999999-9999-9999-9999-999999999999",
+        "title": "Weekly review",
+        "isDone": false,
+        "dayKey": "20260907",
+        "recurrence": {
+          "frequency": "weekly",
+          "weekdays": [
+            0
+          ]
+        },
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      },
+      {
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "title": "Paycheck",
+        "isDone": false,
+        "dayKey": "20260901",
+        "recurrence": {
+          "frequency": "monthly",
+          "monthDays": [
+            1,
+            15
+          ]
+        },
+        "createdAt": "2026-09-01T12:00:00",
+        "updatedAt": "2026-09-01T12:00:00"
+      }
+    ],
+    "subtasks": [
+      {
+        "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "title": "OD-sub1",
+        "isDone": true,
+        "sortIndex": 1.0,
+        "parentId": "44444444-4444-4444-4444-444444444444"
+      },
+      {
+        "id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "title": "OD-sub2",
+        "isDone": false,
+        "sortIndex": 2.0,
+        "parentId": "44444444-4444-4444-4444-444444444444"
+      },
+      {
+        "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "title": "T-sub1",
+        "isDone": true,
+        "sortIndex": 1.0,
+        "parentId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "10101010-1010-1010-1010-101010101010",
+        "title": "T-sub2",
+        "isDone": false,
+        "sortIndex": 2.0,
+        "parentId": "88888888-8888-8888-8888-888888888888"
+      }
+    ],
+    "taskTags": [
+      {
+        "id": "33333333-3333-3333-3333-333333333333",
+        "name": "work",
+        "colorHex": "#FF0000"
+      }
+    ],
+    "customLists": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "Inbox",
+        "sortIndex": 1.0
+      },
+      {
+        "id": "22222222-2222-2222-2222-222222222222",
+        "name": "Someday",
+        "sortIndex": 2.0
+      }
+    ],
+    "taskOccurrences": [
+      {
+        "id": "30303030-3030-3030-3030-303030303030",
+        "dayKey": "20260902",
+        "isDone": true,
+        "templateId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "31313131-3131-3131-3131-313131313131",
+        "dayKey": "20260903",
+        "titleOverride": "Standup (override)",
+        "templateId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "32323232-3232-3232-3232-323232323232",
+        "dayKey": "20260904",
+        "timeOverride": 600,
+        "templateId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "33333333-3333-3333-3333-333333333333",
+        "dayKey": "20260905",
+        "skipped": true,
+        "templateId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "34343434-3434-3434-3434-343434343434",
+        "dayKey": "20260906",
+        "isDone": true,
+        "skipped": true,
+        "templateId": "88888888-8888-8888-8888-888888888888"
+      },
+      {
+        "id": "40404040-4040-4040-4040-404040404040",
+        "dayKey": "20260914",
+        "isDone": true,
+        "templateId": "99999999-9999-9999-9999-999999999999"
+      }
+    ]
+  },
+  "entityCounts": {
+    "taskItems": 9,
+    "subtasks": 4,
+    "taskTags": 1,
+    "customLists": 2,
+    "taskOccurrences": 6
+  }
+}

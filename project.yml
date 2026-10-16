@@ -74,6 +74,9 @@ targets:
     platform: macOS
     sources:
       - path: Tests/TickyTaskTests
+        # Legacy store/backup fixtures are read from the source tree, not bundled.
+        excludes:
+          - "Fixtures/**"
     dependencies:
       - target: TickyTask
     settings:
