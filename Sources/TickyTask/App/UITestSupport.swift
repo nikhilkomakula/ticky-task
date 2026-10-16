@@ -2,11 +2,36 @@ import Foundation
 import SwiftData
 
 /// Deterministic setup for XCUITest runs, activated by the `-uitest` launch
-/// argument. When present, `TickyTaskApp` opens an **in-memory** store (never the
-/// user's real data) and this seeds a fixed set of tasks in the first visible week
-/// column, so UI tests can drag them and assert the resulting order.
+/// argument. When present, `TickyTaskApp` opens an **in-memory** store — or, with
+/// `-uitestStore <path>`, an isolated on-disk one; never the user's real data — and
+/// this seeds a fixed set of tasks in the first visible week column.
 enum UITestSupport {
     static var isRunning: Bool { ProcessInfo.processInfo.arguments.contains("-uitest") }
+
+    /// The app is the unit tests' host process (`TEST_HOST`). It must then open an
+    /// in-memory store and skip launch work, or every test run would rewrite the
+    /// user's real store and clear the real app's pending reminders.
+    static var isHostingUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// `-uitestStore <path>`: an isolated on-disk store for UI tests that relaunch
+    /// the app to check persistence. Never the user's store.
+    static var diskStoreURL: URL? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestStore"), index + 1 < args.count else { return nil }
+        return URL(fileURLWithPath: args[index + 1])
+    }
+
+    #if DEBUG
+    /// `-uitestFailPurgeSaves`: every auto-delete save fails (a store that keeps
+    /// rejecting saves), to exercise recovery without a restart loop.
+    static var failPurgeSaves: Bool { isRunning && ProcessInfo.processInfo.arguments.contains("-uitestFailPurgeSaves") }
+
+    /// `-uitestFailTaskSave`: the first editor Done fails to save, to exercise the
+    /// save-error path.
+    @MainActor static var failNextTaskSave = isRunning && ProcessInfo.processInfo.arguments.contains("-uitestFailTaskSave")
+    #endif
 
     /// A per-launch, emptied defaults suite for state the app persists itself
     /// (e.g. Weekly Summary choices), so each test starts clean.
@@ -42,6 +67,16 @@ enum UITestSupport {
             }
             if ProcessInfo.processInfo.arguments.contains("-uitestSummarySeed") {
                 try seedWeeklySummary(service)
+            }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-uitestOldCompletion") {
+                // Completed a month ago: due for auto-delete.
+                let old = try service.addTask(title: "Done long ago", location: .day(seededDayKey))
+                old.setDone(true, at: Date(timeIntervalSinceNow: -30 * 86_400))
+            }
+            #endif
+            if ProcessInfo.processInfo.arguments.contains("-uitestRecurringSeed") {
+                try seedRecurringSeries(service)
             }
             try service.save()
         } catch {
@@ -81,5 +116,61 @@ enum UITestSupport {
         default:
             return nil
         }
+    }
+
+    /// Opt-in seed for recurring series tests: creates daily "Standup" (started 2 days
+    /// ago with past done occurrence), "Paycheck" (1st & 15th of month), and weekly
+    /// "Meeting" series.
+    @MainActor
+    private static func seedRecurringSeries(_ service: DataService) throws {
+        let today = Date()
+        let calendar = Calendar.current
+
+        // Daily "Standup" starting 2 days ago
+        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: today)!
+        let standupKey = WeekMath.dayKey(for: twoDaysAgo)
+        let standup = try service.addTask(title: "Standup", location: .day(standupKey))
+
+        let standupRule = RecurrenceRule(
+            frequency: .daily,
+            interval: 1,
+            end: .never,
+            startDate: twoDaysAgo
+        )
+        try RecurrenceMaterializer.startSeries(from: standup, rule: standupRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
+
+        // Mark the first occurrence (2 days ago) as done
+        standup.setDone(true)
+
+        // "Paycheck" on 1st and 15th of the month
+        let paycheckKey = WeekMath.dayKey(for: today)
+        let paycheck = try service.addTask(title: "Paycheck", location: .day(paycheckKey))
+        let paycheckRule = RecurrenceRule(
+            frequency: .daysOfMonth,
+            interval: 1,
+            monthDays: [1, 15],
+            end: .never,
+            startDate: today
+        )
+        try RecurrenceMaterializer.startSeries(from: paycheck, rule: paycheckRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
+
+        // Weekly "Meeting" on the same weekday as today
+        let meetingKey = WeekMath.dayKey(for: today)
+        let meeting = try service.addTask(title: "Meeting", location: .day(meetingKey))
+        let todayWeekday = calendar.component(.weekday, from: today)
+        let meetingRule = RecurrenceRule(
+            frequency: .customWeekdays,
+            interval: 1,
+            weekdays: Set([todayWeekday]),
+            end: .never,
+            startDate: today
+        )
+        try RecurrenceMaterializer.startSeries(from: meeting, rule: meetingRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
     }
 }

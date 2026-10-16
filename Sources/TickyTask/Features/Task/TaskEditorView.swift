@@ -1,31 +1,57 @@
 import SwiftUI
 import SwiftData
 
-/// Full task editor presented as a sheet: title, Markdown details (edit/preview),
-/// time, priority, color, and subtasks. Edits bind directly to the model and are
-/// saved on Done.
+/// Full task editor presented as a sheet: title, rich details, time, priority,
+/// Critical, repeat, and subtasks. Every field is edited as a draft and committed
+/// in one transaction on Done (`TaskEditCommit`); Cancel or Esc discards it all.
+///
+/// On a recurring series, title, time, reminder, priority, and Critical are shared:
+/// changing one updates every occurrence. Details and subtasks belong to the opened
+/// occurrence only, and the repeat rule can be changed or stopped from any of them.
 struct TaskEditorView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @Bindable var task: TaskItem
+    let task: TaskItem
 
-    @State private var notesText = AttributedString()
-    /// The last notes value loaded or persisted. Assigning `notesText` in
-    /// `onAppear` triggers `onChange`; this guard keeps opening a task from
-    /// rewriting its legacy Markdown source or bumping `updatedAt`.
-    @State private var persistedNotes = AttributedString()
+    @State private var shared: SharedAttributes
+    @State private var originalShared: SharedAttributes
+    @State private var notesText: AttributedString
+    @State private var loadedNotes: AttributedString
+    @State private var subtasks: [SubtaskDraft]
+    @State private var originalSubtasks: [SubtaskDraft]
     @State private var newSubtask = ""
 
-    // Recurrence editing state — mirrors `task.recurrence`, applied on Done so the
-    // series isn't regenerated on every keystroke. The "Repeat" section is shown
-    // only for a day task that can own a rule (not a generated occurrence).
+    /// The owning series' rule when `task` is an occurrence; `nil` for a one-off.
+    @State private var seriesRule: RecurrenceRule?
     @State private var repeatEnabled = false
-    @State private var frequency: RecurrenceFrequency = .daily
-    @State private var interval = 1
-    @State private var weekdays: Set<Int> = []
-    @State private var endMode: RecurrenceEndMode = .never
-    @State private var endCount = 10
-    @State private var endDate = Date()
+    @State private var rule: RecurrenceDraft
+    @State private var loadedRule: RecurrenceDraft
+    @State private var saveError: String?
+
+    init(task: TaskItem) {
+        self.task = task
+        let attributes = SharedAttributes(task)
+        _shared = State(initialValue: attributes)
+        _originalShared = State(initialValue: attributes)
+        let notes = NotesAttributedString.attributedString(
+            from: NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes))
+        _notesText = State(initialValue: notes)
+        _loadedNotes = State(initialValue: notes)
+        let drafts = SubtaskDraft.drafts(of: task)
+        _subtasks = State(initialValue: drafts)
+        _originalSubtasks = State(initialValue: drafts)
+
+        let definition = task.modelContext.flatMap { try? RecurrenceMaterializer.definition(for: task, context: $0) }
+        let existing = definition?.recurrence
+        _seriesRule = State(initialValue: existing)
+        let draft = existing.map { RecurrenceDraft(rule: $0) }
+            ?? RecurrenceDraft(newOn: task.dayKey.flatMap { WeekMath.date(fromDayKey: $0) })
+        _rule = State(initialValue: draft)
+        _loadedRule = State(initialValue: draft)
+    }
+
+    /// An occurrence of a series (it shares attributes and has a rule to edit).
+    private var isSeriesOccurrence: Bool { seriesRule != nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,34 +61,26 @@ struct TaskEditorView: View {
                 titleSection
                 notesSection
                 attributesSection
-                if canRepeat { recurrenceSection }
+                if isSeriesOccurrence || task.dayKey != nil { recurrenceSection }
                 subtasksSection
             }
             .formStyle(.grouped)
         }
         .frame(minWidth: 560, minHeight: 580)
-        .onAppear {
-            let resolved = NotesAttributedString.attributedString(
-                from: NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
-            )
-            notesText = resolved
-            persistedNotes = resolved
-            loadRecurrence()
-        }
-        .onChange(of: notesText) { _, newValue in
-            // Skip the load-induced change (and any no-op) so opening a task never
-            // rewrites its notes or timestamp — only genuine edits persist.
-            guard newValue != persistedNotes else { return }
-            let document = NotesAttributedString.document(from: newValue)
-            task.notesRich = try? NotesCodec.encode(document)
-            task.notes = document.plainText
-            task.updatedAt = Date()
-            persistedNotes = newValue
+        .alert("Couldn’t save the task", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your changes are still here. \(saveError ?? "")")
         }
     }
 
     private var header: some View {
         HStack {
+            Button("Cancel") { dismiss() }
+                .controlSize(.small)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("editor-cancel")
+            Spacer()
             Text("Edit Task").font(.system(size: 15, weight: .semibold))
             Spacer()
             Button("Done") { finish() }
@@ -81,7 +99,7 @@ struct TaskEditorView: View {
             // a line-limit RANGE; without it the field stays one line tall and the
             // second line is clipped. `fixedSize(vertical:)` makes the row adopt the
             // field's full height (same pattern TaskRowView uses for wrapped titles).
-            TextField("Title", text: $task.title, axis: .vertical)
+            TextField("Title", text: $shared.title, axis: .vertical)
                 .font(.system(size: 20, weight: .semibold))
                 .textFieldStyle(.plain)
                 .lineLimit(1...10)
@@ -91,73 +109,111 @@ struct TaskEditorView: View {
     }
 
     private var notesSection: some View {
-        Section("Details") {
+        Section {
             RichNotesEditor(text: $notesText)
+        } header: {
+            Text("Details")
+        } footer: {
+            if isSeriesOccurrence {
+                caption("Only this occurrence. Other repeats start with empty notes.", id: "caption-details")
+            }
         }
     }
 
     private var attributesSection: some View {
         Section {
             Toggle("Set time", isOn: timeEnabled)
-            if task.timeMinutes != nil {
+                .accessibilityIdentifier("editor-time-toggle")
+            if shared.timeMinutes != nil {
                 DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
-                Toggle("Remind me at this time", isOn: $task.alarmEnabled)
+                Toggle("Remind me at this time", isOn: $shared.alarmEnabled)
+                    .accessibilityIdentifier("editor-reminder-toggle")
             }
             Picker("Priority", selection: priorityBinding) {
                 ForEach(TaskPriority.allCases) { priority in
                     Label(priority.label, systemImage: priority.symbol).tag(priority)
                 }
             }
-            Toggle(isOn: $task.isCritical) {
+            Toggle(isOn: $shared.isCritical) {
                 Label("Critical", systemImage: "flag.fill")
             }
             .help("Mark this task critical — shown with a red flag before its priority, independent of the priority level.")
+        } footer: {
+            if isSeriesOccurrence {
+                caption("Title, time, reminder, priority, and Critical apply to every occurrence, including completed ones.",
+                        id: "caption-shared")
+            }
         }
     }
 
-    /// Only a day task that isn't itself a generated occurrence can own a rule —
-    /// an occurrence's schedule is controlled by its template.
-    private var canRepeat: Bool { task.dayKey != nil && task.templateID == nil }
-
     private var recurrenceSection: some View {
-        Section("Repeat") {
-            Toggle("Repeat this task", isOn: $repeatEnabled)
-                .accessibilityIdentifier("repeat-toggle")
-
-            if repeatEnabled {
-                Picker("Frequency", selection: $frequency) {
-                    ForEach(RecurrenceFrequency.editableCases) { freq in
-                        Text(freq.editorLabel).tag(freq)
+        Section {
+            if isSeriesOccurrence {
+                ruleControls
+                if !draftHasEnded {
+                    Button("Stop Repeating", role: .destructive) {
+                        rule.endMode = .on
+                        rule.endDate = Calendar.current.startOfDay(for: Date())
                     }
+                    .accessibilityIdentifier("repeat-stop")
                 }
-
-                if frequency != .weekdays {
-                    Stepper(value: $interval, in: 1...365) {
-                        Text("Every \(interval) \(frequency.unitLabel(interval))")
-                    }
-                }
-
-                if frequency == .weekly {
-                    weekdayPicker
-                }
-
-                Picker("Ends", selection: $endMode) {
-                    Text("Never").tag(RecurrenceEndMode.never)
-                    Text("After a number of times").tag(RecurrenceEndMode.after)
-                    Text("On a date").tag(RecurrenceEndMode.on)
-                }
-
-                switch endMode {
-                case .never:
-                    EmptyView()
-                case .after:
-                    Stepper(value: $endCount, in: 1...999) {
-                        Text("\(endCount) time\(endCount == 1 ? "" : "s")")
-                    }
-                case .on:
-                    DatePicker("End date", selection: $endDate, displayedComponents: .date)
-                }
+            } else {
+                Toggle("Repeat this task", isOn: $repeatEnabled)
+                    .accessibilityIdentifier("repeat-toggle")
+                if repeatEnabled { ruleControls }
             }
+        } header: {
+            Text("Repeat")
+        } footer: {
+            if isSeriesOccurrence {
+                caption(draftHasEnded
+                        ? "Stopped repeating. Past, completed, and changed occurrences are kept; untouched future ones are removed."
+                        : "Schedule changes apply after today. Past, completed, and changed occurrences are kept.",
+                        id: "caption-repeat")
+            }
+        }
+    }
+
+    @ViewBuilder private var ruleControls: some View {
+        Picker("Frequency", selection: $rule.frequency) {
+            ForEach(RecurrenceFrequency.editableCases) { freq in
+                Text(freq.editorLabel).tag(freq)
+            }
+        }
+        .accessibilityIdentifier("repeat-frequency")
+
+        if rule.frequency != .weekdays {
+            Stepper(value: $rule.interval, in: 1...365) {
+                Text("Every \(rule.interval) \(rule.frequency.unitLabel(rule.interval))")
+            }
+        }
+
+        if rule.frequency == .weekly {
+            weekdayPicker
+        }
+
+        // An imported "1st and 15th" rule keeps its day numbers unless the frequency changes.
+        if rule.frequency == .monthly, let original = seriesRule, original.frequency == .daysOfMonth {
+            Text("On days \(Set(original.monthDays).sorted().map(String.init).joined(separator: ", ")) of the month")
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("repeat-month-days")
+        }
+
+        Picker("Ends", selection: $rule.endMode) {
+            Text("Never").tag(RecurrenceDraft.EndMode.never)
+            Text("After a number of times").tag(RecurrenceDraft.EndMode.after)
+            Text("On a date").tag(RecurrenceDraft.EndMode.on)
+        }
+
+        switch rule.endMode {
+        case .never:
+            EmptyView()
+        case .after:
+            Stepper(value: $rule.endCount, in: 1...999) {
+                Text("\(rule.endCount) time\(rule.endCount == 1 ? "" : "s")")
+            }
+        case .on:
+            DatePicker("End date", selection: $rule.endDate, displayedComponents: .date)
         }
     }
 
@@ -166,9 +222,9 @@ struct TaskEditorView: View {
         let symbols = Calendar.current.shortWeekdaySymbols
         return HStack(spacing: 4) {
             ForEach(1...7, id: \.self) { day in
-                let on = weekdays.contains(day)
+                let on = rule.weekdays.contains(day)
                 Button(symbols[day - 1]) {
-                    if on { weekdays.remove(day) } else { weekdays.insert(day) }
+                    if on { rule.weekdays.remove(day) } else { rule.weekdays.insert(day) }
                 }
                 .buttonStyle(.bordered)
                 .tint(on ? .accentColor : nil)
@@ -178,44 +234,65 @@ struct TaskEditorView: View {
     }
 
     private var subtasksSection: some View {
-        Section("Subtasks") {
-            ForEach(task.subtasks.sorted(by: { $0.sortIndex < $1.sortIndex })) { subtask in
-                SubtaskRow(subtask: subtask) { delete(subtask) }
+        Section {
+            ForEach($subtasks) { $draft in
+                SubtaskRow(subtask: $draft) { subtasks.removeAll { $0.id == draft.id } }
             }
             HStack {
                 Image(systemName: "plus.circle").foregroundStyle(.secondary)
                 TextField("Add subtask", text: $newSubtask)
                     .onSubmit(addSubtask)
+                    .accessibilityIdentifier("editor-add-subtask")
             }
+        } header: {
+            Text("Subtasks")
+        } footer: {
+            if isSeriesOccurrence { caption("Only this occurrence.", id: "caption-subtasks") }
         }
+    }
+
+    private func caption(_ text: String, id: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier(id)
     }
 
     // MARK: - Bindings
 
     private var timeEnabled: Binding<Bool> {
         Binding(
-            get: { task.timeMinutes != nil },
-            set: { on in task.timeMinutes = on ? (task.timeMinutes ?? 9 * 60) : nil }
+            get: { shared.timeMinutes != nil },
+            set: { on in
+                shared.timeMinutes = on ? (shared.timeMinutes ?? 9 * 60) : nil
+                // A reminder needs a time: never leave a bell on an untimed task.
+                if !on { shared.alarmEnabled = false }
+            }
         )
     }
 
     private var timeBinding: Binding<Date> {
         Binding(
             get: {
-                let minutes = task.timeMinutes ?? 9 * 60
+                let minutes = shared.timeMinutes ?? 9 * 60
                 return Calendar.current.date(
                     bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()
                 ) ?? Date()
             },
             set: { date in
                 let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
-                task.timeMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+                shared.timeMinutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
             }
         )
     }
 
     private var priorityBinding: Binding<TaskPriority> {
-        Binding(get: { task.priorityLevel }, set: { task.priorityLevel = $0 })
+        Binding(get: { TaskPriority(rawValue: min(max(shared.priority, 0), 2)) ?? .low },
+                set: { shared.priority = $0.rawValue })
+    }
+
+    private var draftHasEnded: Bool {
+        rule.endMode == .on && Calendar.current.startOfDay(for: rule.endDate) <= Calendar.current.startOfDay(for: Date())
     }
 
     // MARK: - Actions
@@ -223,137 +300,58 @@ struct TaskEditorView: View {
     private func addSubtask() {
         let title = newSubtask.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        DataService(context).addSubtask(to: task, title: title)
+        let next = (subtasks.map(\.sortIndex).max() ?? 0) + 1
+        subtasks.append(SubtaskDraft(id: UUID(), title: title, isDone: false, sortIndex: next))
         newSubtask = ""
     }
 
-    private func delete(_ subtask: Subtask) {
-        context.delete(subtask)
-    }
-
-    // MARK: - Recurrence
-
-    /// Populate the editor's recurrence state from `task.recurrence`. Imported
-    /// `.customWeekdays` / `.daysOfMonth` rules are shown as their closest editable
-    /// frequency (weekly / monthly); the engine still honors the stored form.
-    private func loadRecurrence() {
-        guard let rule = task.recurrence else {
-            // Sensible default weekday for a fresh weekly rule = the task's own day.
-            if let day = task.dayKey.flatMap({ WeekMath.date(fromDayKey: $0) }) {
-                weekdays = [Calendar.current.component(.weekday, from: day)]
-            }
-            return
+    private var ruleChange: TaskEdit.RuleChange {
+        if let seriesRule {
+            guard !rule.isEquivalent(to: loadedRule) else { return .unchanged }
+            return .replace(rule.rule(replacing: seriesRule, startDate: seriesRule.startDate))
         }
-        repeatEnabled = true
-        frequency = rule.frequency.editableEquivalent
-        interval = rule.interval
-        weekdays = rule.weekdays.isEmpty
-            ? [Calendar.current.component(.weekday, from: rule.startDate)]
-            : rule.weekdays
-        switch rule.end {
-        case .never: endMode = .never
-        case .afterCount(let n): endMode = .after; endCount = max(1, n)
-        case .until(let date): endMode = .on; endDate = date
-        }
-    }
-
-    private func buildRule() -> RecurrenceRule {
-        let start = task.recurrence?.startDate
-            ?? task.dayKey.flatMap { WeekMath.date(fromDayKey: $0) }
-            ?? Calendar.current.startOfDay(for: task.createdAt)
-        let end: RecurrenceEnd
-        switch endMode {
-        case .never: end = .never
-        case .after: end = .afterCount(max(1, endCount))
-        case .on: end = .until(endDate)
-        }
-        let days: Set<Int> = frequency == .weekly
-            ? (weekdays.isEmpty ? [Calendar.current.component(.weekday, from: start)] : weekdays)
-            : []
-        return RecurrenceRule(
-            frequency: frequency,
-            interval: frequency == .weekdays ? 1 : max(1, interval),
-            weekdays: days,
-            monthDays: [],
-            end: end,
-            startDate: start
-        )
-    }
-
-    /// Apply recurrence edits when they actually changed, then regenerate the
-    /// series (or detach it when repeat was turned off). The rule change and the
-    /// (re)generation commit together: the materializer saves, and on failure we
-    /// roll back so the rule never persists alongside stale occurrences. Callers
-    /// must persist unrelated edits (title/notes) *before* this, since a rollback
-    /// reverts every pending change in the context.
-    private func applyRecurrence() {
-        guard canRepeat else { return }
-        let newRule = repeatEnabled ? buildRule() : nil
-        guard newRule != task.recurrence else { return }
-        let hadRule = task.recurrence != nil
-        task.recurrence = newRule
-        task.updatedAt = Date()
-
-        let todayKey = WeekMath.dayKey(for: Date())
-        let horizon = Calendar.current.date(
-            byAdding: .day, value: RecurrenceMaterializer.defaultHorizonDays, to: Date()
-        ) ?? Date()
-        do {
-            if newRule != nil {
-                try RecurrenceMaterializer.regenerateFuture(
-                    for: task, todayKey: todayKey, through: horizon, context: context
-                )
-            } else if hadRule {
-                try RecurrenceMaterializer.removeRecurrence(from: task, context: context)
-            } else {
-                try context.save()
-            }
-        } catch {
-            context.rollback()
-            NSLog("TickyTask: applying recurrence failed: \(error.localizedDescription)")
-        }
+        guard repeatEnabled, let day = task.dayKey.flatMap({ WeekMath.date(fromDayKey: $0) }) else { return .unchanged }
+        return .startSeries(rule.rule(replacing: nil, startDate: day))
     }
 
     private func finish() {
-        task.updatedAt = Date()
-        // Persist title/notes/attribute edits first, so a recurrence-regeneration
-        // failure (which rolls the context back) can't discard them.
-        try? context.save()
-        applyRecurrence()
-        // Reconcile per-task reminders so enabling/disabling/rescheduling an
-        // alarm takes effect immediately, not just on next launch.
-        Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
-        dismiss()
+        let edit = TaskEdit(
+            originalShared: originalShared,
+            editedShared: shared,
+            notes: notesText == loadedNotes ? nil : NotesAttributedString.document(from: notesText),
+            subtasks: subtasks == originalSubtasks ? nil : subtasks,
+            rule: ruleChange
+        )
+        let horizon = Calendar.current.date(byAdding: .day, value: RecurrenceMaterializer.defaultHorizonDays,
+                                            to: Date()) ?? Date()
+        #if DEBUG
+        if UITestSupport.failNextTaskSave {
+            UITestSupport.failNextTaskSave = false
+            PersistenceFaults.armed.insert(.transaction)
+        }
+        #endif
+        do {
+            let scheduleChanged = try TaskEditCommit.commit(edit, to: task, context: context, horizon: horizon)
+            if scheduleChanged { NotificationCenter.default.post(name: .tickyTaskSeriesChanged, object: nil) }
+            if !edit.isEmpty {
+                Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+            }
+            dismiss()
+        } catch {
+            NSLog("TickyTask: saving task edits failed: \(error.localizedDescription)")
+            saveError = error.localizedDescription
+        }
     }
 }
 
-/// How a recurrence stops, as three flat editor choices (the model's associated-
-/// value `RecurrenceEnd` is rebuilt from these on save).
-private enum RecurrenceEndMode: Hashable { case never, after, on }
-
 private extension RecurrenceFrequency {
-    /// The frequencies offered in the editor. `.customWeekdays` and `.daysOfMonth`
-    /// only arrive via legacy import and are edited as weekly / monthly.
-    static var editableCases: [RecurrenceFrequency] { [.daily, .weekdays, .weekly, .monthly, .yearly] }
-
-    /// Map a stored frequency to the editable one that represents it.
-    var editableEquivalent: RecurrenceFrequency {
-        switch self {
-        case .customWeekdays: return .weekly
-        case .daysOfMonth: return .monthly
-        default: return self
-        }
-    }
-
     var editorLabel: String {
         switch self {
         case .daily: return "Daily"
         case .weekdays: return "Every weekday (Mon–Fri)"
-        case .weekly: return "Weekly"
-        case .monthly: return "Monthly"
+        case .weekly, .customWeekdays: return "Weekly"
+        case .monthly, .daysOfMonth: return "Monthly"
         case .yearly: return "Yearly"
-        case .customWeekdays: return "Weekly"
-        case .daysOfMonth: return "Monthly"
         }
     }
 
@@ -371,9 +369,9 @@ private extension RecurrenceFrequency {
     }
 }
 
-/// A single editable subtask row inside the editor.
+/// A single editable subtask draft inside the editor.
 private struct SubtaskRow: View {
-    @Bindable var subtask: Subtask
+    @Binding var subtask: SubtaskDraft
     var onDelete: () -> Void
     @State private var isHovering = false
 
@@ -385,6 +383,7 @@ private struct SubtaskRow: View {
             }
             .buttonStyle(.plain)
             .frame(width: 20, height: 20)
+            .accessibilityIdentifier("subtask-toggle-\(subtask.title)")
 
             TextField("Subtask", text: $subtask.title)
                 .strikethrough(subtask.isDone)

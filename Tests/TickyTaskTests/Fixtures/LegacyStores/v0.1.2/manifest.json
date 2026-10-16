@@ -1,0 +1,12 @@
+{
+  "scenario" : {
+    "criticalOneOff" : "0FE1CC90-18FC-414B-862C-A45FCFB6FAAF",
+    "doneOneOff" : "D4B29A2E-ABB7-4E84-8A8A-7F10498E5E0D",
+    "oneOffDated" : "B7E5BD0B-C077-433F-9927-EE4C529396D3",
+    "oneOffListed" : "C7C8F4D9-CE44-46CB-9FE6-91A839AE19EC",
+    "paycheckRoot" : "CB5B9C56-F3F7-4FBC-9D2C-ED3D18EB9008",
+    "standupRoot" : "EEABFFA6-CCD5-4269-849D-BCA84BDE5FCE",
+    "weeklyRoot" : "72BA874D-B632-4754-AA70-F0649E529235"
+  },
+  "tag" : "v0.1.2"
+}

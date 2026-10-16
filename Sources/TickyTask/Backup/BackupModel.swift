@@ -53,7 +53,10 @@ struct EncryptedPayload: Codable, Equatable, Sendable {
 // MARK: - Store snapshot
 
 struct BackupStoreDTO: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    /// 2 (0.1.17): recurring series are a hidden definition plus occurrence rows
+    /// with stable slots. Older apps reject it rather than misreading a definition
+    /// that has no day; this app still imports version 1.
+    static let currentSchemaVersion = 2
 
     var schemaVersion: Int
     var appVersion: String
@@ -114,6 +117,12 @@ struct TaskItemDTO: Codable, Equatable, Sendable {
     /// Links a materialized occurrence back to its recurring template's id (`nil`
     /// for one-off tasks and templates). Optional new key so older backups decode.
     var templateId: UUID? = nil
+    /// `TaskItem.occurrenceKey`, `.recurrenceEffectiveFromKey`, and
+    /// `.occurrenceModified` (0.1.17). Optional new keys so older backups decode;
+    /// `occurrenceModified` keeps `false` distinct from absent.
+    var occurrenceKey: String? = nil
+    var recurrenceEffectiveFromKey: String? = nil
+    var occurrenceModified: Bool? = nil
 }
 
 struct SubtaskDTO: Codable, Equatable, Sendable {
@@ -255,7 +264,10 @@ extension TaskItemDTO {
             needsImmediateAttention: task.isCritical,
             completedAt: task.completedAt,
             notesRich: task.notesRich,
-            templateId: task.templateID
+            templateId: task.templateID,
+            occurrenceKey: task.occurrenceKey,
+            recurrenceEffectiveFromKey: task.recurrenceEffectiveFromKey,
+            occurrenceModified: task.occurrenceModified
         )
     }
 }

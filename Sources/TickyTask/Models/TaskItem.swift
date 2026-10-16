@@ -45,17 +45,33 @@ final class TaskItem {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
-    /// Recurrence rule for a repeating template; `nil` = one-off task. Stored as
-    /// a single Codable attribute — occurrences are materialized as child rows by
-    /// `RecurrenceMaterializer`.
+    /// Recurrence rule; set only on a recurring series' hidden **definition** — a
+    /// row with no day or list that owns the series-wide attributes and skip
+    /// records. Every visible occurrence (including the first) is a separate child
+    /// row materialized by `RecurrenceMaterializer`. Stored as one Codable attribute.
     var recurrence: RecurrenceRule?
 
-    /// Links a materialized occurrence back to its recurring template's `id`.
-    /// `nil` for one-off tasks and for the template itself. Additive-optional so
-    /// older stores lightweight-migrate (read nil), same pattern as `completedAt`.
-    /// A scalar UUID (not a `@Relationship`) so series deletion is explicit and the
-    /// backup can rebuild the link from ids, matching the other projected relations.
+    /// Links an occurrence to its series definition's `id`; `nil` for one-off tasks
+    /// and for the definition itself. Additive-optional so older stores
+    /// lightweight-migrate (read nil), same pattern as `completedAt`. A scalar UUID
+    /// (not a `@Relationship`) so series deletion is explicit and the backup can
+    /// rebuild the link from ids, matching the other projected relations.
     var templateID: UUID?
+
+    /// The scheduled slot (`"yyyyMMdd"`) an occurrence was generated for. It stays
+    /// put when the occurrence is moved to another day or a list, so the slot is
+    /// never regenerated and deleting the occurrence skips the right day. `nil` for
+    /// one-off tasks, definitions, and legacy occurrences whose slot is unknown.
+    var occurrenceKey: String?
+
+    /// On a definition: the first day its current rule generates from, set to the
+    /// day after a rule change so the new rule never adds past occurrences.
+    var recurrenceEffectiveFromKey: String?
+
+    /// On an occurrence: whether the user acted on this occurrence itself (notes,
+    /// subtasks, completion, placement). `false` = generated and untouched, so a
+    /// rule change may remove it; `nil` = legacy history unknown, kept like `true`.
+    var occurrenceModified: Bool?
 
     @Relationship(deleteRule: .cascade, inverse: \Subtask.parent)
     var subtasks: [Subtask] = []
@@ -104,14 +120,24 @@ extension TaskItem {
         return .unassigned
     }
 
-    var isRecurringTemplate: Bool { recurrence != nil }
-
-    /// A row generated from a recurring template (not the template itself).
-    var isMaterializedOccurrence: Bool { templateID != nil }
-
-    /// Part of a recurring series — either the template or one of its occurrences.
+    /// Part of a recurring series — an occurrence or the definition itself.
     /// Drives the row's repeat glyph and the series-aware delete prompt.
     var isRecurring: Bool { recurrence != nil || templateID != nil }
+
+    /// Notes, subtasks, or completion on this row — work a rule change must keep.
+    /// Reads the raw fields: `hasNotes` collapses some stored content.
+    var hasOccurrenceWork: Bool {
+        isDone || completedAt != nil || !notes.isEmpty || notesRich != nil || !subtasks.isEmpty
+    }
+
+    /// Record that the user acted on this occurrence itself (sticky). Call before
+    /// moving it: a legacy row whose slot was never recorded takes its current day
+    /// first, exactly as `RecurrenceNormalizer` would have.
+    func markOccurrenceModified() {
+        guard templateID != nil else { return }
+        if occurrenceKey == nil, occurrenceModified == nil { occurrenceKey = dayKey }
+        occurrenceModified = true
+    }
 
     /// Match the editor's rich-document preference, falling back to legacy notes
     /// when there is no readable rich document.
@@ -127,6 +153,7 @@ extension TaskItem {
     /// Mark the task done/undone, stamping `completedAt` (used by optional
     /// auto-deletion of long-completed tasks) and `updatedAt`.
     func setDone(_ done: Bool, at date: Date = Date()) {
+        markOccurrenceModified()
         isDone = done
         completedAt = done ? date : nil
         updatedAt = date

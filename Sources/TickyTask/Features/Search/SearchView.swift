@@ -34,6 +34,7 @@ struct SearchView: View {
                 .font(.title3)
                 .focused($focused)
                 .onSubmit(openFirst)
+                .accessibilityIdentifier("search-field")
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)

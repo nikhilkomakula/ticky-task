@@ -1,0 +1,1382 @@
+{
+  "encrypted" : false,
+  "format" : 1,
+  "store" : {
+    "appVersion" : "0.1.15",
+    "data" : {
+      "customLists" : [
+        {
+          "id" : "0768CBAE-2D45-448B-B5C4-168D881864B0",
+          "name" : "Someday",
+          "sortIndex" : 2
+        },
+        {
+          "id" : "D9FF16FB-B93C-4C2E-B9B1-385C9CF709A2",
+          "name" : "Inbox",
+          "sortIndex" : 1
+        }
+      ],
+      "subtasks" : [
+        {
+          "id" : "024C59B7-8529-4D90-9224-F3A71EF00039",
+          "isDone" : false,
+          "parentId" : "57306E8A-7C8D-483D-B2AD-F20906E3E2BA",
+          "sortIndex" : 1,
+          "title" : "C-sub"
+        },
+        {
+          "id" : "16478DC9-9A77-48F6-BAF8-E82AC853199D",
+          "isDone" : false,
+          "parentId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "sortIndex" : 2,
+          "title" : "T-sub2"
+        },
+        {
+          "id" : "1F83FF82-367E-4D33-8D2C-20FB21AED279",
+          "isDone" : false,
+          "parentId" : "7B8F43E5-D2DC-43A7-914E-AF1AF2BEF48C",
+          "sortIndex" : 2,
+          "title" : "OD-sub2"
+        },
+        {
+          "id" : "28658F22-A9AD-4D13-B5AE-B44DA2FBCE4F",
+          "isDone" : true,
+          "parentId" : "7B8F43E5-D2DC-43A7-914E-AF1AF2BEF48C",
+          "sortIndex" : 1,
+          "title" : "OD-sub1"
+        },
+        {
+          "id" : "4FF5F18E-A287-47FC-893A-B42B59E09B26",
+          "isDone" : true,
+          "parentId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "sortIndex" : 1,
+          "title" : "T-sub1"
+        }
+      ],
+      "taskItems" : [
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.873Z",
+          "dayKey" : "20261006",
+          "id" : "04639B89-1F3E-4D44-9AEE-28F9811A5D96",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.873Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260914",
+          "id" : "0C0EEF0F-A1C9-423B-BDD6-6A5BD529D73F",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260925",
+          "id" : "0CB948CE-5932-41FC-96B1-03F3AF8ECACE",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.825Z",
+          "dayKey" : "20260910",
+          "id" : "0D893D6F-8AFF-4194-A19A-1A9B8AEBD95B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.825Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.877Z",
+          "dayKey" : "20261019",
+          "id" : "0E562253-5280-47CF-A9F6-BB9E5F45277E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review v2",
+          "updatedAt" : "2026-10-16T04:47:57.877Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "completedAt" : "2026-09-01T06:30:00.000Z",
+          "createdAt" : "2026-10-16T04:47:57.804Z",
+          "dayKey" : "20260901",
+          "id" : "0F29697E-3BAC-4C96-AD06-63D6E3BC4823",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Done one-off",
+          "updatedAt" : "2026-09-01T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.824Z",
+          "customListId" : "D9FF16FB-B93C-4C2E-B9B1-385C9CF709A2",
+          "id" : "1334825D-7362-4A34-B17A-EEF34675EB81",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.824Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261016",
+          "id" : "14D24D38-002A-48BF-B622-FFD7C88EE0F7",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260919",
+          "id" : "2554FC1D-B4CF-486A-B37D-9F32644EC66F",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20261002",
+          "id" : "271261A3-2BF3-446B-B442-B6DA346ED25B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20261004",
+          "id" : "29E53F86-2C92-4316-B78E-631F1373E67D",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.825Z",
+          "dayKey" : "20260909",
+          "id" : "2B3A3D46-D4E9-4191-97FA-E5EDD79DE13D",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Standup (moved room)",
+          "updatedAt" : "2026-10-16T04:47:57.825Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.877Z",
+          "dayKey" : "20261012",
+          "id" : "330B0550-1587-4F5D-97B7-CC8A2CB7D449",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review v2",
+          "updatedAt" : "2026-10-16T04:47:57.877Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20261001",
+          "id" : "3AC5A1BF-2444-487C-8DF9-DAD61D174BAC",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.804Z",
+          "customListId" : "D9FF16FB-B93C-4C2E-B9B1-385C9CF709A2",
+          "id" : "421CD4CA-E3A6-4FFE-A08C-A044CF15388A",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "listed notes",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "One-off listed",
+          "updatedAt" : "2026-10-16T04:47:57.804Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260918",
+          "id" : "44DE5825-7239-490A-9390-2AED74379F24",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260916",
+          "id" : "475D4DA2-829E-4987-95B7-8A4552613ED7",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.959Z",
+          "dayKey" : "20260912",
+          "id" : "49478C52-F21E-4FF0-AE14-5A65FE2AFE8C",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 3,
+          "tagIds" : [
+
+          ],
+          "templateId" : "8BFF00E9-77B8-47D3-9057-39B56C41DE0D",
+          "title" : "Orphan series",
+          "updatedAt" : "2026-10-16T04:47:57.959Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260921",
+          "id" : "53E11E55-E7BA-40B4-8024-D3B9328CF855",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.822Z",
+          "dayKey" : "20260903",
+          "id" : "57306E8A-7C8D-483D-B2AD-F20906E3E2BA",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "child-0903 notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImtpbmQiOiJwYXJhZ3JhcGgiLCJpbmRlbnQiOjAsImlkIjoiMjcxNUQyQkUtNUI1MC00MDY2LTg5QzEtQkY5MEE0NkUzNkUxIiwicnVucyI6W3sidGV4dCI6ImNoaWxkIHJpY2giLCJib2xkIjpmYWxzZSwiaXRhbGljIjpmYWxzZSwidW5kZXJsaW5lIjpmYWxzZSwic3RyaWtldGhyb3VnaCI6ZmFsc2V9XSwiY2hlY2tlZCI6ZmFsc2V9XX0=",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.822Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.859Z",
+          "dayKey" : "20260901",
+          "id" : "5EEAA0EC-3B94-4679-B4A4-941156014FFB",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 6,
+            "interval" : 1,
+            "monthDays" : [
+              1,
+              15
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-16T04:47:57.859Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261007",
+          "id" : "5F2FE0D0-3513-4C91-A2B3-C096AC0ADB27",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260913",
+          "id" : "62A642F6-12AD-41D0-BE40-B35E46BEE5B7",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260927",
+          "id" : "6343FD50-EDB5-4823-9343-56730D5E8757",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.846Z",
+          "dayKey" : "20260907",
+          "id" : "647DA7AF-084A-4B45-A484-29A3AD691EAB",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.846Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.824Z",
+          "dayKey" : "20260906",
+          "id" : "6630BFF8-53FD-439F-82E1-D28AD2C8A270",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.824Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260926",
+          "id" : "6B42422A-2C58-4396-BB3D-39491E9B4968",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261009",
+          "id" : "6B464CDD-9213-40ED-841C-0E3DA260A03C",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "completedAt" : "2026-09-04T06:30:00.000Z",
+          "createdAt" : "2026-10-16T04:47:57.822Z",
+          "dayKey" : "20260904",
+          "id" : "6D29D3A4-387F-4A41-8ECB-689E8FA53175",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-09-04T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261011",
+          "id" : "6F95A5C8-67B6-474D-879D-C78DD0C37B58",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260923",
+          "id" : "702D9A36-F30D-4B85-B229-A71C106ACBF1",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.808Z",
+          "dayKey" : "20260902",
+          "id" : "7467DF30-FE14-4F89-99D3-4F36D016296E",
+          "isDone" : false,
+          "needsImmediateAttention" : true,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Critical one-off",
+          "updatedAt" : "2026-10-16T04:47:57.808Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20261005",
+          "id" : "761C823E-99E1-44A3-992A-A830FDB34DD1",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.803Z",
+          "dayKey" : "20260907",
+          "id" : "7B8F43E5-D2DC-43A7-914E-AF1AF2BEF48C",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "one-off notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImlkIjoiMjRFM0Y4NjAtRDhDNS00RTdCLTk3MDMtMUMzNDhENEJCMzAzIiwicnVucyI6W3siaXRhbGljIjpmYWxzZSwiYm9sZCI6ZmFsc2UsInRleHQiOiJyaWNoIG9uZS1vZmYiLCJzdHJpa2V0aHJvdWdoIjpmYWxzZSwidW5kZXJsaW5lIjpmYWxzZX1dLCJjaGVja2VkIjpmYWxzZSwia2luZCI6InBhcmFncmFwaCIsImluZGVudCI6MH1dfQ==",
+          "priority" : 2,
+          "sortIndex" : 0,
+          "tagIds" : [
+            "7CE1EBA7-5AC8-4846-80FB-67C48F70391C"
+          ],
+          "timeMinutes" : 600,
+          "title" : "One-off dated",
+          "updatedAt" : "2026-10-16T04:47:57.803Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261010",
+          "id" : "7C3EBB88-D3AF-4945-801F-4163ACF00B16",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.846Z",
+          "dayKey" : "20260905",
+          "id" : "823E90C0-7E3B-42BC-B8D8-39B3F2EC8114",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.846Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.823Z",
+          "dayKey" : "20260906",
+          "id" : "83B09274-CCD6-47A4-935F-99B4456C8604",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.823Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260929",
+          "id" : "8732B403-2BA5-4091-B0BA-5332131B4E1E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261020",
+          "id" : "878CBB62-778C-481B-A2CF-38867B069EED",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261018",
+          "id" : "8C757A84-EB61-4BD4-944C-9760E89ACA2C",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.901Z",
+          "dayKey" : "20260912",
+          "id" : "8D486FE2-6BE0-4033-8791-A66B1E09AA0B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "B81FA169-BDEF-4243-8027-86F937814523",
+          "title" : "Listed root",
+          "updatedAt" : "2026-10-16T04:47:57.901Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261012",
+          "id" : "8EDD3763-9888-43EF-B0B1-65DDD516296A",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20261003",
+          "id" : "95FD59E3-08E4-4110-9572-B29E0A3012EB",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.878Z",
+          "dayKey" : "20260915",
+          "id" : "97D7C721-7BD9-49A8-ACCB-BE66D5B5BD34",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "5EEAA0EC-3B94-4679-B4A4-941156014FFB",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-16T04:47:57.878Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261019",
+          "id" : "9988CFC6-32F5-44AB-BD3E-B4BB70D3D1CA",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.875Z",
+          "dayKey" : "20261008",
+          "id" : "A6DA6EF7-CA29-4131-B126-DC17E0913C9D",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.875Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260915",
+          "id" : "AB99B8D8-EE4D-4C33-A7B5-161773A28100",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261013",
+          "id" : "B1E6D9E7-85D2-4DC1-BB7D-0CA6E2C6798A",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.885Z",
+          "customListId" : "0768CBAE-2D45-448B-B5C4-168D881864B0",
+          "id" : "B81FA169-BDEF-4243-8027-86F937814523",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "listed root notes",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 3,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-10T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Listed root",
+          "updatedAt" : "2026-10-16T04:47:57.885Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.825Z",
+          "dayKey" : "20260911",
+          "id" : "B8DBE5B1-CF98-48BA-AAEF-FE8FE913B318",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.825Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.820Z",
+          "dayKey" : "20260902",
+          "id" : "BC3F8555-A7ED-4E1B-B194-0C5F3B75B220",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.820Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.838Z",
+          "dayKey" : "20260907",
+          "id" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 2,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-07T06:30:00.000Z",
+            "weekdays" : [
+              2
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Weekly review v2",
+          "updatedAt" : "2026-10-16T04:47:57.838Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261015",
+          "id" : "C1E19C83-450E-4430-B67E-41AE8C39A388",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "completedAt" : "2026-09-01T06:30:00.000Z",
+          "createdAt" : "2026-10-16T04:47:57.808Z",
+          "dayKey" : "20260901",
+          "id" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "template notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImlkIjoiNzg2NUQ0QUQtQTFDRC00NTI5LTk0QUMtQ0Y3Njg2NDhERkVEIiwicnVucyI6W3siaXRhbGljIjpmYWxzZSwiYm9sZCI6ZmFsc2UsInRleHQiOiJ0ZW1wbGF0ZSByaWNoIiwic3RyaWtldGhyb3VnaCI6ZmFsc2UsInVuZGVybGluZSI6ZmFsc2V9XSwiY2hlY2tlZCI6ZmFsc2UsImtpbmQiOiJwYXJhZ3JhcGgiLCJpbmRlbnQiOjB9XX0=",
+          "priority" : 1,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 3,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+            "7CE1EBA7-5AC8-4846-80FB-67C48F70391C"
+          ],
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-09-01T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260924",
+          "id" : "C6F2540A-5029-4CDE-A581-0FFCD3BBA6A1",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261014",
+          "id" : "CBEDA601-032D-4280-BC8B-F4B7C2047B73",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.850Z",
+          "dayKey" : "20261005",
+          "id" : "CC01AAF1-8659-4B5F-9179-D9BE54836C78",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-16T04:47:57.850Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.878Z",
+          "dayKey" : "20261001",
+          "id" : "D58B9B33-82B0-4F92-862C-3E43C0CB76F0",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "5EEAA0EC-3B94-4679-B4A4-941156014FFB",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-16T04:47:57.878Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.901Z",
+          "dayKey" : "20260911",
+          "id" : "D63E0E72-28C6-4B65-8B69-64AF0B6D61F0",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "B81FA169-BDEF-4243-8027-86F937814523",
+          "title" : "Listed root",
+          "updatedAt" : "2026-10-16T04:47:57.901Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260928",
+          "id" : "D7B5E23A-DB1F-40AF-AABD-1395A8177596",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.880Z",
+          "dayKey" : "20261015",
+          "id" : "E1F1A480-E182-4E6C-A0A0-30106B1D653E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "5EEAA0EC-3B94-4679-B4A4-941156014FFB",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-16T04:47:57.880Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.849Z",
+          "dayKey" : "20260930",
+          "id" : "E2262EBB-4CDB-4AA8-A556-18BE7A999395",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.849Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260920",
+          "id" : "E30353EA-5542-436B-AE58-5E84397B5063",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.850Z",
+          "dayKey" : "20260914",
+          "id" : "E4B1BD93-6AF2-4ED1-AC57-1F6E4ABE3C5E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-16T04:47:57.850Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.848Z",
+          "dayKey" : "20260922",
+          "id" : "E9FD2945-1EF0-4BB9-A83F-0D384201EB73",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.848Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.847Z",
+          "dayKey" : "20260917",
+          "id" : "EADC8638-A46C-452B-B6A0-5B2C3C7DAE52",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.847Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.876Z",
+          "dayKey" : "20261017",
+          "id" : "ED227587-A2A0-41FE-9414-9CC012EE3946",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.876Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-16T04:47:57.825Z",
+          "dayKey" : "20260912",
+          "id" : "EF5C097F-AC91-47C1-8592-75F8F502F659",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-16T04:47:57.825Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.850Z",
+          "dayKey" : "20260928",
+          "id" : "F2B5D611-98B7-47D2-94EB-2E7521848525",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-16T04:47:57.850Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:47:57.850Z",
+          "dayKey" : "20260921",
+          "id" : "F3B92C53-3A5A-4DB6-984C-BF36CC6B973E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "C0EFAAFB-12E7-4D42-9366-936EDFF7D168",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-16T04:47:57.850Z"
+        }
+      ],
+      "taskOccurrences" : [
+        {
+          "dayKey" : "20260908",
+          "id" : "91395F97-C576-4A89-89C1-68D51EC65FF0",
+          "isDone" : false,
+          "skipped" : true,
+          "templateId" : "C387E3F5-84D1-47BE-AFD8-5B2202D6C6BE"
+        }
+      ],
+      "taskTags" : [
+        {
+          "id" : "7CE1EBA7-5AC8-4846-80FB-67C48F70391C",
+          "name" : "work"
+        }
+      ]
+    },
+    "exportedAt" : "2026-09-13T06:30:00.000Z",
+    "schemaVersion" : 1
+  }
+}

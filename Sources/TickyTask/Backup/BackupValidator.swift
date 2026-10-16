@@ -25,7 +25,7 @@ enum BackupValidator {
         let tagIds = Set(data.taskTags.map(\.id))
         // A materialized occurrence's `templateId` must point to a real recurring
         // template (a task carrying a rule) — never itself or a plain task.
-        let templateIds = Set(data.taskItems.filter { $0.recurrence != nil }.map(\.id))
+        let templateIds = Set(data.taskItems.filter { $0.recurrence != nil && $0.templateId == nil }.map(\.id))
 
         for task in data.taskItems {
             guard task.dayKey == nil || task.customListId == nil else {
@@ -52,15 +52,21 @@ enum BackupValidator {
                 throw BackupError.invalidReference(entity: "TaskTag", id: tagId)
             }
             if let templateId = task.templateId {
+                guard task.recurrence == nil else {
+                    throw BackupError.validationFailed(reason: "Task \(task.id) is both a series definition and an occurrence")
+                }
                 guard templateId != task.id else {
                     throw BackupError.validationFailed(reason: "Task \(task.id) references itself as its template")
                 }
-                guard taskIds.contains(templateId) else {
-                    throw BackupError.invalidReference(entity: "TaskItem", id: templateId)
-                }
-                guard templateIds.contains(templateId) else {
+                // An occurrence whose series is gone (older releases could lose it
+                // when a list holding the series row was deleted) is kept as-is.
+                guard !taskIds.contains(templateId) || templateIds.contains(templateId) else {
                     throw BackupError.validationFailed(reason: "Task \(task.id)'s template \(templateId) is not a recurring template")
                 }
+            }
+            for key in [task.occurrenceKey, task.recurrenceEffectiveFromKey].compactMap({ $0 })
+            where WeekMath.date(fromDayKey: key) == nil {
+                throw BackupError.validationFailed(reason: "Task \(task.id) has an invalid recurrence day key")
             }
             if let rule = task.recurrence {
                 guard rule.interval >= 1,
@@ -88,7 +94,6 @@ enum BackupValidator {
             }
         }
 
-        var occurrenceKeys = Set<String>()
         for occ in data.taskOccurrences {
             guard WeekMath.date(fromDayKey: occ.dayKey) != nil else {
                 throw BackupError.validationFailed(reason: "Occurrence \(occ.id) has an invalid day key")
@@ -96,16 +101,11 @@ enum BackupValidator {
             if let minutes = occ.timeOverride, !(0...1439).contains(minutes) {
                 throw BackupError.validationFailed(reason: "Occurrence \(occ.id) has an out-of-range time override")
             }
-            if let templateId = occ.templateId {
-                guard taskIds.contains(templateId) else {
-                    throw BackupError.invalidReference(entity: "TaskItem", id: templateId)
-                }
-                // One override per (template, day) — duplicates would let the app
-                // pick an arbitrary winner for a single occurrence.
-                guard occurrenceKeys.insert("\(templateId.uuidString)#\(occ.dayKey)").inserted else {
-                    throw BackupError.validationFailed(
-                        reason: "Duplicate occurrence for template \(templateId) on \(occ.dayKey)")
-                }
+            // Several records for one (series, day) are accepted: older releases
+            // added a skip beside an override. A skip wins and overrides resolve
+            // deterministically (`RecurrenceNormalizer`), so no winner is arbitrary.
+            if let templateId = occ.templateId, !taskIds.contains(templateId) {
+                throw BackupError.invalidReference(entity: "TaskItem", id: templateId)
             }
         }
     }

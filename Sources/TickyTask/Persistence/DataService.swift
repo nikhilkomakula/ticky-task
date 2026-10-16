@@ -53,6 +53,9 @@ struct DataService {
     /// Covers in-place reorder and moves across days and lists.
     func dropTask(_ draggedID: UUID, into target: TaskLocation, before beforeID: UUID?, siblings: [TaskItem]) throws {
         guard beforeID != draggedID, let task = fetchTask(draggedID) else { return }
+        try RecurrenceMaterializer.checkpoint(context)
+        // Moving an occurrence is acting on it; its scheduled slot stays where it was.
+        task.markOccurrenceModified()
         switch target {
         case .day(let key):         task.dayKey = key; task.customList = nil
         case .customList(let list): task.customList = list; task.dayKey = nil
@@ -67,11 +70,11 @@ struct DataService {
         }
         for (index, item) in order.enumerated() { item.sortIndex = Double(index) }
         do {
-            try context.save()
+            try context.saveTransaction()
         } catch {
             // Never leave a half-applied move (reassigned container + renumbered
             // siblings) in the context if the save fails.
-            context.rollback()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -94,7 +97,7 @@ struct DataService {
             try context.save()
         } catch {
             // Never leave a half-applied renumber in the context if the save fails.
-            context.rollback()
+            context.undoFailedTransaction()
             throw error
         }
         return true
@@ -106,7 +109,7 @@ struct DataService {
         do {
             try context.save()
         } catch {
-            context.rollback()
+            context.undoFailedTransaction()
             throw error
         }
     }
@@ -140,8 +143,20 @@ struct DataService {
         return list
     }
 
-    func delete(_ list: CustomList) {
-        context.delete(list)
+    /// Delete a list and (by cascade) its tasks. Recurring occurrences in it are
+    /// skipped first, so their slots are not regenerated on the calendar. Saves.
+    func delete(_ list: CustomList) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        do {
+            for task in list.tasks where task.templateID != nil {
+                try RecurrenceMaterializer.skipSlot(of: task, context: context)
+            }
+            context.delete(list)
+            try context.saveTransaction()
+        } catch {
+            context.undoFailedTransaction()
+            throw error
+        }
     }
 
     // MARK: - Persistence

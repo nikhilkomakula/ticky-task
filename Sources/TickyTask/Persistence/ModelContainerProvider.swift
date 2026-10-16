@@ -26,7 +26,12 @@ enum ModelContainerProvider {
     /// changed the data folder, then opens it. Throws so the app can present a
     /// recovery UI (`StoreErrorView`) instead of crashing.
     static func makeContainer() throws -> ModelContainer {
-        let url = try resolveStoreURL()
+        try makeContainer(at: resolveStoreURL())
+    }
+
+    /// An on-disk container at an explicit store URL, configured exactly like the
+    /// production one (used for isolated UI-test stores and migration tests).
+    static func makeContainer(at url: URL) throws -> ModelContainer {
         let configuration = ModelConfiguration(schema: AppSchema.schema, url: url)
         return try ModelContainer(for: AppSchema.schema, configurations: configuration)
     }
@@ -43,13 +48,19 @@ enum ModelContainerProvider {
 
     // MARK: - Data directory
 
-    /// Default data directory: `~/Library/Application Support/TickyTask/`.
+    /// Default data directory: `~/Library/Application Support/TickyTask/`. Debug
+    /// builds use `TickyTask-Dev/` instead, so a development build can never open
+    /// (and migrate) the user's real store.
     static func defaultDirectory() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true
         )
+        #if DEBUG
+        return base.appendingPathComponent("TickyTask-Dev", isDirectory: true)
+        #else
         return base.appendingPathComponent("TickyTask", isDirectory: true)
+        #endif
     }
 
     /// Default store URL inside the default directory (used by callers/tests).

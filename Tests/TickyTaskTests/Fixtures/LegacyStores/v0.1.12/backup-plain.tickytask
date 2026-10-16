@@ -1,0 +1,281 @@
+{
+  "encrypted" : false,
+  "format" : 1,
+  "store" : {
+    "appVersion" : "0.1.12",
+    "data" : {
+      "customLists" : [
+        {
+          "id" : "85236BEC-6815-4EF9-9CC5-FD9E1969DB75",
+          "name" : "Inbox",
+          "sortIndex" : 1
+        },
+        {
+          "id" : "98515DF6-BD48-495B-BECE-136CB533CC95",
+          "name" : "Someday",
+          "sortIndex" : 2
+        }
+      ],
+      "subtasks" : [
+        {
+          "id" : "2591CA68-CC5A-4F03-988E-681DC2583B30",
+          "isDone" : true,
+          "parentId" : "C4863193-AE76-4CBE-B888-9290D8F8A440",
+          "sortIndex" : 1,
+          "title" : "T-sub1"
+        },
+        {
+          "id" : "5ABACCBD-01A3-4CCA-9A76-44BE0388906C",
+          "isDone" : false,
+          "parentId" : "2AC480C7-816B-4CF9-86C9-0B810F8F8398",
+          "sortIndex" : 2,
+          "title" : "OD-sub2"
+        },
+        {
+          "id" : "5F8224CC-34DE-437E-9A90-08F2C5665D20",
+          "isDone" : true,
+          "parentId" : "2AC480C7-816B-4CF9-86C9-0B810F8F8398",
+          "sortIndex" : 1,
+          "title" : "OD-sub1"
+        },
+        {
+          "id" : "7A65E275-4076-45C1-9909-438C9EDD61EC",
+          "isDone" : false,
+          "parentId" : "C4863193-AE76-4CBE-B888-9290D8F8A440",
+          "sortIndex" : 2,
+          "title" : "T-sub2"
+        }
+      ],
+      "taskItems" : [
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:49:41.022Z",
+          "customListId" : "85236BEC-6815-4EF9-9CC5-FD9E1969DB75",
+          "id" : "0667D16E-50E6-43C0-B8DB-3D4E744E95F0",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "listed notes",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "One-off listed",
+          "updatedAt" : "2026-10-16T04:49:41.022Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:49:41.023Z",
+          "dayKey" : "20260907",
+          "id" : "0AD2B5CC-5AC7-4DFE-8DA1-4E6174F270E3",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 2,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-07T06:30:00.000Z",
+            "weekdays" : [
+              2
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-16T04:49:41.023Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:49:41.022Z",
+          "dayKey" : "20260907",
+          "id" : "2AC480C7-816B-4CF9-86C9-0B810F8F8398",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "one-off notes",
+          "notesRich" : "eyJibG9ja3MiOlt7ImluZGVudCI6MCwiaWQiOiI5MEUyRTVDMi01QUVDLTRDQUMtQTM0MS1GODNCRkE0RjlBNDUiLCJydW5zIjpbeyJpdGFsaWMiOmZhbHNlLCJib2xkIjpmYWxzZSwic3RyaWtldGhyb3VnaCI6ZmFsc2UsInRleHQiOiJyaWNoIG9uZS1vZmYiLCJ1bmRlcmxpbmUiOmZhbHNlfV0sImtpbmQiOiJwYXJhZ3JhcGgiLCJjaGVja2VkIjpmYWxzZX1dLCJ2ZXJzaW9uIjoxfQ==",
+          "priority" : 2,
+          "sortIndex" : 0,
+          "tagIds" : [
+            "318B25D6-0955-4AE1-A157-81F5EBD721E3"
+          ],
+          "timeMinutes" : 600,
+          "title" : "One-off dated",
+          "updatedAt" : "2026-10-16T04:49:41.022Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:49:41.023Z",
+          "dayKey" : "20260901",
+          "id" : "3C6F8867-8A59-4AAF-AD1E-5EA8C0C6249F",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 6,
+            "interval" : 1,
+            "monthDays" : [
+              1,
+              15
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-16T04:49:41.023Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "completedAt" : "2026-09-01T06:30:00.000Z",
+          "createdAt" : "2026-10-16T04:49:41.022Z",
+          "dayKey" : "20260901",
+          "id" : "5D79CA58-2054-440D-BD51-4801F76F83D9",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Done one-off",
+          "updatedAt" : "2026-09-01T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-16T04:49:41.023Z",
+          "dayKey" : "20260902",
+          "id" : "90CEBAB0-1D28-4A50-A9F8-7E5F3FF2CF85",
+          "isDone" : false,
+          "needsImmediateAttention" : true,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Critical one-off",
+          "updatedAt" : "2026-10-16T04:49:41.023Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "completedAt" : "2026-09-01T06:30:00.000Z",
+          "createdAt" : "2026-10-16T04:49:41.023Z",
+          "dayKey" : "20260901",
+          "id" : "C4863193-AE76-4CBE-B888-9290D8F8A440",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "template notes",
+          "notesRich" : "eyJibG9ja3MiOlt7ImluZGVudCI6MCwiaWQiOiI5NkJGRDZBMS0xOUQxLTQ0MTctOThDNC1EMzc4NzQ4RUE3MjYiLCJydW5zIjpbeyJpdGFsaWMiOmZhbHNlLCJib2xkIjpmYWxzZSwic3RyaWtldGhyb3VnaCI6ZmFsc2UsInRleHQiOiJ0ZW1wbGF0ZSByaWNoIiwidW5kZXJsaW5lIjpmYWxzZX1dLCJraW5kIjoicGFyYWdyYXBoIiwiY2hlY2tlZCI6ZmFsc2V9XSwidmVyc2lvbiI6MX0=",
+          "priority" : 1,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 3,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+            "318B25D6-0955-4AE1-A157-81F5EBD721E3"
+          ],
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-09-01T06:30:00.000Z"
+        }
+      ],
+      "taskOccurrences" : [
+        {
+          "dayKey" : "20260905",
+          "id" : "0B6D27D2-936F-460C-8738-44DD44261A53",
+          "isDone" : false,
+          "skipped" : true,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440"
+        },
+        {
+          "dayKey" : "20260903",
+          "id" : "0D539F79-D462-446A-82FF-53972D3FFF3D",
+          "isDone" : false,
+          "skipped" : false,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440",
+          "titleOverride" : "Standup (override)"
+        },
+        {
+          "dayKey" : "20260906",
+          "id" : "134FB54D-AE54-426B-A046-827AD7780FE6",
+          "isDone" : false,
+          "skipped" : true,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440"
+        },
+        {
+          "dayKey" : "20260906",
+          "id" : "54377463-09FB-4DEC-8620-81D1B5CF04C8",
+          "isDone" : true,
+          "skipped" : false,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440"
+        },
+        {
+          "dayKey" : "20260914",
+          "id" : "82BE28D8-747B-484A-8721-C0111C2CEEC1",
+          "isDone" : true,
+          "skipped" : false,
+          "templateId" : "0AD2B5CC-5AC7-4DFE-8DA1-4E6174F270E3"
+        },
+        {
+          "dayKey" : "20260902",
+          "id" : "B5CF0F69-F71C-4F60-B1F6-4C4FA7A4CF1B",
+          "isDone" : true,
+          "skipped" : false,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440"
+        },
+        {
+          "dayKey" : "20260904",
+          "id" : "F1AD0BF2-8E0A-478E-80C3-E4EB81FCFAB5",
+          "isDone" : false,
+          "skipped" : false,
+          "templateId" : "C4863193-AE76-4CBE-B888-9290D8F8A440",
+          "timeOverride" : 600
+        }
+      ],
+      "taskTags" : [
+        {
+          "id" : "318B25D6-0955-4AE1-A157-81F5EBD721E3",
+          "name" : "work"
+        }
+      ]
+    },
+    "exportedAt" : "2026-09-13T06:30:00.000Z",
+    "schemaVersion" : 1
+  }
+}

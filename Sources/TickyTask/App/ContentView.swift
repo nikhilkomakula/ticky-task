@@ -26,6 +26,7 @@ struct ContentView: View {
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
     @State private var dragController = DragController()
+    @State private var showRelaunchNotice = PersistenceRecovery.didRelaunch
 
     /// The day key carry-forward last ran for. Lets a day rolling over while the
     /// app stays open (past midnight, without a relaunch or refocus) still trigger
@@ -60,8 +61,13 @@ struct ContentView: View {
         .background(WindowConfigurator(configure: maximize))
         .preferredColorScheme(preferredColorScheme)
         .task { await runLaunchTasks() }
+        .alert("TickyTask restarted", isPresented: $showRelaunchNotice) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("A change couldn’t be saved, so TickyTask restarted without it. Everything saved before that change is unchanged.")
+        }
         .onAppear {
-            GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow)
+            if !UITestSupport.isHostingUnitTests { GlobalShortcutsInstaller.installIfNeeded(openWindow: openWindow) }
             applyActivationPolicy()
             syncDragConfig()
         }
@@ -90,6 +96,12 @@ struct ContentView: View {
             materializedThroughKey = ""
             runMaterialize(through: defaultHorizon)
             runCarryForward()
+        }
+        // A series was started or its rule changed: drop the session horizon so the
+        // ranges already shown (including far-future ones) are generated again.
+        .onReceive(NotificationCenter.default.publisher(for: .tickyTaskSeriesChanged)) { _ in
+            materializedThroughKey = ""
+            runMaterialize(through: max(defaultHorizon, navigationHorizon))
         }
         // Catch the date rolling over while the app is left open, so unfinished
         // tasks still carry forward — and new occurrences appear — at midnight
@@ -126,6 +138,8 @@ struct ContentView: View {
 
     @MainActor
     private func runLaunchTasks() async {
+        // Hosting unit tests: the in-memory store needs no launch work.
+        guard !UITestSupport.isHostingUnitTests else { return }
         if UITestSupport.isRunning {
             UITestSupport.seed(context)
         } else {
@@ -195,8 +209,12 @@ struct ContentView: View {
         let key = WeekMath.dayKey(for: horizon)
         guard key > materializedThroughKey else { return }
         do {
-            try RecurrenceMaterializer.materialize(context: context, through: horizon)
+            let created = try RecurrenceMaterializer.materialize(context: context, through: horizon)
             materializedThroughKey = key
+            // New occurrences (navigation, midnight, restore) need their reminders too.
+            if created > 0 {
+                Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+            }
         } catch {
             NSLog("TickyTask: recurrence materialize failed: \(error.localizedDescription)")
         }
@@ -216,6 +234,8 @@ struct ContentView: View {
     }
 
     private func applyActivationPolicy() {
+        // Hosting unit tests: stay out of the Dock and never take focus.
+        guard !UITestSupport.isHostingUnitTests else { return }
         NSApp.setActivationPolicy(menuBarOnly ? .accessory : .regular)
     }
 }
@@ -295,6 +315,7 @@ private struct TopToolbar: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                         .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                        .accessibilityIdentifier("toolbar-previous")
                     Button("Today") { app.goToToday() }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -304,6 +325,7 @@ private struct TopToolbar: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                         .help(app.viewMode == .week ? "Next week" : "Next month")
+                        .accessibilityIdentifier("toolbar-next")
                 }
             }
         }

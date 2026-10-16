@@ -1,0 +1,42 @@
+name: UI tests
+
+# The XCUITest suite drives the real app (clicks, typing, drags), so it runs on a
+# GitHub-hosted Mac instead of a developer's machine. Debug builds use their own
+# bundle id and an in-memory (or isolated temporary) store, so nothing here can
+# reach real data.
+on:
+  push:
+    branches: [ 'feature/**' ]
+  workflow_dispatch:
+
+jobs:
+  ui-tests:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags for the version-stamp script
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: UI tests
+        run: |
+          xcodebuild test \
+            -project TickyTask.xcodeproj \
+            -scheme TickyTask \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -only-testing:TickyTaskUITests \
+            -resultBundlePath UITests.xcresult
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: UITests.xcresult

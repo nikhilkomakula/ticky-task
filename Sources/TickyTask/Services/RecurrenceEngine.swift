@@ -85,10 +85,17 @@ enum RecurrenceEngine {
     /// the anchor). Returns `nil` only when the underlying date math fails, which
     /// ends enumeration.
     private static func expand(rule: RecurrenceRule, anchor: Date, period: Int, calendar: Calendar) -> Period? {
-        let interval = max(1, rule.interval)
+        // Every-weekday rules ignore the interval. Others use it as stored, and a
+        // decoded rule can carry any value: overflow ends enumeration safely.
+        let interval = rule.frequency == .weekdays ? 1 : max(1, rule.interval)
+        let step = period.multipliedReportingOverflow(by: interval)
+        guard !step.overflow else { return nil }
         switch rule.frequency {
         case .daily:
-            guard let date = calendar.date(byAdding: .day, value: period * interval, to: anchor) else { return nil }
+            // Calendar can return a date even for an offset it can't represent, so
+            // confirm the date is really that many days on; otherwise stop.
+            guard let date = calendar.date(byAdding: .day, value: step.partialValue, to: anchor),
+                  calendar.dateComponents([.day], from: anchor, to: date).day == step.partialValue else { return nil }
             return Period(reference: date, dates: [date])
 
         case .weekdays:   // Mon–Fri, every week; interval is not meaningful here.
@@ -103,29 +110,30 @@ enum RecurrenceEngine {
             let weekdays = rule.weekdays.isEmpty
                 ? [calendar.component(.weekday, from: anchor)]
                 : Array(rule.weekdays)
-            return weeklyBlock(anchor: anchor, period: period, intervalWeeks: interval,
+            return weeklyBlock(anchor: anchor, weeksFromAnchor: step.partialValue,
                                weekdays: Set(weekdays), calendar: calendar)
 
         case .monthly:
             let targetDay = calendar.component(.day, from: anchor)
-            return monthlyBlock(anchor: anchor, period: period, intervalMonths: interval,
+            return monthlyBlock(anchor: anchor, monthsFromAnchor: step.partialValue,
                                 monthDays: [targetDay], calendar: calendar)
 
         case .daysOfMonth:
-            return monthlyBlock(anchor: anchor, period: period, intervalMonths: interval,
+            return monthlyBlock(anchor: anchor, monthsFromAnchor: step.partialValue,
                                 monthDays: rule.monthDays, calendar: calendar)
 
         case .yearly:
-            return yearlyBlock(anchor: anchor, period: period, intervalYears: interval, calendar: calendar)
+            return yearlyBlock(anchor: anchor, yearsFromAnchor: step.partialValue, calendar: calendar)
         }
     }
 
-    private static func weeklyBlock(anchor: Date, period: Int, intervalWeeks: Int,
+    private static func weeklyBlock(anchor: Date, weeksFromAnchor: Int,
                                     weekdays: Set<Int>, calendar: Calendar) -> Period? {
         // Sunday-aligned week blocks so "every N weeks" is deterministic and
         // independent of the user's Monday/Sunday *display* preference.
         let week0 = WeekMath.startOfWeek(containing: anchor, weekStartsMonday: false, calendar: calendar)
-        guard let blockStart = calendar.date(byAdding: .weekOfYear, value: period * intervalWeeks, to: week0) else {
+        guard let blockStart = calendar.date(byAdding: .weekOfYear, value: weeksFromAnchor, to: week0),
+              calendar.dateComponents([.weekOfYear], from: week0, to: blockStart).weekOfYear == weeksFromAnchor else {
             return nil
         }
         var dates: [Date] = []
@@ -139,23 +147,27 @@ enum RecurrenceEngine {
         return Period(reference: blockStart, dates: dates)
     }
 
-    private static func monthlyBlock(anchor: Date, period: Int, intervalMonths: Int,
+    private static func monthlyBlock(anchor: Date, monthsFromAnchor: Int,
                                      monthDays: [Int], calendar: Calendar) -> Period? {
         let month0 = WeekMath.firstOfMonth(containing: anchor, calendar: calendar)
-        guard let monthFirst = calendar.date(byAdding: .month, value: period * intervalMonths, to: month0) else {
+        guard let monthFirst = calendar.date(byAdding: .month, value: monthsFromAnchor, to: month0),
+              calendar.dateComponents([.month], from: month0, to: monthFirst).month == monthsFromAnchor else {
             return nil
         }
-        let dates = monthDays.sorted().compactMap { day -> Date? in
+        // A repeated day number is one occurrence (and counts once toward `.afterCount`).
+        let dates = Set(monthDays).sorted().compactMap { day -> Date? in
             guard let date = self.day(day, inMonthOf: monthFirst, calendar: calendar), date >= anchor else { return nil }
             return date
         }
         return Period(reference: monthFirst, dates: dates)
     }
 
-    private static func yearlyBlock(anchor: Date, period: Int, intervalYears: Int, calendar: Calendar) -> Period? {
+    private static func yearlyBlock(anchor: Date, yearsFromAnchor: Int, calendar: Calendar) -> Period? {
         let components = calendar.dateComponents([.year, .month, .day], from: anchor)
         guard let year = components.year, let month = components.month, let day = components.day else { return nil }
-        let targetYear = year + period * intervalYears
+        let target = year.addingReportingOverflow(yearsFromAnchor)
+        guard !target.overflow else { return nil }
+        let targetYear = target.partialValue
         // Reference = the 1st of that month/year, always valid, for the stop test.
         var refComponents = DateComponents()
         refComponents.year = targetYear

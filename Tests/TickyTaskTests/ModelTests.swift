@@ -73,7 +73,7 @@ struct ModelTests {
         try service.save()
         #expect(try context.fetch(FetchDescriptor<TaskItem>()).count == 2)
 
-        service.delete(list)
+        try service.delete(list)
         try service.save()
         #expect(try context.fetch(FetchDescriptor<CustomList>()).isEmpty)
         #expect(try context.fetch(FetchDescriptor<TaskItem>()).isEmpty)
@@ -136,6 +136,6 @@ struct ModelTests {
 
         let fetched = try context.fetch(FetchDescriptor<TaskItem>()).first
         #expect(fetched?.recurrence?.frequency == .weekdays)
-        #expect(fetched?.isRecurringTemplate == true)
+        #expect(fetched?.isRecurring == true)
     }
 }
