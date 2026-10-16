@@ -58,6 +58,9 @@ enum UITestSupport {
             if ProcessInfo.processInfo.arguments.contains("-uitestSummarySeed") {
                 try seedWeeklySummary(service)
             }
+            if ProcessInfo.processInfo.arguments.contains("-uitestRecurringSeed") {
+                try seedRecurringSeries(service)
+            }
             try service.save()
         } catch {
             // Seeding is best-effort; a failed seed just yields an empty test board.
@@ -96,5 +99,61 @@ enum UITestSupport {
         default:
             return nil
         }
+    }
+
+    /// Opt-in seed for recurring series tests: creates daily "Standup" (started 2 days
+    /// ago with past done occurrence), "Paycheck" (1st & 15th of month), and weekly
+    /// "Meeting" series.
+    @MainActor
+    private static func seedRecurringSeries(_ service: DataService) throws {
+        let today = Date()
+        let calendar = Calendar.current
+
+        // Daily "Standup" starting 2 days ago
+        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: today)!
+        let standupKey = WeekMath.dayKey(for: twoDaysAgo)
+        let standup = try service.addTask(title: "Standup", location: .day(standupKey))
+
+        let standupRule = RecurrenceRule(
+            frequency: .daily,
+            interval: 1,
+            end: .never,
+            startDate: twoDaysAgo
+        )
+        try RecurrenceMaterializer.startSeries(from: standup, rule: standupRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
+
+        // Mark the first occurrence (2 days ago) as done
+        standup.setDone(true)
+
+        // "Paycheck" on 1st and 15th of the month
+        let paycheckKey = WeekMath.dayKey(for: today)
+        let paycheck = try service.addTask(title: "Paycheck", location: .day(paycheckKey))
+        let paycheckRule = RecurrenceRule(
+            frequency: .daysOfMonth,
+            interval: 1,
+            monthDays: [1, 15],
+            end: .never,
+            startDate: today
+        )
+        try RecurrenceMaterializer.startSeries(from: paycheck, rule: paycheckRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
+
+        // Weekly "Meeting" on the same weekday as today
+        let meetingKey = WeekMath.dayKey(for: today)
+        let meeting = try service.addTask(title: "Meeting", location: .day(meetingKey))
+        let todayWeekday = calendar.component(.weekday, from: today)
+        let meetingRule = RecurrenceRule(
+            frequency: .customWeekdays,
+            interval: 1,
+            weekdays: Set([todayWeekday]),
+            end: .never,
+            startDate: today
+        )
+        try RecurrenceMaterializer.startSeries(from: meeting, rule: meetingRule,
+                                               through: calendar.date(byAdding: .day, value: 60, to: today)!,
+                                               context: service.context)
     }
 }

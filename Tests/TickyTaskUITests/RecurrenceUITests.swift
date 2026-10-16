@@ -49,7 +49,7 @@ final class RecurrenceUITests: XCTestCase {
         XCTAssertTrue(deleteItem.waitForExistence(timeout: 5), "Delete should appear in the context menu")
         deleteItem.click()
 
-        let deleteSeries = app.sheets.buttons["Delete the Whole Series"].firstMatch
+        let deleteSeries = app.sheets.buttons["Delete Entire Series"].firstMatch
         XCTAssertTrue(deleteSeries.waitForExistence(timeout: 5), "recurring delete should confirm occurrence vs series")
         deleteSeries.click()
 
