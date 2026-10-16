@@ -2,13 +2,13 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry. The one exception is **opt-in**: **Weekly Summary** sends the notes of the tasks *you* select to the AI you connect it to (through your locally installed Codex CLI) — only when you click Generate.
 
-> **v0.1.16** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.1.17** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
 ## Download & install
 
-1. Download **`TickyTask-0.1.16-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
+1. Download **`TickyTask-0.1.17-arm64.dmg`** from the [Releases page](https://github.com/nikhilkomakula/ticky-task/releases).
 2. Open the DMG and drag **TickyTask** into **Applications**.
 3. The app is **unsigned**, so macOS Gatekeeper blocks it on first launch — **right-click TickyTask → Open** and confirm, or clear the quarantine flag:
    ```bash
@@ -25,8 +25,13 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 - **Custom lists** — a renamable, date-independent lists row beneath the week (defaults: *Requires immediate attention*, *To be addressed*, *Weekend tasks*, *Miscellaneous*) that persists across all weeks; resizable split. Add a list with **+ Add list**, rename it inline, and delete it with the **trash icon** in its header (or right-click) — confirmed first, since deleting a list also removes its tasks.
 - **Sort by priority** — each day column and custom list with two or more tasks shows a **sort icon** in its header; one click arranges that column's tasks with the highest-priority incomplete ones on top (completed tasks sink to the bottom when *Move completed tasks to the bottom* is on) and keeps the order so you can still drag-adjust.
 - **Drag & drop** — smooth, cursor-tracking reordering: drag a task to reorder it within a day or list, or move it **across days and across lists**, in the **Week** and **Month** views *and* the menu-bar popover — a lifted preview follows the cursor and an accent line shows exactly where it will land. Drop a task onto any day in the calendar grid (or the menu-bar mini-calendar) to move it there, and reorder the custom-list cards by dragging a card's grip handle.
-- **Recurring tasks** — turn any day task into a repeating one from the editor's **Repeat** section: **daily**, **every weekday (Mon–Fri)**, **weekly** (pick which weekdays), **monthly** (same day-of-month), or **yearly**, with an **every-N-interval** and an end condition (**never** / **after N times** / **on a date**). Each due day gets its own instance — complete or edit them independently, and deleting one asks whether to remove **just this occurrence** or the **whole series**. Missed occurrences stay on their day (they don't pile onto today), and repeating tasks show a small ↻ glyph.
-- **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, **automatically carry unfinished tasks forward to today** (on by default — runs when the app opens, becomes active, or the day rolls over while it's left open; completed tasks, recurring templates, and their generated occurrences stay put). When weekends are hidden, tasks skip the weekend and land on the next weekday, so a **previous Friday's unfinished tasks move to Monday** rather than an off-screen Saturday/Sunday. Optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
+- **Recurring tasks** — turn any day task into a repeating one from the editor's **Repeat** section: **daily**, **every weekday (Mon–Fri)**, **weekly** (pick which weekdays), **monthly** (same day-of-month), or **yearly**, with an **every-N-interval** and an end condition (**never** / **after N times** / **on a date**). Each due day gets its own occurrence, and repeating tasks show a small ↻ glyph.
+  - **Updated everywhere:** a repeating task's **title, time, reminder, priority, and Critical flag** belong to the whole series — change them on *any* occurrence and every occurrence (past and completed ones included) updates.
+  - **Kept per occurrence:** **notes, subtasks, and completion** belong to that one day only — new occurrences always start with empty notes, and nothing is ever copied from one day to another. The editor labels which fields are shared.
+  - **Change or stop the schedule from any occurrence** (past, completed, moved, or in a list). Schedule changes apply **after today**: history, completed occurrences, and any occurrence you've worked on are always kept; only untouched future ones are re-planned. **Stop Repeating** ends the series the same way.
+  - **Move an occurrence** to another day or a list and its original day isn't refilled. **Delete This Occurrence** removes just that one (never the series, and never touches the next occurrence); **Delete Entire Series** removes every occurrence. Missed occurrences stay on their day (they don't pile onto today).
+  - Edits are drafts until **Done**, which saves everything at once; **Cancel** (or Esc) discards them.
+- **Behaviors** — sort by manual order / time / priority, move completed tasks to the bottom, **automatically carry unfinished tasks forward to today** (on by default — runs when the app opens, becomes active, or the day rolls over while it's left open; completed tasks and recurring occurrences stay put). When weekends are hidden, tasks skip the weekend and land on the next weekday, so a **previous Friday's unfinished tasks move to Monday** rather than an off-screen Saturday/Sunday. Optionally **auto-delete tasks completed more than N days ago** (off by default; N defaults to 7 and is configurable — **Settings › Behavior**).
 - **Notifications** — optional per-task time reminders and a daily end-of-day "unfinished tasks" reminder.
 - **Menu-bar app** — a **configurable** menu-bar icon (pick from several in **Settings › Appearance**; defaults to a calendar-with-checkmark) opens a mini calendar (Sunday-first, weekends highlighted) that **always opens on today**, with a **Today** button to jump back after browsing other months, and lists the **full day without scrolling**, plus inline quick-add; open the main window, reach Settings via the gear, **quit** the app (the power button, or **⌘Q**), or run menu-bar-only (no Dock icon).
 - **Global shortcuts** — configurable hotkeys to open TickyTask, capture a new task for today, and **toggle the menu-bar popover** — from any app (**Settings › Shortcuts**).
@@ -37,7 +42,7 @@ Requires **macOS 26+** (Tahoe) on **Apple Silicon** — the rich-text notes edit
 
   Choose any model (**Refresh** fetches new ones; you can also type a model id) and the reasoning **effort**; your last choices are remembered. **Instructions** (audience, tone, length, format) come pre-filled with Jira-ready defaults that you can edit, clear, or restore — they're applied on top of built-in rules that treat notes as data and forbid inventing facts. Sign-in and other errors are explained with the fix and copyable details (status code, request id). **Settings › AI** holds the connection, instructions, and Codex path.
 - **Search** — press **⌘F** (or click the toolbar's magnifying glass) to search every task by title and notes, then pick a result to jump straight to it.
-- **Backup & restore** — export your entire store **and app settings** to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**.
+- **Backup & restore** — export your entire store **and app settings** to a portable `.tickytask` JSON file (optionally passphrase-encrypted with **AES-256-GCM**, key derived via PBKDF2) and restore it later, with a change preview before anything is replaced. **Settings › Data**. Backups from earlier versions always import; backups made by 0.1.17 or later use format version 2, which older versions decline rather than misread.
 - **Data location** — choose which folder holds your data (**Settings › Data**); changing it **moves everything there** and relaunches (or, if the folder already has a TickyTask store, adopts it). You can keep it in an **iCloud Drive / Google Drive / Dropbox** folder to carry your tasks between Macs — it's a live database, not real-time sync, so use one Mac at a time and let the folder finish syncing before opening it elsewhere.
 - **Appearance** — System/Light/Dark theme, compact rows.
 - **Launch at login** — starts TickyTask automatically when you log in (**Settings › General**, on by default; also manageable in System Settings › General › Login Items).
@@ -59,6 +64,8 @@ Two things reach beyond your Mac: the update checker (GitHub Releases) and **Wee
 
 Tasks live in an on-disk SwiftData store (`~/Library/Application Support/TickyTask/TickyTask.store`). Views read it with live `@Query`s; task creation and ordering go through a single `DataService` (timestamps, sort indices, and the "day XOR custom-list" rule), while lightweight edits save directly to the context. Drag-and-drop reordering and cross-day/-list moves route through the same `DataService`, which re-derives sort indices and preserves the day-XOR-list rule. Pure logic (recurrence math, week/day-key math, sort & carry-forward behaviors) is isolated in `Services/` and unit-tested.
 
+A **recurring series** is a hidden *definition* row (the rule plus the shared title, time, reminder, priority, and Critical flag) and one ordinary task row per occurrence — the first included. Each occurrence remembers the scheduled slot it was generated for (so moving it never frees that slot) and whether you've acted on it (so a schedule change only re-plans untouched future occurrences); a rule change also records the day it takes effect, so a new rule never back-fills the past. Opening a store or backup from an older version converts its series to this shape in one transaction (`RecurrenceNormalizer`): each old series row's own notes, subtasks, and completion move onto that same occurrence — never to another day. Editor commits (`TaskEditCommit`) write the shared fields to the whole series and everything else to the opened occurrence, in a single save that is fully rolled back on failure.
+
 ```mermaid
 flowchart TD
     subgraph Scenes
@@ -73,7 +80,7 @@ flowchart TD
     subgraph Services
         BEH["BehaviorService<br/>sort · carry-forward"]
         NOT["NotificationService<br/>per-task · end-of-day"]
-        WM["WeekMath · RecurrenceEngine · RecurrenceMaterializer"]
+        WM["WeekMath · RecurrenceEngine · RecurrenceMaterializer<br/>RecurrenceNormalizer · TaskEditCommit"]
     end
     MW --> BEH
     MW --> NOT
@@ -99,6 +106,8 @@ xcodebuild -project TickyTask.xcodeproj -scheme TickyTask \
 xcodebuild test -project TickyTask.xcodeproj -scheme TickyTask \
   -destination 'platform=macOS'
 ```
+
+**Your data is safe while you develop:** Debug builds (and every test run) use their own bundle id, `com.tickytask.mac.dev`, and their own data folder, `~/Library/Application Support/TickyTask-Dev/`, so they never open the installed app's store, share its preferences or reminders, or quit it. Unit tests run inside an in-memory store, and UI tests (`-uitest`) use an in-memory store or an isolated temporary one.
 
 The only third-party dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (resolved via Swift Package Manager).
 

@@ -14,8 +14,8 @@ struct SeriesMigrationTests {
         ModelContext(ModelContainerProvider.makeInMemoryContainer())
     }
 
-    private func onDiskContext(at path: URL) -> ModelContext {
-        let container = ModelContainerProvider.makeContainer(at: path)
+    private func onDiskContext(at path: URL) throws -> ModelContext {
+        let container = try ModelContainerProvider.makeContainer(at: path)
         return ModelContext(container)
     }
 
@@ -77,7 +77,7 @@ struct SeriesMigrationTests {
         #expect(occurrence.isCritical == true)
         #expect(occurrence.alarmEnabled == true)
         #expect(occurrence.occurrenceKey == dayKey(2026, 1, 5))
-        #expect(occurrence.occurrenceModified == true)
+        #expect(occurrence.occurrenceModified == nil)   // legacy history unknown: protected like true
     }
 
     @Test("Normalization preserves subtask identity during root split")
@@ -245,7 +245,7 @@ struct SeriesMigrationTests {
 
         // Verify a concrete row was created
         let all = try context.fetch(FetchDescriptor<TaskItem>())
-        let children = all.filter { $0.templateID == defId && $0.recurrence == nil }
+        let children = all.filter { $0.templateID == definition.id && $0.recurrence == nil }
         let restored = children.first { $0.occurrenceKey == dayKey(2026, 1, 5) }
 
         #expect(restored != nil)
@@ -313,10 +313,10 @@ struct SeriesMigrationTests {
 
         // Should restore one row from the first matching override
         #expect(report.restoredOverrides == 1)
-        #expect(report.conflicts.isEmpty)
+        #expect(report.conflicts.count == 1)   // "First" vs "Second": one restored, the other reported
 
         let all = try context.fetch(FetchDescriptor<TaskItem>())
-        let children = all.filter { $0.templateID == defId && $0.recurrence == nil }
+        let children = all.filter { $0.templateID == definition.id && $0.recurrence == nil }
         let restored = children.first { $0.occurrenceKey == dayKey(2026, 1, 5) }
 
         #expect(restored != nil)
@@ -336,7 +336,7 @@ struct SeriesMigrationTests {
 
         // First context: create legacy root and normalize
         do {
-            let context = onDiskContext(at: storeUrl)
+            let context = try onDiskContext(at: storeUrl)
             let c = cal()
 
             let root = TaskItem(title: "Water plants", dayKey: dayKey(2026, 1, 5))
@@ -352,7 +352,7 @@ struct SeriesMigrationTests {
 
         // Second context: reopen and verify shape
         do {
-            let context = onDiskContext(at: storeUrl)
+            let context = try onDiskContext(at: storeUrl)
             let all = try context.fetch(FetchDescriptor<TaskItem>())
 
             let definitions = all.filter { $0.recurrence != nil && $0.templateID == nil }
@@ -368,7 +368,7 @@ struct SeriesMigrationTests {
 
         // Third context: normalize again (should be idempotent)
         do {
-            let context = onDiskContext(at: storeUrl)
+            let context = try onDiskContext(at: storeUrl)
             let report = try RecurrenceNormalizer.normalize(context: context)
             #expect(report.splitDefinitions == 0)
 
@@ -377,7 +377,7 @@ struct SeriesMigrationTests {
 
         // Fourth context: verify no change
         do {
-            let context = onDiskContext(at: storeUrl)
+            let context = try onDiskContext(at: storeUrl)
             let all = try context.fetch(FetchDescriptor<TaskItem>())
             #expect(all.count == 2)
         }
@@ -417,13 +417,11 @@ struct SeriesMigrationTests {
 
     @Test("Backup accepts schema version 1 (old backups)")
     func backupAcceptsSchemaV1() throws {
-        let dto = BackupStoreDTO(schemaVersion: 1, appVersion: "0.1.16",
+        let dto = BackupStoreDTO(schemaVersion: 1, appVersion: "0.1.16", exportedAt: Date(),
                                   data: BackupDataDTO(taskItems: [], subtasks: [],
                                                      taskTags: [], customLists: [],
                                                      taskOccurrences: []))
-        let validator = BackupValidator()
-        let result = validator.validate(dto)
-        #expect(result.isValid)
+        try BackupValidator.validate(dto)
     }
 
     @Test("Restored backup with legacy root and children normalizes in same transaction")
@@ -444,21 +442,19 @@ struct SeriesMigrationTests {
                            colorHex: nil, priority: 0, sortIndex: 1, alarmEnabled: false,
                            createdAt: Date(), updatedAt: Date(),
                            recurrence: rule, tagIds: [],
-                           needsImmediateAttention: false, occurrenceKey: nil,
-                           recurrenceEffectiveFromKey: nil, occurrenceModified: nil,
-                           notesRich: nil),
+                           needsImmediateAttention: false, notesRich: nil, occurrenceKey: nil,
+                           recurrenceEffectiveFromKey: nil, occurrenceModified: nil),
                 TaskItemDTO(id: childId, title: "Existing child", notes: "", isDone: false,
                            dayKey: dayKey(2026, 1, 6), customListId: nil, timeMinutes: nil,
                            colorHex: nil, priority: 0, sortIndex: 1, alarmEnabled: false,
                            createdAt: Date(), updatedAt: Date(),
                            recurrence: nil, tagIds: [],
-                           needsImmediateAttention: false, occurrenceKey: dayKey(2026, 1, 6),
-                           recurrenceEffectiveFromKey: nil, occurrenceModified: nil,
-                           notesRich: nil)
+                           needsImmediateAttention: false, notesRich: nil, templateId: rootId, occurrenceKey: dayKey(2026, 1, 6),
+                           recurrenceEffectiveFromKey: nil, occurrenceModified: nil)
             ],
             subtasks: [], taskTags: [], customLists: [], taskOccurrences: []
         )
-        let dto = BackupStoreDTO(schemaVersion: 2, appVersion: "0.1.17", data: data)
+        let dto = BackupStoreDTO(schemaVersion: 2, appVersion: "0.1.17", exportedAt: Date(), data: data)
 
         // Restore into the fresh context
         try BackupStore.restore(dto, context: context)

@@ -52,7 +52,7 @@ enum RecurrenceMaterializer {
             if context.hasChanges { try context.save() }
             return created
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
             throw error
         }
     }
@@ -136,7 +136,7 @@ enum RecurrenceMaterializer {
             context.delete(task)
             try context.save()
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
             throw error
         }
     }
@@ -155,7 +155,7 @@ enum RecurrenceMaterializer {
             context.delete(definition)   // cascades its skip records
             try context.save()
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
             throw error
         }
     }

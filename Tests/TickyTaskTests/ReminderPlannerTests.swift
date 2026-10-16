@@ -21,6 +21,10 @@ struct ReminderPlannerTests {
         return c
     }
 
+    private func date(_ y: Int, _ m: Int, _ d: Int, _ c: Calendar) -> Date {
+        date(y, m, d, 0, 0, c)
+    }
+
     private func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 0, _ min: Int = 0, _ c: Calendar? = nil) -> Date {
         let calendar = c ?? cal()
         return calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
@@ -383,7 +387,6 @@ struct ReminderPlannerTests {
 
         let fakeClient = FakeNotificationClient()
         fakeClient.authorized = true
-        fakeClient.shouldFailOnAdd = true
 
         let task1 = TaskItem(title: "Task 1", dayKey: dayKey(2026, 1, 20), timeMinutes: 600)
         task1.alarmEnabled = true
@@ -392,11 +395,12 @@ struct ReminderPlannerTests {
         let task2 = TaskItem(title: "Task 2", dayKey: dayKey(2026, 1, 21), timeMinutes: 600)
         task2.alarmEnabled = true
         context.insert(task2)
+        fakeClient.failingIdentifier = "task.\(task1.id.uuidString)"
 
-        // Sync should attempt both despite one failing
+        // One failing request must not stop the others from being scheduled.
         await NotificationService.syncTaskReminders(context: context, client: fakeClient, now: now)
 
-        #expect(fakeClient.addedReminders.count >= 1)
+        #expect(fakeClient.addedReminders.map(\.identifier) == ["task.\(task2.id.uuidString)"])
     }
 
     @Test("Overlapping syncs eventually reflect newest state")
@@ -429,12 +433,15 @@ struct ReminderPlannerTests {
 // MARK: - Fake notification client for testing
 
 @MainActor
+/// Behaves like the notification center: an added request becomes pending (re-adding
+/// an identifier replaces it) and a removed one stops being pending.
 final class FakeNotificationClient: NotificationScheduling {
     var authorized = true
     var pendingIds: [String] = []
     var addedReminders: [TaskReminder] = []
     var removedIdentifiers: [String] = []
-    var shouldFailOnAdd = false
+    /// When set, adding this identifier throws (every other add succeeds).
+    var failingIdentifier: String?
 
     func isAuthorized() async -> Bool {
         authorized
@@ -446,13 +453,15 @@ final class FakeNotificationClient: NotificationScheduling {
 
     func remove(_ identifiers: [String]) {
         removedIdentifiers.append(contentsOf: identifiers)
+        pendingIds.removeAll { identifiers.contains($0) }
     }
 
     func add(_ reminder: TaskReminder) async throws {
-        if shouldFailOnAdd {
+        if reminder.identifier == failingIdentifier {
             throw TestError.schedulingFailed
         }
         addedReminders.append(reminder)
+        if !pendingIds.contains(reminder.identifier) { pendingIds.append(reminder.identifier) }
     }
 }
 

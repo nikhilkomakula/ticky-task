@@ -111,7 +111,8 @@ struct SeriesLifecycleTests {
         try RecurrenceMaterializer.materialize(context: context, through: date(2026, 1, 31, c), calendar: c)
         let kids = try occurrences(of: definition, context)
         #expect(!kids.contains { $0.occurrenceKey == dayKey(2026, 1, 3) && $0.dayKey == dayKey(2026, 1, 3) })
-        #expect(!kids.contains { $0.occurrenceKey == dayKey(2026, 1, 5) })
+        // Jan 5 keeps its own natural occurrence, independent of the moved one.
+        #expect(kids.contains { $0.occurrenceKey == dayKey(2026, 1, 5) && $0.dayKey == dayKey(2026, 1, 5) })
     }
 
     @Test("Move back to its own slot: the occurrence keeps its natural location")
@@ -214,8 +215,11 @@ struct SeriesLifecycleTests {
     func legacyKeylessBackfilled() throws {
         let context = makeContext()
         let c = cal()
-        // Create a legacy root with a day, no rule, no key
+        // A legacy occurrence of a series: linked, dated, with no recorded slot or history
+        let definition = TaskItem(title: "Legacy", recurrence: RecurrenceRule(frequency: .daily, startDate: date(2026, 1, 1, c)))
+        context.insert(definition)
         let legacy = TaskItem(title: "Legacy", dayKey: dayKey(2026, 1, 1))
+        legacy.templateID = definition.id
         legacy.occurrenceKey = nil
         legacy.occurrenceModified = nil
         context.insert(legacy)
@@ -433,20 +437,24 @@ struct SeriesLifecycleTests {
         let c = cal()
         let seed = TaskItem(title: "Leap day", dayKey: dayKey(2024, 2, 29))
         context.insert(seed)
-        let rule = RecurrenceRule(frequency: .yearly, end: .afterCount(10),
+        let rule = RecurrenceRule(frequency: .yearly, end: .afterCount(20),
                                   startDate: date(2024, 2, 29, c))
         let definition = try RecurrenceMaterializer.startSeries(
-            from: seed, rule: rule, through: date(2104, 2, 28, c), context: context, calendar: c)
+            from: seed, rule: rule, through: date(2104, 2, 29, c), context: context, calendar: c)
         try context.save()
 
+        // Feb 29 every leap year, skipping 2100 (not a leap year).
         let kids = try occurrences(of: definition, context)
-        #expect(kids.count > 0)
-        if let first = kids.first {
-            let firstID = first.id
-            try RecurrenceMaterializer.deleteOccurrence(first, context: context)
-            #expect(!(try context.fetch(FetchDescriptor<TaskItem>()).filter { $0.id == firstID }.isEmpty))
-            #expect(try RecurrenceMaterializer.definition(for: definition, context: context) != nil)
-        }
+        let keys = kids.compactMap(\.occurrenceKey)
+        #expect(!keys.contains(dayKey(2100, 2, 29)) && keys.contains(dayKey(2104, 2, 29)))
+        let first = try #require(kids.first)
+        let firstID = first.id, firstKey = try #require(first.occurrenceKey)
+        try RecurrenceMaterializer.deleteOccurrence(first, context: context)
+        try RecurrenceMaterializer.materialize(context: context, through: date(2104, 2, 29, c), calendar: c)
+
+        #expect(try context.fetch(FetchDescriptor<TaskItem>()).filter { $0.id == firstID }.isEmpty)
+        #expect(!(try occurrences(of: definition, context)).contains { $0.occurrenceKey == firstKey })
+        #expect(try RecurrenceMaterializer.definition(for: definition, context: context) != nil)
     }
 
     @Test("Delete a legacy keyless row: deletes only it, no skip record, no series deletion")
@@ -462,11 +470,13 @@ struct SeriesLifecycleTests {
         legacy.occurrenceModified = nil
         context.insert(legacy)
         try context.save()
+        let legacyID = legacy.id
+        let skipsBefore = Set(definition.occurrences.map(\.id))
 
         try RecurrenceMaterializer.deleteOccurrence(legacy, context: context)
 
-        #expect(!(try context.fetch(FetchDescriptor<TaskItem>()).filter { $0.id == legacy.id }.isEmpty))
-        #expect(!definition.occurrences.contains { $0.skipped && $0.dayKey == nil })
+        #expect(try context.fetch(FetchDescriptor<TaskItem>()).filter { $0.id == legacyID }.isEmpty)
+        #expect(Set(definition.occurrences.map(\.id)) == skipsBefore)   // no slot invented
         #expect(try RecurrenceMaterializer.definition(for: definition, context: context) != nil)
     }
 

@@ -102,7 +102,7 @@ enum BackupStore {
             try RecurrenceNormalizer.normalize(context: context)
             try context.save()
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
             throw error
         }
         // Apply preferences before notifying the app: the restore handler runs

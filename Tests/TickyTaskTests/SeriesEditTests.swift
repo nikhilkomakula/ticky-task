@@ -74,7 +74,7 @@ struct SeriesEditTests {
         let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
         let hasAllRenamed = updatedChildren.allSatisfy { $0.title == "Renamed task" }
         #expect(hasAllRenamed)
-        let afterIds = try context.fetch(FetchDescriptor<TaskItem>()).map(\.id)
+        let afterIds = try context.fetch(FetchDescriptor<TaskItem>()).map(\.id).filter { $0 != def.id }
         #expect(Set(afterIds) == beforeIds)  // no rows added/deleted
     }
 
@@ -115,7 +115,8 @@ struct SeriesEditTests {
                                   horizon: date(2026, 2, 1, c), calendar: c)
 
         #expect(!def.isCritical)
-        #expect(!children.allSatisfy(\.isCritical))
+        let allMatch1 = children.allSatisfy(\.isCritical)
+        #expect(!allMatch1)
     }
 
     @Test("Changing time minutes propagates everywhere")
@@ -398,6 +399,7 @@ struct SeriesEditTests {
                                   horizon: date(2026, 2, 1, c), calendar: c)
 
         let updatedChildren = try RecurrenceMaterializer.children(of: def, context: context)
+            .sorted { ($0.occurrenceKey ?? "") < ($1.occurrenceKey ?? "") }
         for (i, child) in updatedChildren.enumerated() {
             #expect(child.dayKey == dayKey(2026, 1, i + 1))
         }
@@ -480,7 +482,11 @@ struct SeriesEditTests {
 
         // All others stay untouched
         let others = children.filter { $0.id != edited.id }
-        #expect(others.allSatisfy { $0.notes == "" && $0.subtasks.isEmpty && $0.occurrenceModified == nil })
+        // Untouched siblings keep their own provenance: the seed is `true`, generated ones `false`.
+        let othersUntouched = others.allSatisfy {
+            $0.notes.isEmpty && $0.subtasks.isEmpty && $0.occurrenceModified == ($0.occurrenceKey == "20260101")
+        }
+        #expect(othersUntouched)
     }
 
     // MARK: - 5. No-op Editing
@@ -714,11 +720,11 @@ struct SeriesEditTests {
         let c = cal()
         let (def, children) = try createDailySeries(context, c)
 
-        // Create an unrelated task and make a pending change
+        // Create an unrelated task, save it, then leave a change pending (not saved)
         let unrelated = TaskItem(title: "Unrelated", dayKey: dayKey(2026, 1, 20))
         context.insert(unrelated)
-        unrelated.priority = 5
         try context.save()
+        unrelated.priority = 5
 
         // Now make a failing edit
         let edited = children[1]

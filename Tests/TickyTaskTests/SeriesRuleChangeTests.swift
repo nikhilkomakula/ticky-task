@@ -69,9 +69,7 @@ struct SeriesRuleChangeTests {
                                             through: tomorrow, context: context, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         #expect(occurrences.count >= 1)  // Legacy row kept
         #expect(occurrences.contains { $0.id == oldOccurrence.id })
     }
@@ -101,9 +99,7 @@ struct SeriesRuleChangeTests {
                                             through: tomorrow, context: context, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         #expect(!occurrences.contains { $0.id == futureOcc.id })  // Removed
     }
 
@@ -131,9 +127,7 @@ struct SeriesRuleChangeTests {
                                             through: tomorrow, context: context, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         #expect(occurrences.contains { $0.id == futureOcc.id })  // Kept
     }
 
@@ -161,13 +155,11 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id && $0.dayKey != nil }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context).filter { $0.dayKey != nil }
         for occ in occurrences {
             // All occurrences should be on Thursdays (or be old ones kept)
             if let key = occ.occurrenceKey, occ.occurrenceModified != nil {
-                let d = WeekMath.date(fromDayKey: key, calendar: cal)
+                let d = WeekMath.date(fromDayKey: key, calendar: cal)!
                 let dow = cal.component(.weekday, from: d)
                 #expect(dow == 5 || key < dayKey(startOfToday, cal))  // 5=Thursday or past
             }
@@ -196,13 +188,9 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate {
-                $0.templateID == definition.id &&
-                $0.dayKey != nil &&
-                ($0.dayKey ?? "") >= dayKey(startOfToday, cal)
-            }
-        ))
+        let todayKey = dayKey(startOfToday, cal)
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context)
+            .filter { ($0.dayKey ?? "") >= todayKey }
         // Should have multiple days now (Fri, Sat, Sun, Mon, etc.)
         #expect(futureOccs.count >= 3)
     }
@@ -226,12 +214,10 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id && $0.dayKey != nil }
-        ))
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context).filter { $0.dayKey != nil }
         for occ in futureOccs {
             if let key = occ.dayKey, key >= dayKey(startOfToday, cal) {
-                let d = WeekMath.date(fromDayKey: key, calendar: cal)
+                let d = WeekMath.date(fromDayKey: key, calendar: cal)!
                 let day = cal.component(.day, from: d)
                 #expect(day == 15)  // 15th of each month
             }
@@ -286,9 +272,7 @@ struct SeriesRuleChangeTests {
 
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         #expect(definition.title == "New Title")
         // Existing occurrences keep old title until rule change
         #expect(!occurrences.isEmpty)
@@ -316,15 +300,10 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate {
-                $0.templateID == definition.id &&
-                ($0.dayKey ?? "") >= dayKey(startOfToday, cal)
-            }
-        ))
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context).filter { ($0.dayKey ?? "") > dayKey(startOfToday, cal) }
         // New occurrences after rule change inherit from the definition
         for occ in futureOccs {
-            if occ.dayKey! >= dayKey(startOfToday, cal) {
+            if occ.dayKey! > dayKey(startOfToday, cal) {
                 #expect(occ.title == "New Title")
             }
         }
@@ -350,9 +329,7 @@ struct SeriesRuleChangeTests {
         // Materialize only through today
         try RecurrenceMaterializer.materialize(context: context, through: startOfToday, calendar: cal)
 
-        let beforeChangeCount = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        )).count
+        let beforeChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
 
         // Change to weekly
         let rule2 = RecurrenceRule(frequency: .weekly, startDate: start)
@@ -360,9 +337,7 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let afterChangeCount = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        )).count
+        let afterChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
 
         // Only future occurrences should be added, not past ones
         #expect(afterChangeCount >= beforeChangeCount)
@@ -388,9 +363,7 @@ struct SeriesRuleChangeTests {
         // Materialize up to far future (simulating earlier navigation)
         try RecurrenceMaterializer.materialize(context: context, through: farFuture, calendar: cal)
 
-        let beforeChangeCount = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        )).count
+        let beforeChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
 
         // Change to weekly
         let rule2 = RecurrenceRule(frequency: .weekly, startDate: start)
@@ -398,9 +371,7 @@ struct SeriesRuleChangeTests {
                                             through: today, context: context, calendar: cal)
         try context.save()
 
-        let afterChangeCount = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        )).count
+        let afterChangeCount = try RecurrenceMaterializer.children(of: definition, context: context).count
 
         // Should reconcile at least to the previous far future
         #expect(afterChangeCount <= beforeChangeCount)  // Removed untouched daily ones
@@ -432,12 +403,7 @@ struct SeriesRuleChangeTests {
         #expect(definition.recurrence?.end == .until(today))
 
         // Future occurrences should stop
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate {
-                $0.templateID == definition.id &&
-                ($0.dayKey ?? "") > dayKey(startOfToday, cal)
-            }
-        ))
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context).filter { ($0.dayKey ?? "") > dayKey(startOfToday, cal) }
         #expect(futureOccs.isEmpty)
     }
 
@@ -463,12 +429,7 @@ struct SeriesRuleChangeTests {
 
         #expect(definition.recurrence?.end == .never)
 
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate {
-                $0.templateID == definition.id &&
-                ($0.dayKey ?? "") > dayKey(startOfToday, cal)
-            }
-        ))
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context).filter { ($0.dayKey ?? "") > dayKey(startOfToday, cal) }
         #expect(!futureOccs.isEmpty)
     }
 
@@ -525,9 +486,7 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let allOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let allOccs = try RecurrenceMaterializer.children(of: definition, context: context)
         #expect(allOccs.contains { $0.id == legacyOcc.id })
     }
 
@@ -574,9 +533,7 @@ struct SeriesRuleChangeTests {
         try RecurrenceMaterializer.materialize(context: context, through: horizon, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         for occ in occurrences {
             #expect(occ.colorHex == "#FF0000")
             #expect(occ.priority == 2)
@@ -605,9 +562,7 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         let sortIndices = occurrences.compactMap(\.sortIndex).sorted()
         #expect(!sortIndices.isEmpty)
     }
@@ -683,8 +638,8 @@ struct SeriesRuleChangeTests {
         let horizon = date(2026, 10, 31, cal: cal)
 
         let rule = RecurrenceRule(frequency: .daily, startDate: start)
-        let definition = TaskItem(title: "Critical Task", isCritical: true,
-                                 dayKey: nil, recurrence: rule)
+        let definition = TaskItem(title: "Critical Task", dayKey: nil, recurrence: rule)
+        definition.isCritical = true
         context.insert(definition)
         try context.save()
 
@@ -695,12 +650,7 @@ struct SeriesRuleChangeTests {
                                             through: horizon, context: context, calendar: cal)
         try context.save()
 
-        let futureOccs = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate {
-                $0.templateID == definition.id &&
-                ($0.dayKey ?? "") > dayKey(startOfToday, cal)
-            }
-        ))
+        let futureOccs = try RecurrenceMaterializer.children(of: definition, context: context).filter { ($0.dayKey ?? "") > dayKey(startOfToday, cal) }
         for occ in futureOccs {
             #expect(occ.isCritical)
         }
@@ -726,7 +676,7 @@ struct SeriesRuleChangeTests {
         try context.save()
 
         let fetched = try context.fetch(FetchDescriptor<TaskItem>()).first
-        let decodedNotes = try fetched.flatMap { $0.notesRich.flatMap(NotesCodec.decode) }
+        let decodedNotes = try fetched?.notesRich.map { try NotesCodec.decode($0) }
         #expect(decodedNotes?.plainText.contains("Important") ?? false)
     }
 
@@ -747,9 +697,7 @@ struct SeriesRuleChangeTests {
 
         try RecurrenceMaterializer.materialize(context: context, through: horizon, calendar: cal)
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         let firstOcc = occurrences.first
         if let occ = firstOcc {
             try RecurrenceMaterializer.skipSlot(of: occ, context: context)
@@ -771,7 +719,7 @@ struct SeriesRuleChangeTests {
         let startOfToday = cal.startOfDay(for: today)
         let horizon = date(2026, 10, 31, cal: cal)
 
-        let list = CustomList(name: "Shopping", colorHex: "#FF0000")
+        let list = CustomList(name: "Shopping")
         context.insert(list)
 
         let rule = RecurrenceRule(frequency: .daily, startDate: start)
@@ -782,9 +730,7 @@ struct SeriesRuleChangeTests {
         try RecurrenceMaterializer.materialize(context: context, through: startOfToday, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         if let occ = occurrences.first {
             occ.customList = list
             occ.dayKey = nil
@@ -819,9 +765,7 @@ struct SeriesRuleChangeTests {
 
         try RecurrenceMaterializer.materialize(context: context, through: startOfToday, calendar: cal)
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         if let occ = occurrences.first {
             occ.isDone = true
             occ.completedAt = today
@@ -856,9 +800,7 @@ struct SeriesRuleChangeTests {
         try RecurrenceMaterializer.materialize(context: context, through: startOfToday, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         if let occ = occurrences.first {
             occ.subtasks.append(Subtask(title: "Subtask 1"))
         }
@@ -870,7 +812,7 @@ struct SeriesRuleChangeTests {
         try context.save()
 
         let fetchedOcc = occurrences.first
-        #expect(!fetchedOcc?.subtasks.isEmpty ?? false)
+        #expect(fetchedOcc?.subtasks.isEmpty == false)
     }
 
     // MARK: - CustomList ownership for series
@@ -882,8 +824,8 @@ struct SeriesRuleChangeTests {
         let start = date(2026, 10, 1, cal: cal)
         let horizon = date(2026, 10, 31, cal: cal)
 
-        let list1 = CustomList(name: "Work", colorHex: "#0000FF")
-        let list2 = CustomList(name: "Home", colorHex: "#FF0000")
+        let list1 = CustomList(name: "Work")
+        let list2 = CustomList(name: "Home")
         context.insert(list1)
         context.insert(list2)
 
@@ -895,9 +837,7 @@ struct SeriesRuleChangeTests {
         try RecurrenceMaterializer.materialize(context: context, through: horizon, calendar: cal)
         try context.save()
 
-        let occurrences = try context.fetch(FetchDescriptor<TaskItem>(
-            predicate: #Predicate { $0.templateID == definition.id }
-        ))
+        let occurrences = try RecurrenceMaterializer.children(of: definition, context: context)
         if let occ = occurrences.first {
             occ.customList = list1
             occ.dayKey = nil

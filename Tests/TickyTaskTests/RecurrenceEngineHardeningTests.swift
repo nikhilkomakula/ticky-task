@@ -140,11 +140,8 @@ struct RecurrenceEngineHardeningTests {
 
         let keys = RecurrenceEngine.occurrenceDayKeys(for: rule, from: start, through: date(2105, 12, 31, c), calendar: c)
 
-        // 2096, 2100 (NOT leap), 2104 are leap years; others roll to Mar 1
-        #expect(keys.contains(dayKey(2096, 2, 29)))
-        #expect(keys.contains(dayKey(2097, 3, 1)))
-        #expect(!keys.contains(dayKey(2100, 2, 29))) // 2100 is not a leap year
-        #expect(keys.contains(dayKey(2104, 2, 29)))
+        // Feb 29 exists only in leap years — 2100 is not one — and is skipped, never rolled over.
+        #expect(keys == [dayKey(2096, 2, 29), dayKey(2104, 2, 29)])
     }
 
     // MARK: - Sparse rules
@@ -228,7 +225,7 @@ struct RecurrenceEngineHardeningTests {
             startDate: start
         )
 
-        let keys = RecurrenceEngine.occurrenceDayKeys(for: rule, from: start, through: date(6000, 12, 31, c), calendar: c)
+        let keys = RecurrenceEngine.occurrenceDayKeys(for: rule, from: start, through: date(7000, 12, 31, c), calendar: c)
 
         #expect(keys.count == 100)
     }
@@ -283,10 +280,9 @@ struct RecurrenceEngineHardeningTests {
             startDate: start
         )
 
-        let keys = RecurrenceEngine.occurrenceDayKeys(for: rule, from: start, through: date(2026, 4, 30, c))
+        let keys = RecurrenceEngine.occurrenceDayKeys(for: rule, from: start, through: date(2026, 4, 30, c), calendar: c)
 
-        // February has no 31st; March and April do
-        #expect(keys.contains(dayKey(2026, 3, 31)))
-        #expect(keys.contains(dayKey(2026, 4, 30))) // April has 30, not 31
+        // February and April have no 31st (skipped, not clamped); March does.
+        #expect(keys == [dayKey(2026, 3, 31)])
     }
 }

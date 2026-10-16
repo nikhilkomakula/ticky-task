@@ -92,7 +92,10 @@ enum RecurrenceEngine {
         guard !step.overflow else { return nil }
         switch rule.frequency {
         case .daily:
-            guard let date = calendar.date(byAdding: .day, value: step.partialValue, to: anchor) else { return nil }
+            // Calendar can return a date even for an offset it can't represent, so
+            // confirm the date is really that many days on; otherwise stop.
+            guard let date = calendar.date(byAdding: .day, value: step.partialValue, to: anchor),
+                  calendar.dateComponents([.day], from: anchor, to: date).day == step.partialValue else { return nil }
             return Period(reference: date, dates: [date])
 
         case .weekdays:   // Mon–Fri, every week; interval is not meaningful here.
@@ -129,7 +132,8 @@ enum RecurrenceEngine {
         // Sunday-aligned week blocks so "every N weeks" is deterministic and
         // independent of the user's Monday/Sunday *display* preference.
         let week0 = WeekMath.startOfWeek(containing: anchor, weekStartsMonday: false, calendar: calendar)
-        guard let blockStart = calendar.date(byAdding: .weekOfYear, value: weeksFromAnchor, to: week0) else {
+        guard let blockStart = calendar.date(byAdding: .weekOfYear, value: weeksFromAnchor, to: week0),
+              calendar.dateComponents([.weekOfYear], from: week0, to: blockStart).weekOfYear == weeksFromAnchor else {
             return nil
         }
         var dates: [Date] = []
@@ -146,7 +150,8 @@ enum RecurrenceEngine {
     private static func monthlyBlock(anchor: Date, monthsFromAnchor: Int,
                                      monthDays: [Int], calendar: Calendar) -> Period? {
         let month0 = WeekMath.firstOfMonth(containing: anchor, calendar: calendar)
-        guard let monthFirst = calendar.date(byAdding: .month, value: monthsFromAnchor, to: month0) else {
+        guard let monthFirst = calendar.date(byAdding: .month, value: monthsFromAnchor, to: month0),
+              calendar.dateComponents([.month], from: month0, to: monthFirst).month == monthsFromAnchor else {
             return nil
         }
         // A repeated day number is one occurrence (and counts once toward `.afterCount`).

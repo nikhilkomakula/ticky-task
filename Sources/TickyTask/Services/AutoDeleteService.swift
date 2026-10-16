@@ -36,7 +36,7 @@ enum AutoDeleteService {
             // context (where an unrelated later save could commit them silently).
             if deletedAny { try context.save() }
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
         }
     }
 }

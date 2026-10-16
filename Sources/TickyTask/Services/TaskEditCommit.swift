@@ -113,7 +113,7 @@ enum TaskEditCommit {
             try save(context)
             return edit.rule != .unchanged
         } catch {
-            context.rollback()
+            context.rollbackAndRefresh()
             throw error
         }
     }
