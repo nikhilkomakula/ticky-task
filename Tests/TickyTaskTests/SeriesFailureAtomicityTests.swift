@@ -51,6 +51,8 @@ struct SeriesFailureAtomicityTests {
         // Create a legacy template with a first occurrence and a child.
         let template = TaskItem(title: "Daily task", dayKey: "20260101", timeMinutes: 540)
         template.isCritical = true
+        template.notes = "first day notes"
+        template.recurrence = RecurrenceRule(frequency: .daily, end: .afterCount(5), startDate: date(2026, 1, 1, c))
         context.insert(template)
 
         let child = TaskItem(title: "Daily task", dayKey: "20260102")
@@ -60,13 +62,13 @@ struct SeriesFailureAtomicityTests {
         try context.save()
         let beforeSnapshot = try snapshot(context: context)
 
-        // Arm the checkpoint to fail: normalization includes a checkpoint.
-        PersistenceFaults.armed = [.checkpoint]
+        // Fail the final save: the split of the legacy series row and the new
+        // occurrences must all be rolled back.
+        PersistenceFaults.armed = [.transaction]
         defer { PersistenceFaults.armed = [] }
 
-        // Normalization should fail during checkpoint without modifying anything.
         #expect(throws: PersistenceFaults.InjectedFailure.self) {
-            try RecurrenceNormalizer.normalize(context: context)
+            try RecurrenceMaterializer.materialize(context: context, through: date(2026, 1, 10, c), calendar: c)
         }
 
         let afterSnapshot = try snapshot(context: context)
@@ -164,12 +166,13 @@ struct SeriesFailureAtomicityTests {
 
         let newRule = RecurrenceRule(frequency: .weekly, weekdays: [5],
                                     startDate: date(2026, 1, 1, c), end: .never)
+        let shared = SharedAttributes(seed)
+        let edit = TaskEdit(originalShared: shared, editedShared: shared, rule: .replace(newRule))
         #expect(throws: PersistenceFaults.InjectedFailure.self) {
-            try RecurrenceMaterializer.changeRule(of: definition, to: newRule,
-                                                 today: date(2026, 1, 5, c),
-                                                 through: date(2026, 2, 1, c),
-                                                 context: context, calendar: c)
+            try TaskEditCommit.commit(edit, to: seed, context: context, today: date(2026, 1, 5, c),
+                                      horizon: date(2026, 2, 1, c), calendar: c)
         }
+        _ = definition
 
         let afterSnapshot = try snapshot(context: context)
         #expect(beforeSnapshot.matches(afterSnapshot))

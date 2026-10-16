@@ -622,7 +622,7 @@ struct SeriesLifecycleTests {
 
         jan1.setDone(true, at: date(2026, 1, 1, c))
         jan2.setDone(true, at: date(2026, 1, 2, c))
-        jan5.setDone(true, at: date(2026, 1, 5, c))
+        jan5.setDone(true, at: date(2026, 1, 15, c))   // after the Jan 13 cutoff: too recent
 
         // Add a control one-off task to verify it's also purged
         let oneOff = TaskItem(title: "One-off", dayKey: dayKey(2026, 1, 3))
@@ -649,7 +649,7 @@ struct SeriesLifecycleTests {
         #expect(!remaining.contains { $0.id == jan2ID }, "Jan 2 occurrence should be purged")
         #expect(!remaining.contains { $0.id == oneOffID }, "One-off should be purged")
 
-        // jan5 (Jan 5) is only 15 days old at Jan 20, so it should NOT be purged (cutoff is 7 days = Jan 13)
+        // jan5 was completed Jan 15, after the Jan 13 cutoff, so it is NOT purged
         let jan5After = remaining.first { $0.occurrenceKey == dayKey(2026, 1, 5) }
         #expect(jan5After != nil, "Jan 5 occurrence should survive (too recent)")
 

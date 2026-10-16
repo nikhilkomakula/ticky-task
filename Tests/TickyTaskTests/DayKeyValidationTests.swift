@@ -213,9 +213,9 @@ struct DayKeyValidationTests {
             alarmEnabled: false, createdAt: Date(), updatedAt: Date(),
             recurrence: RecurrenceRule(frequency: .daily, startDate: Date(), end: .never),
             tagIds: [], needsImmediateAttention: false, completedAt: nil, notesRich: nil,
-            templateId: nil, occurrenceKey: nil, recurrenceEffectiveFromKey: nil,
+            templateId: UUID(), occurrenceKey: nil, recurrenceEffectiveFromKey: nil,
             occurrenceModified: nil
-        )
+        )   // both a rule and a series link: a definition and an occurrence at once
 
         let occurrence = TaskItemDTO(
             id: UUID(), title: "Occurrence", notes: "", isDone: false, dayKey: "20260102",

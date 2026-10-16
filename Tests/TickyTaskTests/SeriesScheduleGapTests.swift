@@ -141,10 +141,11 @@ struct SeriesScheduleGapTests {
         let occsAfter = try occurrences(of: definition, context)
 
         // Should NOT have daily occurrences for days between Oct 1 and Oct 15 (except those that were generated before)
+        // The series' own weekly rows (Oct 1, 8, 15) stay; no other day through today appears.
+        let weeklyKeys: Set<String> = [dayKey(2026, 10, 1), dayKey(2026, 10, 8), dayKey(2026, 10, 15)]
         let historicalDailyOccs = occsAfter.filter { occ in
-            guard let key = occ.occurrenceKey, occ.occurrenceModified == false else { return false }
-            // Should not generate new daily for historical dates
-            return key >= dayKey(2026, 10, 1) && key < dayKey(day15, cal)
+            guard let key = occ.occurrenceKey else { return false }
+            return key <= dayKey(day15, cal) && !weeklyKeys.contains(key)
         }
         #expect(historicalDailyOccs.isEmpty,
                "Should never add new daily occurrences for dates before rule change")
@@ -186,7 +187,8 @@ struct SeriesScheduleGapTests {
 
         // Verify far-future slots now match weekly schedule, not daily
         occs = try occurrences(of: definition, context)
-        let farFutureOccs = occs.filter { ($0.occurrenceKey ?? "") >= dayKey(2026, 4, 1) }
+        // Only rows after today are re-planned; earlier daily rows are kept history.
+        let farFutureOccs = occs.filter { ($0.occurrenceKey ?? "") > dayKey(startOfToday, cal) }
         for occ in farFutureOccs {
             guard let key = occ.occurrenceKey else { continue }
             let d = WeekMath.date(fromDayKey: key, calendar: cal)!
@@ -309,8 +311,10 @@ struct SeriesScheduleGapTests {
                    "Past daily slot \(key) should be retained")
         }
 
-        // Future (after Oct 15): only Thursdays on Oct 22, 29 should exist (and no new daily)
-        let expectedFutureThursdays = Set([dayKey(2026, 10, 22), dayKey(2026, 10, 29)])
+        // Future: exactly the Thursdays after today. Reconciliation always covers at
+        // least today + 60 days (Dec 14), beyond the requested Oct 31.
+        let expectedFutureThursdays = Set([(10, 22), (10, 29), (11, 5), (11, 12), (11, 19), (11, 26), (12, 3), (12, 10)]
+            .map { dayKey(2026, $0.0, $0.1) })
         let futureKeys = afterKeys.filter { $0 > dayKey(startOfToday, cal) }
         #expect(futureKeys == expectedFutureThursdays,
                "Future slots should be exactly the two Thursdays, not \(futureKeys)")
