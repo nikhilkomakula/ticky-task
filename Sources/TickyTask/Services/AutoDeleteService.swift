@@ -20,9 +20,14 @@ enum AutoDeleteService {
         let descriptor = FetchDescriptor<TaskItem>(predicate: #Predicate { $0.isDone })
         guard let completed = try? context.fetch(descriptor) else { return }
 
-        var deletedAny = false
         do {
             try RecurrenceMaterializer.checkpoint(context)
+        } catch {
+            NSLog("TickyTask: auto-delete skipped, saving pending edits failed: \(error.localizedDescription)")
+            return
+        }
+        var deletedAny = false
+        do {
             for task in completed where task.recurrence == nil {
                 guard let completedAt = task.completedAt, completedAt < cutoff else { continue }
                 if task.templateID != nil {
@@ -34,7 +39,7 @@ enum AutoDeleteService {
             }
             // Roll back on failure so the deletions don't linger uncommitted in the
             // context (where an unrelated later save could commit them silently).
-            if deletedAny { try context.save() }
+            if deletedAny { try context.saveTransaction() }
         } catch {
             context.rollbackAndRefresh()
         }

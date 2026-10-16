@@ -78,7 +78,7 @@ enum TaskEditCommit {
     @discardableResult
     static func commit(_ edit: TaskEdit, to task: TaskItem, context: ModelContext,
                        today: Date = Date(), horizon: Date, calendar: Calendar = .current,
-                       save: (ModelContext) throws -> Void = { try $0.save() }) throws -> Bool {
+                       save: ((ModelContext) throws -> Void)? = nil) throws -> Bool {
         guard !edit.isEmpty else { return false }
         try RecurrenceMaterializer.checkpoint(context)
         do {
@@ -110,7 +110,7 @@ enum TaskEditCommit {
                                                           through: horizon, context: context, calendar: calendar)
                 }
             }
-            try save(context)
+            if let save { try save(context) } else { try context.saveTransaction() }
             return edit.rule != .unchanged
         } catch {
             context.rollbackAndRefresh()
@@ -149,6 +149,11 @@ enum TaskEditCommit {
             if original.timeMinutes != nil, edited.timeMinutes == nil, row.alarmEnabled {
                 row.alarmEnabled = false
                 changed = true
+            }
+            // Another editor may have cleared this row's time meanwhile: a reminder
+            // needs a time, so an alarm-only edit never turns one on without it.
+            if row.timeMinutes == nil, row.alarmEnabled, original.alarmEnabled != edited.alarmEnabled {
+                row.alarmEnabled = false
             }
             write(\.priority, \.priority)
             write(\.isCritical, \.isCritical)

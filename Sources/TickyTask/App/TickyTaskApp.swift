@@ -23,6 +23,8 @@ struct TickyTaskApp: App {
             containerResult = Result { try ModelContainerProvider.makeContainer(at: url) }
         } else if UITestSupport.isRunning || UITestSupport.isHostingUnitTests {
             containerResult = .success(ModelContainerProvider.makeInMemoryContainer())
+            // Hosting unit tests: stay out of the Dock and never take focus from the user.
+            if UITestSupport.isHostingUnitTests { NSApplication.shared.setActivationPolicy(.prohibited) }
         } else {
             containerResult = Result { try ModelContainerProvider.makeContainer() }
         }

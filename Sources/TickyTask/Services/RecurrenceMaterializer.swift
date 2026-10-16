@@ -29,7 +29,10 @@ enum RecurrenceMaterializer {
     /// The context is shared by every window. Persist anything else already pending
     /// before a transaction, so rolling it back on failure reverts only its own work.
     static func checkpoint(_ context: ModelContext) throws {
-        if context.hasChanges { try context.save() }
+        if context.hasChanges {
+            try PersistenceFaults.check(.checkpoint)
+            try context.save()
+        }
     }
 
     /// Normalize legacy rows, then generate any missing occurrences for every
@@ -49,7 +52,7 @@ enum RecurrenceMaterializer {
                 created += try generateOccurrences(for: definition, through: horizon, context: context,
                                                    sortCache: &nextIndexByDay, calendar: calendar)
             }
-            if context.hasChanges { try context.save() }
+            if context.hasChanges { try context.saveTransaction() }
             return created
         } catch {
             context.rollbackAndRefresh()
@@ -134,7 +137,7 @@ enum RecurrenceMaterializer {
         do {
             try skipSlot(of: task, context: context)
             context.delete(task)
-            try context.save()
+            try context.saveTransaction()
         } catch {
             context.rollbackAndRefresh()
             throw error
@@ -148,12 +151,12 @@ enum RecurrenceMaterializer {
         do {
             guard let definition = try definition(for: task, context: context) else {
                 context.delete(task)   // an orphaned occurrence: it is its whole series
-                try context.save()
+                try context.saveTransaction()
                 return
             }
             for child in try children(of: definition, context: context) { context.delete(child) }
             context.delete(definition)   // cascades its skip records
-            try context.save()
+            try context.saveTransaction()
         } catch {
             context.rollbackAndRefresh()
             throw error

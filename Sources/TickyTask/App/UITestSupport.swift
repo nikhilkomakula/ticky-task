@@ -2,9 +2,9 @@ import Foundation
 import SwiftData
 
 /// Deterministic setup for XCUITest runs, activated by the `-uitest` launch
-/// argument. When present, `TickyTaskApp` opens an **in-memory** store (never the
-/// user's real data) and this seeds a fixed set of tasks in the first visible week
-/// column, so UI tests can drag them and assert the resulting order.
+/// argument. When present, `TickyTaskApp` opens an **in-memory** store — or, with
+/// `-uitestStore <path>`, an isolated on-disk one; never the user's real data — and
+/// this seeds a fixed set of tasks in the first visible week column.
 enum UITestSupport {
     static var isRunning: Bool { ProcessInfo.processInfo.arguments.contains("-uitest") }
 

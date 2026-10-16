@@ -70,7 +70,7 @@ struct DataService {
         }
         for (index, item) in order.enumerated() { item.sortIndex = Double(index) }
         do {
-            try context.save()
+            try context.saveTransaction()
         } catch {
             // Never leave a half-applied move (reassigned container + renumbered
             // siblings) in the context if the save fails.
@@ -152,7 +152,7 @@ struct DataService {
                 try RecurrenceMaterializer.skipSlot(of: task, context: context)
             }
             context.delete(list)
-            try context.save()
+            try context.saveTransaction()
         } catch {
             context.rollbackAndRefresh()
             throw error

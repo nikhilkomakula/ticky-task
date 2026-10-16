@@ -13,15 +13,19 @@ enum WeekMath {
 
     /// Parse a `"yyyyMMdd"` key back into the start-of-day `Date`, or `nil` if malformed.
     static func date(fromDayKey key: String, calendar: Calendar = .current) -> Date? {
-        guard key.count == 8,
+        guard key.count == 8, key.allSatisfy(\.isASCII), key.allSatisfy(\.isNumber),
               let year = Int(key.prefix(4)),
               let month = Int(key.dropFirst(4).prefix(2)),
-              let day = Int(key.suffix(2)) else { return nil }
+              let day = Int(key.suffix(2)),
+              year > 0, (1...12).contains(month), (1...31).contains(day) else { return nil }
         var comps = DateComponents()
         comps.year = year
         comps.month = month
         comps.day = day
-        return calendar.date(from: comps)
+        // Foundation rolls an impossible day over (Feb 31 → Mar 3); such a key is invalid.
+        guard let date = calendar.date(from: comps) else { return nil }
+        let built = calendar.dateComponents([.year, .month, .day], from: date)
+        return built.year == year && built.month == month && built.day == day ? date : nil
     }
 
     /// Whether `date` is Saturday or Sunday in `calendar`'s time zone. This is

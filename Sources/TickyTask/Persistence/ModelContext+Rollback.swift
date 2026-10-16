@@ -15,3 +15,32 @@ extension ModelContext {
         _ = try? fetch(FetchDescriptor<CustomList>())
     }
 }
+
+extension ModelContext {
+    /// Save the end of a transaction (the step `rollbackAndRefresh()` undoes on
+    /// failure). Tests can make it fail through `PersistenceFaults`.
+    @MainActor
+    func saveTransaction() throws {
+        try PersistenceFaults.check(.transaction)
+        try save()
+    }
+}
+
+/// Test-only failure injection for transactional saves and the checkpoint that
+/// precedes them; compiled out of Release builds.
+@MainActor
+enum PersistenceFaults {
+    enum Point { case checkpoint, transaction }
+    struct InjectedFailure: Error {}
+
+    #if DEBUG
+    /// The points that fail on their next use (each fires once).
+    static var armed: Set<Point> = []
+    #endif
+
+    static func check(_ point: Point) throws {
+        #if DEBUG
+        if armed.remove(point) != nil { throw InjectedFailure() }
+        #endif
+    }
+}

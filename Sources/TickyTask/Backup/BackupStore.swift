@@ -100,7 +100,7 @@ enum BackupStore {
             // Convert series from an older backup in the same transaction, so a
             // failure leaves the existing store untouched.
             try RecurrenceNormalizer.normalize(context: context)
-            try context.save()
+            try context.saveTransaction()
         } catch {
             context.rollbackAndRefresh()
             throw error
