@@ -14,7 +14,7 @@ enum AutoDeleteService {
                                enabled: Bool,
                                olderThanDays days: Int,
                                now: Date = Date()) {
-        guard enabled, days >= 1 else { return }
+        guard enabled, days >= 1, !PersistenceRecovery.didRelaunch else { return }
         guard let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
 
         let descriptor = FetchDescriptor<TaskItem>(predicate: #Predicate { $0.isDone })

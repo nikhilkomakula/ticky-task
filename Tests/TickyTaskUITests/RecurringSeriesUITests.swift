@@ -99,7 +99,9 @@ final class RecurringSeriesUITests: XCTestCase {
                             present: Bool = true, timeout: TimeInterval = 6) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
-            if (row(app, title, on: dayKey) != nil) == present { return true }
+            let seen = row(app, title, on: dayKey) != nil
+                || scrollThrough(app, dayKey) { row(app, title, on: dayKey) != nil }
+            if seen == present { return true }
             usleep(250_000)
         } while Date() < deadline
         return false
@@ -122,16 +124,33 @@ final class RecurringSeriesUITests: XCTestCase {
         return images.map(\.label) + texts.compactMap { $0.value as? String }
     }
 
-    /// Scroll a busy day column until the row can be clicked (smaller screens, e.g.
-    /// CI, show fewer rows; an off-screen row exists but isn't hittable).
-    private func reveal(_ app: XCUIApplication, _ title: String, on dayKey: String) {
-        let scrollView = app.scrollViews.matching(identifier: "dayColumn-\(dayKey)").firstMatch
-        guard scrollView.exists else { return }
-        for delta in [-250.0, -250, -250, -250, 250, 250, 250, 250, 250, 250, 250, 250] {
-            guard let text = row(app, title, on: dayKey), !text.isHittable else { return }
-            scrollView.scroll(byDeltaX: 0, deltaY: delta)
-            usleep(250_000)
+    /// Scroll through a day column — down, then back up past its start — until `found`.
+    /// Columns are lazy: on smaller screens (e.g. CI) a row scrolled out of view isn't
+    /// in the accessibility tree at all.
+    private func scrollThrough(_ app: XCUIApplication, _ dayKey: String, until found: () -> Bool) -> Bool {
+        let window = app.windows.firstMatch
+        for delta in [0.0, -150, -150, -150, -150, 300, 300, 300, 300, 300] {
+            if delta != 0 {
+                let visible = columnFrame(app, dayKey).intersection(window.frame)
+                guard !visible.isNull, !visible.isEmpty else { return false }
+                // Near the top of the column: always inside its scroll view.
+                let point = CGVector(dx: visible.midX - window.frame.minX, dy: visible.minY + min(80, visible.height / 2) - window.frame.minY)
+                window.coordinate(withNormalizedOffset: .zero).withOffset(point).scroll(byDeltaX: 0, deltaY: delta)
+                usleep(300_000)
+            }
+            if found() { return true }
         }
+        return false
+    }
+
+    /// `title`'s row on `dayKey`, scrolled into view so it can be clicked.
+    private func reveal(_ app: XCUIApplication, _ title: String, on dayKey: String) -> XCUIElement? {
+        var hit: XCUIElement?
+        _ = scrollThrough(app, dayKey) {
+            hit = row(app, title, on: dayKey).flatMap { $0.isHittable ? $0 : nil }
+            return hit != nil
+        }
+        return hit
     }
 
     /// The title text of a `title` row shown in a custom list (below every day column).
@@ -150,14 +169,22 @@ final class RecurringSeriesUITests: XCTestCase {
     }
 
     private func open(_ app: XCUIApplication, _ title: String, on dayKey: String) {
-        XCTAssertTrue(waitForRow(app, title, on: dayKey), "\(title) should be shown on \(dayKey)")
-        reveal(app, title, on: dayKey)
+        _ = waitForRow(app, title, on: dayKey)
         let done = app.buttons["editor-done"]
         for _ in 0..<2 where !done.exists {   // a click during a re-render can be lost
-            row(app, title, on: dayKey)?.click()
+            guard let text = reveal(app, title, on: dayKey) else { break }
+            text.click()
             _ = done.waitForExistence(timeout: 8)
         }
-        XCTAssertTrue(done.exists, "the editor should open")
+        if !done.exists { keepScreenshot(app, "open \(title) on \(dayKey)") }
+        XCTAssertTrue(done.exists, "the editor should open \(title) on \(dayKey)")
+    }
+
+    private func keepScreenshot(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     private func done(_ app: XCUIApplication) {
@@ -189,10 +216,14 @@ final class RecurringSeriesUITests: XCTestCase {
     }
 
     private func delete(_ app: XCUIApplication, _ title: String, on dayKey: String, choice: String) {
-        XCTAssertTrue(waitForRow(app, title, on: dayKey))
+        _ = waitForRow(app, title, on: dayKey)
         let button = app.sheets.buttons[choice].firstMatch
         for _ in 0..<2 where !button.exists {
-            row(app, title, on: dayKey)!.rightClick()
+            guard let text = reveal(app, title, on: dayKey) else {
+                keepScreenshot(app, "reveal \(title) on \(dayKey)")
+                return XCTFail("\(title) should be shown on \(dayKey)")
+            }
+            text.rightClick()
             let item = app.menuItems["context-delete"].firstMatch
             XCTAssertTrue(item.waitForExistence(timeout: 5))
             item.click()
@@ -344,7 +375,7 @@ final class RecurringSeriesUITests: XCTestCase {
     func testDeleteChoices() throws {
         let app = launch()
         let todayKey = key(Date())
-        row(app, "Meeting", on: todayKey)!.rightClick()
+        try XCTUnwrap(reveal(app, "Meeting", on: todayKey), "Meeting is shown today").rightClick()
         app.menuItems["context-delete"].firstMatch.click()
         let cancel = app.sheets.buttons["Cancel"].firstMatch
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
@@ -460,7 +491,7 @@ final class RecurringSeriesUITests: XCTestCase {
         typeNotes(app, "travelling")
         done(app)
 
-        drag(row(app, "Standup", on: mon)!, to: app.descendants(matching: .any).matching(identifier: "dayColumn-\(tue)").firstMatch)
+        drag(try XCTUnwrap(reveal(app, "Standup", on: mon)), to: app.descendants(matching: .any).matching(identifier: "dayColumn-\(tue)").firstMatch)
         XCTAssertTrue(waitForRow(app, "Standup", on: mon, present: false), "Monday is not refilled")
         let tuesdayRows = app.staticTexts.matching(identifier: "taskRow-Standup").allElementsBoundByIndex
             .filter { columnFrame(app, tue).contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
@@ -728,6 +759,10 @@ final class RecurringSeriesUITests: XCTestCase {
         let relaunched = XCUIApplication()
         XCTAssertTrue(relaunched.wait(for: .runningForeground, timeout: 40), "a new instance starts")
         XCTAssertTrue(relaunched.staticTexts["TickyTask restarted"].waitForExistence(timeout: 20), "the restart is explained")
+        relaunched.buttons["OK"].firstMatch.click()
+        sleep(5)
+        XCTAssertEqual(relaunched.state, .runningForeground, "the recovered app stays open (no restart loop)")
+        XCTAssertTrue(relaunched.staticTexts["Alpha"].exists, "and shows the saved board")
         relaunched.terminate()
 
         let fresh = launch(store)

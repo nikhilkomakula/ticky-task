@@ -50,4 +50,22 @@ struct RollbackRefreshTests {
         #expect(restarted, "the app restarts to discard the change instead of saving it later")
         #expect(!context.autosaveEnabled, "autosave can't commit it meanwhile")
     }
+
+    @Test("After a restart for a failed save, auto-delete waits, so a store that keeps failing can't restart the app again and again")
+    func recoverySessionSkipsAutoDelete() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let task = TaskItem(title: "done long ago", dayKey: "20260101")
+        task.setDone(true, at: Date(timeIntervalSinceNow: -30 * 86_400))
+        context.insert(task)
+        try context.save()
+
+        PersistenceRecovery.didRelaunch = true
+        defer { PersistenceRecovery.didRelaunch = false }
+        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 1)
+        #expect(try context.fetchCount(FetchDescriptor<TaskItem>()) == 1, "skipped in the recovery session")
+
+        PersistenceRecovery.didRelaunch = false
+        AutoDeleteService.purgeCompleted(context: context, enabled: true, olderThanDays: 1)
+        #expect(try context.fetchCount(FetchDescriptor<TaskItem>()) == 0, "runs normally otherwise")
+    }
 }
