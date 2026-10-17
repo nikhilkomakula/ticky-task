@@ -172,14 +172,16 @@ final class ModuleShortcuts {
     static func boardAction(_ shortcut: ModuleShortcut) -> String? {
         let flags = shortcut.flags
         let plain = !flags.contains(.command) && !flags.contains(.option)
-        switch shortcut.keyCode {
-        case 123, 124, 125, 126: return "move between, move or reorder cards"
-        case 53: return "clear the selection"
-        case 2 where flags.contains(.command) && !flags.contains(.option): return "duplicate a card"
-        case 51, 117 where plain: return "delete a card"
-        case 36 where plain: return "open a card"
-        case 49 where plain: return "preview a card"
-        case 46 where plain: return "move a card"
+        // Letters as the board reads them: by the character typed, whatever the keyboard layout.
+        if shortcut.key == "d", flags.contains(.command), !flags.contains(.option) { return "duplicate a card" }
+        if shortcut.key == "m", plain { return "move a card" }
+        if ["upArrow", "downArrow", "leftArrow", "rightArrow"].contains(shortcut.key) { return "move between, move or reorder cards" }
+        if shortcut.keyCode == 53 { return "clear the selection" }
+        guard plain else { return nil }
+        switch shortcut.key {
+        case "delete", "deleteForward": return "delete a card"
+        case "return": return "open a card"
+        case "space": return "preview a card"
         default: return nil
         }
     }

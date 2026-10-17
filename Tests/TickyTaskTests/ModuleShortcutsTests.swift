@@ -95,6 +95,12 @@ struct ModuleShortcutsTests {
             let chord = ModuleShortcut(keyCode: code, key: key, modifiers: flags.rawValue)
             #expect(shortcuts.conflict(chord, for: .kanban, menu: menu) != nil, "\(chord.description)")
         }
+        // Letters by character, so other layouts (Dvorak's D is key 4, AZERTY's M key 41) are covered.
+        let dvorakD = ModuleShortcut(keyCode: 4, key: "d", modifiers: NSEvent.ModifierFlags.command.rawValue)
+        let azertyM = ModuleShortcut(keyCode: 41, key: "m", modifiers: NSEvent.ModifierFlags.control.rawValue)
+        #expect(shortcuts.conflict(dvorakD, for: .kanban, menu: menu) != nil && shortcuts.conflict(azertyM, for: .kanban, menu: menu) != nil)
+        let commandDelete = ModuleShortcut(keyCode: 51, key: "delete", modifiers: NSEvent.ModifierFlags.command.rawValue)
+        #expect(shortcuts.conflict(commandDelete, for: .kanban, menu: menu) == nil, "⌘⌫ isn't the board's")
         let commandReturn = ModuleShortcut(keyCode: 36, key: "return", modifiers: NSEvent.ModifierFlags.command.rawValue)
         #expect(shortcuts.conflict(commandReturn, for: .kanban, menu: menu) == nil, "⌘↩ isn't the board's")
         let optionD = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
