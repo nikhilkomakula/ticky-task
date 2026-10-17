@@ -129,15 +129,8 @@ struct TaskEditorView: View {
                 Toggle("Remind me at this time", isOn: $shared.alarmEnabled)
                     .accessibilityIdentifier("editor-reminder-toggle")
             }
-            Picker("Priority", selection: priorityBinding) {
-                ForEach(TaskPriority.allCases) { priority in
-                    Label(priority.label, systemImage: priority.symbol).tag(priority)
-                }
-            }
-            Toggle(isOn: $shared.isCritical) {
-                Label("Critical", systemImage: "flag.fill")
-            }
-            .help("Mark this task critical — shown with a red flag before its priority, independent of the priority level.")
+            PriorityPicker(selection: priorityBinding)
+            CriticalToggle(isOn: $shared.isCritical)
         } footer: {
             if isSeriesOccurrence {
                 caption("Title, time, reminder, priority, and Critical apply to every occurrence, including completed ones.",
@@ -236,7 +229,9 @@ struct TaskEditorView: View {
     private var subtasksSection: some View {
         Section {
             ForEach($subtasks) { $draft in
-                SubtaskRow(subtask: $draft) { subtasks.removeAll { $0.id == draft.id } }
+                ChecklistRow(title: $draft.title, isDone: $draft.isDone, toggleIdentifier: "subtask-toggle-\(draft.title)") {
+                    subtasks.removeAll { $0.id == draft.id }
+                }
             }
             HStack {
                 Image(systemName: "plus.circle").foregroundStyle(.secondary)
@@ -369,34 +364,3 @@ private extension RecurrenceFrequency {
     }
 }
 
-/// A single editable subtask draft inside the editor.
-private struct SubtaskRow: View {
-    @Binding var subtask: SubtaskDraft
-    var onDelete: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack {
-            Button { subtask.isDone.toggle() } label: {
-                Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(subtask.isDone ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 20, height: 20)
-            .accessibilityIdentifier("subtask-toggle-\(subtask.title)")
-
-            TextField("Subtask", text: $subtask.title)
-                .strikethrough(subtask.isDone)
-
-            if isHovering {
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
-    }
-}

@@ -124,14 +124,27 @@ struct KanbanToolbarLeading: View {
     }
 }
 
-/// Toolbar, trailing (before the global buttons): row expand/collapse for the open board.
+/// Toolbar, trailing (before the global buttons): row expand/collapse and + Card (⌘N)
+/// for the open board.
 struct KanbanToolbarTrailing: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @State private var prompt: KanbanTextPrompt?
 
     var body: some View {
         if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
+            Button {
+                prompt = .init(title: "New card", placeholder: "Title") { title in
+                    _ = try app.kanbanService(context).createTask(in: project, title: title)
+                }
+            } label: {
+                Label("Card", systemImage: "plus")
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            .help("New card in the backlog (⌘N)")
+            .accessibilityIdentifier("kanban-new-card")
+            .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
             Menu {
                 Button("Expand all rows") { setAll(project, collapsed: false) }
                     .keyboardShortcut(.downArrow, modifiers: [.control, .command])

@@ -576,10 +576,22 @@ struct KanbanService {
         case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason
     }
 
-    /// Edits card fields; only changed fields are recorded.
+    /// Edits card fields; only changed fields are recorded. Every value is checked first.
     func edit(_ task: KanbanTask, _ values: [TaskField: KanbanValue?]) throws {
         try RecurrenceMaterializer.checkpoint(context)
         guard let project = task.project else { throw KanbanServiceError.notFound }
+        for (field, value) in values {
+            switch (field, value) {
+            case let (.title, .string(t)?): guard !t.trimmingCharacters(in: .whitespaces).isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
+            case (.notes, .string?), (.blockedReason, .string?), (.blockedReason, nil), (.isCritical, .bool?), (.isBlocked, .bool?),
+                 (.notesRich, .data?), (.notesRich, nil), (.dueDate, .date?), (.dueDate, nil), (.startDate, .date?), (.startDate, nil),
+                 (.estimateHours, nil), (.jiraURL, nil): break
+            case let (.priority, .int(p)?) where (0...2).contains(p): break
+            case let (.estimateHours, .double(h)?): guard h.isFinite && h >= 0 else { throw KanbanServiceError.invariant("An estimate can't be negative.") }
+            case let (.jiraURL, .string(url)?): guard KanbanMetrics.isWebURL(url) else { throw KanbanServiceError.invariant("The Jira link must be a web address.") }
+            default: throw KanbanServiceError.invariant("\(field.rawValue) can't hold that value.")
+            }
+        }
         let changes = values.compactMap { field, value -> KanbanFieldChange? in
             let old = taskValue(task, field.rawValue)
             return old == value ? nil : KanbanFieldChange(entity: .task, id: task.id, field: field.rawValue, old: old, new: value)
@@ -635,6 +647,19 @@ struct KanbanService {
         try save(project, kind: .created, taskIDs: [task.id], summary: "Added step to \(task.title)",
                  payload: KanbanActivityPayload(graph: KanbanRemovedGraph(subtasks: [KanbanSubtaskDTO(subtask)])))
         return subtask
+    }
+
+    /// Renames a step (recorded on the board).
+    func renameSubtask(_ subtask: KanbanSubtask, _ title: String) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let task = subtask.task, let project = task.project else { throw KanbanServiceError.notFound }
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw KanbanServiceError.invariant("A step needs a title.") }
+        guard trimmed != subtask.title else { return }
+        let change = KanbanFieldChange(entity: .subtask, id: subtask.id, field: "title", old: .string(subtask.title), new: .string(trimmed))
+        let data = try KanbanActivityPayload(changes: [change]).encoded()
+        subtask.title = trimmed
+        try save(project, kind: .edited, taskIDs: [task.id], summary: "Renamed a step on \(task.title)", encodedPayload: data)
     }
 
     /// Ticks or unticks a step. Returns whether to suggest moving the card to Done (its last
@@ -1042,6 +1067,7 @@ struct KanbanService {
     private func subtaskValue(_ subtask: KanbanSubtask, _ field: String) -> KanbanValue? {
         switch field {
         case "isDone": return .bool(subtask.isDone)
+        case "title": return .string(subtask.title)
         case "completedAt": return subtask.completedAt.map(KanbanValue.date)
         case "assignee": return subtask.assignee.map { .uuid($0.id) }
         default: return nil
@@ -1052,6 +1078,7 @@ struct KanbanService {
         guard let subtask = project.tasks.lazy.flatMap(\.subtasks).first(where: { $0.id == change.id }) else { return }
         switch (change.field, change.new) {
         case let ("isDone", .bool(b)?): subtask.isDone = b
+        case let ("title", .string(t)?): subtask.title = t
         case let ("completedAt", .date(d)?): subtask.completedAt = d
         case ("completedAt", nil): subtask.completedAt = nil
         case let ("assignee", .uuid(id)?): subtask.assignee = project.resources.first { $0.id == id }
