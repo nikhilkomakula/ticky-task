@@ -18,6 +18,9 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | Owner | Checkpoint 1 (2026-10-17) | — | **Approved** D1, D8, D11 (keep boards), D13 (v0.2.0), D16 (full scope); **D15 → shared person directory** |
 | R5 | Review of the person-directory extension (D15) | **CHANGES REQUIRED** — 4 blockers; `.deny` exists but runtime enforcement unverified | All fixed: (1) the rollup's count numerator is independent of board mode, and the band uses hours only when every board is in hours mode; (2) a person-archive coordinator with per-board informational activities and a conflict-checked group Undo archive; (3) membership-delete Revert preflights the person and uniqueness, and project payloads never carry person fields; (4) the resolved destination graph is validated after matching, with a reuse policy and reference rewrites. `.nullify` + service preflight replaces `.deny`; the gate covers eight models |
 | R6 | Confirm the R5 fixes | **DESIGN: APPROVED** | The design is final; Phase 2 begins |
+| I1-a | Increment 1, partial (models, backup, moves, gate) | **CHANGES REQUIRED** — 4 blockers: duplicate ids, live card on an archived membership crashing planning, gate missing projects and reverse relations, gate baseline taken after migration | Fixed in e881e11c |
+| I1-b | Increment 1, full (adds the service, change log, undo) | **CHANGES REQUIRED** — 12 blockers, mostly reverting old entries | Fixed in d582877d (I-D1 to I-D4 below) |
+| I1-c | Increment 1 re-review | *pending* | — |
 
 ### R2 issues and how they were resolved
 
@@ -102,3 +105,14 @@ Codex's non-blocking R1 points were also applied:
 | Shortcut tooltips + cheat sheet | **Yes** | New shortcuts overlay (⌘/) |
 | iCloud sync, attachments, Pomodoro, custom task types, Eisenhower matrix | **No** | Out of scope per the brief (§2.2, §2.6) |
 | Paste-to-checklist (one subtask per line) | **No** (for now) | Not in the brief; can be added later |
+
+## Implementation decisions (Phase 2)
+
+| ID | Decision | Why | Codex |
+|---|---|---|---|
+| I-D1 | A Change Log revert is refused while a newer entry that's still in effect changed something the reverted entry depends on. Entries in its own revert chain don't count, and neither do odd-depth chains whose original is newer (an undone pair has no net effect). ⌘Z and ⇧⌘Z skip this rule: they replay their stacks last-in-first-out, so every newer user operation is already undone, and the value checks still apply. | Arbitrary historical reverts otherwise drop later work (I1-b #3, #6, #7) | I1-b → *I1-c* |
+| I-D2 | Every revert's inverse is simulated on `KanbanInvariants` first: one backlog, ≥ 1 Done, every live card in an existing column on an active membership, no person twice on a board, acyclic dependencies. | Historical inverses bypassed the service invariants (I1-b #6) | I1-b → *I1-c* |
+| I-D3 | `KanbanProject.historyBoundarySeq` (additive, default 0) is set on restore; entries at or below it can't be reverted. | Restored rows are rebuilt from the backup, at millisecond precision (I1-b #10) | I1-b → *I1-c* |
+| I-D4 | The service reads column cards, step assignments and memberships through forward links (`task.column`, `step.assignee`, `resource.person`), never through the inverse arrays. | SwiftData's in-memory inverse arrays can lag after a change in the same context (seen in tests) | — |
+| I-D5 | Activity payload dates use the default JSON encoding (seconds as a Double), not the backup's ISO milliseconds. | Conflict checks compare them with live values exactly | — |
+
