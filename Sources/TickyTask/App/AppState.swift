@@ -50,6 +50,8 @@ final class AppState {
     let kanbanHistory = KanbanHistory()
     /// Bumped by every Kanban save and by a restore (01 §2.5).
     let kanbanGeneration = KanbanStoreGeneration()
+    /// A refused or failed board change, shown as an alert by the Kanban module.
+    var kanbanError: String?
 
     private let calendar: Calendar
 

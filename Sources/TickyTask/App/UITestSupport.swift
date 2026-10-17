@@ -79,8 +79,40 @@ enum UITestSupport {
                 try seedRecurringSeries(service)
             }
             try service.save()
+            if ProcessInfo.processInfo.arguments.contains("-uitestKanbanSeed") {
+                try seedKanban(context)
+            }
         } catch {
             // Seeding is best-effort; a failed seed just yields an empty test board.
+        }
+    }
+
+    /// Opt-in boards for the Kanban UI tests: "Platform" (Ravi full-time; Mia, a 50%
+    /// part-time contractor ending in 10 days; cards in every column, one overdue and
+    /// blocked) and "Data", where Mia is 60%, so she's over-allocated across boards.
+    @MainActor
+    private static func seedKanban(_ context: ModelContext) throws {
+        let kanban = KanbanService(context)
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let platform = try kanban.createProject(name: "Platform", key: "PLAT")
+        let ravi = try kanban.addMembership(try kanban.createPerson(name: "Ravi Kumar", initials: "RK"), to: platform)
+        let miaPerson = try kanban.createPerson(name: "Mia Chen", initials: "MC", employment: .contractor)
+        let mia = try kanban.addMembership(miaPerson, to: platform, allocationPercent: 50, assignment: .partTime)
+        try kanban.editMembership(mia, [.endDate: .date(calendar.date(byAdding: .day, value: 10, to: today)!)])
+        let columns = platform.orderedColumns
+        _ = try kanban.createTask(in: platform, title: "Triage inbox")
+        let api = try kanban.createTask(in: platform, title: "Build API", column: columns[1], row: .resource(ravi.id))
+        try kanban.edit(api, [.priority: .int(TaskPriority.high.rawValue), .dueDate: .date(calendar.date(byAdding: .day, value: -2, to: today)!),
+                              .isBlocked: .bool(true), .blockedReason: .string("Waiting on keys")])
+        _ = try kanban.createTask(in: platform, title: "Write docs", column: columns[1], row: .resource(mia.id))
+        _ = try kanban.createTask(in: platform, title: "Ship v1", column: columns[2], row: .resource(ravi.id))
+        let data = try kanban.createProject(name: "Data", key: "DATA")
+        let miaOnData = try kanban.addMembership(miaPerson, to: data, allocationPercent: 60)
+        _ = try kanban.createTask(in: data, title: "Load warehouse", column: data.orderedColumns[1], row: .resource(miaOnData.id))
+        // `-uitestKanbanWide`: enough columns that the board scrolls sideways.
+        if ProcessInfo.processInfo.arguments.contains("-uitestKanbanWide") {
+            for index in 1...6 { _ = try kanban.addColumn(to: platform, name: "Stage \(index)", at: 2) }
         }
     }
 
