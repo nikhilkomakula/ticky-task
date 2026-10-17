@@ -88,5 +88,6 @@ extension JSONEncoder {
 }
 
 extension JSONDecoder {
-    static var kanbanPayload: JSONDecoder { JSONDecoder() }
+    /// One decoder for every payload: making a new one per entry dominated decoding a long log.
+    static let kanbanPayload = JSONDecoder()
 }

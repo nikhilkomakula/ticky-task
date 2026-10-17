@@ -24,6 +24,8 @@ struct KanbanViewControls: View {
             Picker("View", selection: Binding(get: { state.view }, set: { view in app.updateBoardState(project, context: context) { $0.view = view } })) {
                 Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
                 Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
+                Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -96,6 +98,7 @@ struct KanbanFilterPopover: View {
                 }
             }
             Toggle("Critical only", isOn: binding(\.criticalOnly, filter))
+            Toggle("Open cards only", isOn: binding(\.openOnly, filter))
             Toggle("Blocked only", isOn: binding(\.blockedOnly, filter))
             LabeledContent("People") {
                 VStack(alignment: .leading) {
@@ -214,6 +217,11 @@ struct KanbanFilterChips: View {
         }
         if let jira = f.hasJira { chips.append(Chip(label: jira ? "Has Jira" : "No Jira") { $0.hasJira = nil }) }
         if let estimate = f.hasEstimate { chips.append(Chip(label: estimate ? "Has estimate" : "No estimate") { $0.hasEstimate = nil }) }
+        if f.openOnly { chips.append(Chip(label: "Open only") { $0.openOnly = false }) }
+        if f.excludeCritical { chips.append(Chip(label: "Not Critical") { $0.excludeCritical = false }) }
+        for column in project.orderedColumns where f.columnIDs.contains(column.id) {
+            chips.append(Chip(label: column.name) { $0.columnIDs.remove(column.id) })
+        }
         return chips
     }
 }

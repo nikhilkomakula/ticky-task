@@ -199,4 +199,12 @@ struct KanbanModuleTests {
         app.revealKanban(taskID: card, projectID: project)
         #expect(app.module == .kanban && app.kanban.selection == .project(project) && app.highlightedKanbanTaskID == card)
     }
+
+    @Test("Display names stay apart from each other and from reserved categories")
+    func uniqueNames() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let names = KanbanUI.uniqueNames([(a, "No label"), (b, "Bug"), (c, "Bug")], reserved: ["No label"])
+        #expect(names[a] == "No label (2)" && names[b] == "Bug" && names[c] == "Bug (2)")
+        #expect(KanbanUI.uniqueNames([(a, "Unassigned")])[a] == "Unassigned (2)")
+    }
 }

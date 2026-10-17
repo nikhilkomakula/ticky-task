@@ -4,7 +4,7 @@ import Foundation
 /// Stored as JSON in `KanbanProject.boardState`; every key is optional, so older or newer
 /// states decode to what they have.
 struct KanbanBoardState: Codable, Equatable, Sendable {
-    enum ViewKind: String, Codable, CaseIterable, Sendable { case board, list }
+    enum ViewKind: String, Codable, CaseIterable, Sendable { case board, list, timeline, dashboard }
     enum Sort: String, Codable, CaseIterable, Sendable {
         case manual, priority, dueDate, title
         var label: String {
@@ -98,6 +98,12 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
     /// nil: either; true: has one; false: hasn't.
     var hasJira: Bool?
     var hasEstimate: Bool?
+    /// Only cards not in a Done column.
+    var openOnly = false
+    /// Leave out Critical cards (the priority rows of the dashboard count them apart).
+    var excludeCritical = false
+    /// Only cards in these columns.
+    var columnIDs: Set<UUID> = []
 
     init() {}
 
@@ -113,6 +119,9 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         blockedOnly = (try? c.decodeIfPresent(Bool.self, forKey: .blockedOnly)) ?? false
         hasJira = try? c.decodeIfPresent(Bool.self, forKey: .hasJira)
         hasEstimate = try? c.decodeIfPresent(Bool.self, forKey: .hasEstimate)
+        openOnly = (try? c.decodeIfPresent(Bool.self, forKey: .openOnly)) ?? false
+        excludeCritical = (try? c.decodeIfPresent(Bool.self, forKey: .excludeCritical)) ?? false
+        columnIDs = (try? c.decodeIfPresent(Set<UUID>.self, forKey: .columnIDs)) ?? []
     }
 
     var isActive: Bool { self != KanbanCardFilter() }
@@ -131,6 +140,9 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         if blockedOnly, !task.isBlocked { return false }
         if let hasJira, (task.jiraURL.map { KanbanMetrics.isWebURL($0) } ?? false) != hasJira { return false }
         if let hasEstimate, (task.estimateHours != nil) != hasEstimate { return false }
+        if openOnly, task.column?.kind == .done { return false }
+        if excludeCritical, task.isCritical { return false }
+        if !columnIDs.isEmpty, !(task.column.map { columnIDs.contains($0.id) } ?? false) { return false }
         return true
     }
 

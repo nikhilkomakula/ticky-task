@@ -306,4 +306,41 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-card-Load warehouse").waitForExistence(timeout: 5), "the Data board opens on the card")
         XCTAssertTrue(element(app, "kanban-breadcrumb").label.contains("Data") || (element(app, "kanban-breadcrumb").value as? String ?? "").contains("Data"))
     }
+
+    // MARK: - Increment 7: dashboard, timeline
+
+    func testDashboardShowsChartsAndOpensAFilteredBoard() {
+        let app = launch()
+        openPlatform(app)
+        app.radioButtons["Dashboard"].firstMatch.click()
+        XCTAssertTrue(element(app, "kanban-dash-load").waitForExistence(timeout: 5), "the dashboard opens")
+        // The charts are in a lazy grid: one below the fold isn't in the tree until scrolled to.
+        let dashboard = element(app, "kanban-dashboard")
+        func reveal(_ id: String) -> Bool {
+            // The sign of a scroll delta differs between setups; try one way, then the other.
+            for delta in [0.0] + Array(repeating: -300.0, count: 12) + Array(repeating: 300.0, count: 24) {
+                if delta != 0 { dashboard.scroll(byDeltaX: 0, deltaY: delta) }
+                if element(app, id).waitForExistence(timeout: 0.5) { return true }
+            }
+            return false
+        }
+        for id in ["kanban-dash-load", "kanban-dash-heatmap", "kanban-dash-columns", "kanban-dash-due", "kanban-dash-cfd", "kanban-dash-hygiene"] {
+            XCTAssertTrue(reveal(id), "\(id) should be on the dashboard")
+        }
+        XCTAssertTrue(reveal("kanban-dash-open-due"))
+        element(app, "kanban-dash-open-due").click()
+        XCTAssertTrue(element(app, "kanban-chip-Overdue").waitForExistence(timeout: 5), "the board opens filtered to overdue")
+        XCTAssertTrue(element(app, "kanban-card-Build API").exists, "the overdue card is shown")
+        XCTAssertFalse(element(app, "kanban-card-Triage inbox").exists)
+    }
+
+    func testTimelineShowsDatedCards() {
+        let app = launch()
+        openPlatform(app)
+        app.radioButtons["Timeline"].firstMatch.click()
+        XCTAssertTrue(element(app, "kanban-timeline").waitForExistence(timeout: 5))
+        // A SwiftUI Text's string is its accessibility value on macOS, not its label.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "value CONTAINS 'without dates'")).firstMatch.waitForExistence(timeout: 5),
+                      "undated cards are counted")
+    }
 }

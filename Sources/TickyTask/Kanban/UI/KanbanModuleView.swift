@@ -24,11 +24,13 @@ struct KanbanModuleView: View {
                 case let .project(id):
                     if let project = projects.first(where: { $0.id == id }) {
                         VStack(spacing: 0) {
-                            KanbanFilterChips(project: project)
-                            if KanbanBoardState.decode(project.boardState).view == .list {
-                                KanbanListView(project: project)
-                            } else {
-                                KanbanBoardView(project: project, allProjects: projects)
+                            // The dashboard shows the whole board, so no filter chips there.
+                            if KanbanBoardState.decode(project.boardState).view != .dashboard { KanbanFilterChips(project: project) }
+                            switch KanbanBoardState.decode(project.boardState).view {
+                            case .board: KanbanBoardView(project: project, allProjects: projects)
+                            case .list: KanbanListView(project: project)
+                            case .timeline: KanbanTimelineView(project: project)
+                            case .dashboard: KanbanDashboardView(project: project)
                             }
                         }
                         .modifier(KanbanProjectScope(project: project))
@@ -109,6 +111,23 @@ enum KanbanUI {
     }
 
     static func color(_ hex: String?) -> Color? { hex.flatMap { Color(hex: $0) } }
+
+    /// Display names that tell people with the same name apart ("Alex", "Alex (2)").
+    /// Every label differs from every other and from `reserved` (e.g. the Unassigned row).
+    static func uniqueNames(_ people: [(id: UUID, name: String)], reserved: Set<String> = ["Unassigned"]) -> [UUID: String] {
+        var used = reserved
+        var result: [UUID: String] = [:]
+        for person in people {
+            var label = person.name, n = 1
+            while used.contains(label) {
+                n += 1
+                label = "\(person.name) (\(n))"
+            }
+            used.insert(label)
+            result[person.id] = label
+        }
+        return result
+    }
 
     static func bandColor(_ band: KanbanMetrics.Band?) -> Color {
         switch band {
