@@ -26,7 +26,6 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
 
     private var initialLabels: [DraftLabel]
     var labels: [DraftLabel]
-    private var symbolsCleared: Set<UUID> = []
 
     init(from labels: [KanbanLabel]) {
         let drafts = labels.sorted { $0.sortIndex < $1.sortIndex }
@@ -52,20 +51,17 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
         }
     }
 
-    /// Mark a label's symbol as explicitly cleared (set to nil).
-    mutating func clearSymbol(id: UUID) {
-        symbolsCleared.insert(id)
+    /// Sets a label's symbol exactly; nil means None.
+    mutating func setSymbol(id: UUID, to symbolName: String?) {
+        if let index = labels.firstIndex(where: { $0.id == id }) { labels[index].symbolName = symbolName }
     }
 
-    /// Unmark a label's symbol as cleared (if they select a symbol after clearing).
-    mutating func unmarkSymbolCleared(id: UUID) {
-        symbolsCleared.remove(id)
-    }
+    /// Mark a label's symbol as cleared (the same as choosing None).
+    mutating func clearSymbol(id: UUID) { setSymbol(id: id, to: nil) }
 
     /// Delete a label.
     mutating func delete(id: UUID) {
         labels.removeAll { $0.id == id }
-        symbolsCleared.remove(id)
     }
 
     /// Move a label up in the list.
@@ -128,12 +124,7 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
                 }
                 if label.symbolName != initial.symbolName {
                     if edit == nil { edit = KanbanLabelChanges.Edit(id: label.id) }
-                    edit?.symbolName = label.symbolName
-                    changed = true
-                }
-                if symbolsCleared.contains(label.id) {
-                    if edit == nil { edit = KanbanLabelChanges.Edit(id: label.id) }
-                    edit?.clearsSymbol = true
+                    if let symbol = label.symbolName { edit?.symbolName = symbol } else { edit?.clearsSymbol = true }
                     changed = true
                 }
                 if changed, let edit { changes.edits.append(edit) }

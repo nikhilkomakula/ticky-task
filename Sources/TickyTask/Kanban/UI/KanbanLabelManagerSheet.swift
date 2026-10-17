@@ -19,7 +19,6 @@ struct KanbanLabelManagerSheet: View {
     @State private var editName = ""
     @State private var editColor = Color.gray
     @State private var editSymbolName: String? = nil
-    @State private var initialEditSymbolName: String? = nil
     @State private var error: String?
     @State private var deleteConfirmID: UUID?
     @State private var fromCardEditor: Bool = false
@@ -112,8 +111,7 @@ struct KanbanLabelManagerSheet: View {
                     .accessibilityIdentifier("kanban-label-cancel")
                 Button("Done", action: done)
                     .keyboardShortcut(.defaultAction)
-                    .accessibilityIdentifier("kanban-label-done")
-                    .disabled(draft.validationError != nil)
+                    .accessibilityIdentifier("kanban-label-done")   // validates the open row too, then saves
             }
         }
         .padding(20)
@@ -281,7 +279,6 @@ struct KanbanLabelManagerSheet: View {
         editName = label.name
         editColor = Color(hex: label.colorHex) ?? .gray
         editSymbolName = label.symbolName
-        initialEditSymbolName = label.symbolName
     }
 
     private func cancelEdit() {
@@ -289,7 +286,6 @@ struct KanbanLabelManagerSheet: View {
         editName = ""
         editColor = .gray
         editSymbolName = nil
-        initialEditSymbolName = nil
     }
 
     private func saveEdit(_ label: KanbanLabelCatalogDraft.DraftLabel) {
@@ -303,12 +299,8 @@ struct KanbanLabelManagerSheet: View {
         } else {
             hexValue = "#8E8E93"
         }
-        draft.edit(id: label.id, name: trimmedName, colorHex: hexValue, symbolName: editSymbolName)
-
-        // Track if the user deliberately cleared the symbol (transitioned from non-nil to nil)
-        if editSymbolName == nil && initialEditSymbolName != nil {
-            draft.clearSymbol(id: label.id)
-        }
+        draft.edit(id: label.id, name: trimmedName, colorHex: hexValue, symbolName: nil)
+        draft.setSymbol(id: label.id, to: editSymbolName)   // nil is None
 
         cancelEdit()
     }
@@ -341,9 +333,9 @@ struct KanbanLabelManagerSheet: View {
         case .project(let project):
             let changes = draft.buildChanges()
             do {
-                app.runKanban {
-                    try app.kanbanService(context).applyLabelChanges(changes, to: project)
-                }
+                // Called directly (not through runKanban, which reports and swallows errors), so a
+                // refused or failed save keeps the sheet and its edits.
+                try app.kanbanService(context).applyLabelChanges(changes, to: project)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription

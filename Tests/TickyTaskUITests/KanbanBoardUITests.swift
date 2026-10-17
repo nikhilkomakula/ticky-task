@@ -18,6 +18,18 @@ final class KanbanBoardUITests: XCTestCase {
         return app
     }
 
+    /// The board's view picker is segmented on a wide window and a menu on a narrow one.
+    private func selectView(_ app: XCUIApplication, _ name: String) {
+        let segment = app.radioButtons[name].firstMatch
+        if segment.waitForExistence(timeout: 2) { segment.click(); return }
+        let picker = app.descendants(matching: .any)["kanban-view-picker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "the view picker exists")
+        picker.click()
+        let item = app.menuItems[name].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "\(name) is in the view menu")
+        item.click()
+    }
+
     private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)[id].firstMatch
     }
@@ -263,7 +275,7 @@ final class KanbanBoardUITests: XCTestCase {
     func testListViewBulkAssignAndUndo() {
         let app = launch()
         openPlatform(app)
-        app.radioButtons["List"].firstMatch.click()
+        selectView(app, "List")
         let row = element(app, "kanban-list-row-Triage inbox")
         XCTAssertTrue(row.waitForExistence(timeout: 5), "the List view shows the cards")
         row.rightClick()
@@ -274,7 +286,7 @@ final class KanbanBoardUITests: XCTestCase {
         let table = element(app, "kanban-list")
         XCTAssertTrue(eventually { table.staticTexts["Mia Chen"].exists }, "assigned to Mia")
         app.typeKey("z", modifierFlags: .command)   // in the List view
-        app.radioButtons["Board"].firstMatch.click()
+        selectView(app, "Board")
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-To Do-Unassigned")) },
                       "⌘Z in the List view undoes it")
     }
@@ -315,7 +327,7 @@ final class KanbanBoardUITests: XCTestCase {
     func testDashboardShowsChartsAndOpensAFilteredBoard() {
         let app = launch()
         openPlatform(app)
-        app.radioButtons["Dashboard"].firstMatch.click()
+        selectView(app, "Dashboard")
         XCTAssertTrue(element(app, "kanban-dash-load").waitForExistence(timeout: 5), "the dashboard opens")
         // The charts are in a lazy grid: one below the fold isn't in the tree until scrolled to.
         let dashboard = element(app, "kanban-dashboard")
@@ -340,7 +352,7 @@ final class KanbanBoardUITests: XCTestCase {
     func testTimelineShowsDatedCards() {
         let app = launch()
         openPlatform(app)
-        app.radioButtons["Timeline"].firstMatch.click()
+        selectView(app, "Timeline")
         XCTAssertTrue(element(app, "kanban-timeline").waitForExistence(timeout: 5))
         // A SwiftUI Text's string is its accessibility value on macOS, not its label.
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "value CONTAINS 'without dates'")).firstMatch.waitForExistence(timeout: 5),

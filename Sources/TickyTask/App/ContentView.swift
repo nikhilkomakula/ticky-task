@@ -343,9 +343,15 @@ private struct KanbanSummaryContainer: View {
     }
 }
 
-// Make UUID Identifiable so it can be used with .sheet(item:)
-extension UUID: @retroactive Identifiable {
-    public var id: UUID { self }
+/// A board id as a sheet item (rather than making UUID itself Identifiable app-wide).
+private struct BoardSheet: Identifiable {
+    let id: UUID
+}
+
+private extension Binding where Value == UUID? {
+    var boardSheet: Binding<BoardSheet?> {
+        Binding<BoardSheet?>(get: { wrappedValue.map(BoardSheet.init) }, set: { wrappedValue = $0?.id })
+    }
 }
 
 /// Sheet modifiers for ContentView to reduce type-checking complexity.
@@ -367,16 +373,16 @@ private struct ContentViewSheetModifier: ViewModifier {
                 NewCardSheetContent()
                     .environment(app as AppState)
             }
-            .sheet(item: $app.kanbanLabelManagerProjectID) { projectID in
-                KanbanLabelManagerContainer(projectID: projectID)
+            .sheet(item: $app.kanbanLabelManagerProjectID.boardSheet) { sheet in
+                KanbanLabelManagerContainer(projectID: sheet.id)
                     .environment(app as AppState)
             }
-            .sheet(item: $app.kanbanChangeLogProjectID) { projectID in
-                KanbanChangeLogContainer(projectID: projectID)
+            .sheet(item: $app.kanbanChangeLogProjectID.boardSheet) { sheet in
+                KanbanChangeLogContainer(projectID: sheet.id)
                     .environment(app as AppState)
             }
-            .sheet(item: $app.kanbanSummaryProjectID) { projectID in
-                KanbanSummaryContainer(projectID: projectID)
+            .sheet(item: $app.kanbanSummaryProjectID.boardSheet) { sheet in
+                KanbanSummaryContainer(projectID: sheet.id)
                     .environment(app as AppState)
             }
     }

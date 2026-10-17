@@ -252,6 +252,11 @@ struct KanbanBoardView: View {
             guard let task = tasks[id], let card = snapshot.cards.first(where: { $0.id == id }),
                   let columnIndex = columns.firstIndex(where: { $0.id == card.columnID }),
                   let rowIndex = snapshot.rows.firstIndex(where: { $0.key == card.row }) else { return .ignored }
+            // Delete on a focused card asks first, as its hover button does (text fields keep the key).
+            if !command, !option, [.delete, .deleteForward].contains(press.key), task.archivedAt == nil {
+                cardToDelete = task
+                return .handled
+            }
             // Moves use the stored order of live cards (archived ones aren't anchors); focus
             // follows what's on screen.
             let siblings = snapshot.cards(in: card.columnID, row: card.row).filter { !$0.archived }.map(\.id)
@@ -689,18 +694,25 @@ private struct KanbanCardSlot<Card: View>: View {
     @ViewBuilder let card: () -> Card
     @State private var overCard = false
     @State private var overButtons = false
+    @FocusState private var actionsFocused: Bool
+    @AccessibilityFocusState private var actionsAXFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let shown = !isDragging && task.archivedAt == nil && (overCard || overButtons || isFocused)
+        let available = !isDragging && task.archivedAt == nil
+        // Focus moving from the card into Edit/Delete (Tab or VoiceOver) keeps them shown.
+        let shown = available && (overCard || overButtons || isFocused || actionsFocused || actionsAXFocused)
         card()
             .onHover { overCard = $0 }
             .overlay(alignment: .topTrailing) {
-                if shown {
+                if available {
                     KanbanCardHoverActions(task: task, onEdit: onEdit, onDelete: onDelete)
                         .onHover { overButtons = $0 }
+                        .focused($actionsFocused)
+                        .accessibilityFocused($actionsAXFocused)
                         .padding(4)
-                        .transition(.opacity)
+                        .opacity(shown ? 1 : 0)
+                        .allowsHitTesting(shown)
                 }
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: shown)

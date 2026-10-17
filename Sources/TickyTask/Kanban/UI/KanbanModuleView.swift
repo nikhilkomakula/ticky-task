@@ -7,6 +7,11 @@ struct KanbanModuleView: View {
     @Environment(AppState.self) private var app
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
 
+    private var activeBoardID: UUID? {
+        guard case let .project(id) = app.kanban.selection, projects.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
+        return id
+    }
+
     var body: some View {
         @Bindable var app = app
         HStack(spacing: 0) {
@@ -42,6 +47,8 @@ struct KanbanModuleView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: activeBoardID, initial: true) { _, id in app.kanbanActiveBoardID = id }
+        .onDisappear { app.kanbanActiveBoardID = nil }
         .onChange(of: app.kanban.selection, initial: true) { _, selection in
             if case let .project(id) = selection { UserDefaults.standard.set(id.uuidString, forKey: KanbanPopover.lastProjectKey) }
         }

@@ -158,7 +158,6 @@ private struct NewItemCommand: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
     @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
-    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     let appState: AppState
 
     var body: some View {
@@ -179,14 +178,9 @@ private struct NewItemCommand: View {
         .disabled(module == .kanban && !isKanbanWithActiveBoard)
     }
 
+    /// Commands get no model context, so the Kanban module publishes the board it shows.
     private func isActiveBoard() -> Bool {
-        if case let .project(projectID) = appState.kanban.selection {
-            // Check if the project exists and is not archived
-            if let project = projects.first(where: { $0.id == projectID }) {
-                return project.archivedAt == nil
-            }
-            return false
-        }
+        if case let .project(projectID) = appState.kanban.selection { return appState.kanbanActiveBoardID == projectID }
         return false
     }
 }

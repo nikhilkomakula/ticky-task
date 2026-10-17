@@ -42,9 +42,9 @@ struct KanbanTimelineView: View {
         let undated = cards.count - bars.count
 
         // Build column style map for colouring bars.
-        let columnMap = Dictionary(project.orderedColumns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // By column id: two columns may share a name.
         let columnStyleMap = Dictionary(project.orderedColumns.map { column in
-            (column.name, KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent)
+            (column.id, KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent)
         }, uniquingKeysWith: { a, _ in a })
 
         VStack(alignment: .leading, spacing: 8) {
@@ -57,7 +57,7 @@ struct KanbanTimelineView: View {
                     RuleMark(x: .value("Today", today)).foregroundStyle(.secondary).lineStyle(StrokeStyle(dash: [3, 3]))
                     ForEach(bars) { bar in
                         BarMark(xStart: .value("Start", bar.start), xEnd: .value("End", bar.end), y: .value("Person", bar.person))
-                            .foregroundStyle(columnStyleMap[bar.column] ?? .gray)
+                            .foregroundStyle(columnStyleMap[bar.columnID] ?? .gray)
                             .opacity(bar.overdue ? 1 : 0.85)
                             .annotation(position: .overlay, alignment: .leading) {
                                 Text(bar.title)
@@ -66,8 +66,8 @@ struct KanbanTimelineView: View {
                                     .foregroundStyle(.primary)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
-                                    .background((columnStyleMap[bar.column] ?? .accentColor).opacity(0.2))
-                                    .cornerRadius(2)
+                                    // A native surface under the title, so it reads on any column colour.
+                                    .background(RoundedRectangle(cornerRadius: 2).fill(.regularMaterial))
                             }
                             .accessibilityLabel(bar.title)
                             .accessibilityValue("\(bar.person), \(bar.start.formatted(date: .abbreviated, time: .omitted)) to \(bar.end.formatted(date: .abbreviated, time: .omitted))")

@@ -59,6 +59,8 @@ final class AppState {
     var kanbanClock = AppState.currentKanbanClock()
     /// The menu-bar popover's Planner | Kanban choice, kept until relaunch (nil: the Default view).
     var popoverModule: AppModule?
+    /// The open, unarchived board the Kanban module is showing (nil otherwise), for ⌘N.
+    var kanbanActiveBoardID: UUID?
 
     static func currentKanbanClock() -> String { "\(WeekMath.dayKey(for: Date()))|\(TimeZone.current.identifier)" }
 

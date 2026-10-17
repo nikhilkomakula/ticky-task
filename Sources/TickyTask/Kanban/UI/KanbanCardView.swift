@@ -28,11 +28,23 @@ struct KanbanCardView: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .animation(.easeInOut(duration: 0.2), value: highlighted)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(priority == .low ? "Low priority" : "")   // shown as nothing, still spoken
+        .accessibilityValue(spokenDetails)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Edit", onOpen)
         .accessibilityAction(named: "Delete") { onDelete?() }
         .accessibilityIdentifier("kanban-card-\(task.title)")
+    }
+
+    /// What the combined card element says beyond the visible labels: the hidden Low
+    /// priority, the blocked reason, what it depends on and any labels past the visible two.
+    private var spokenDetails: String {
+        var parts: [String] = []
+        if priority == .low { parts.append("Low priority") }
+        if task.isBlocked, let reason = task.blockedReason, !reason.isEmpty { parts.append("Blocked: \(reason)") }
+        if !task.dependsOn.isEmpty { parts.append("Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))") }
+        let labels = task.labels.sorted { $0.sortIndex < $1.sortIndex }.dropFirst(compact ? 1 : 2)
+        if !labels.isEmpty { parts.append("Also labelled \(labels.map(\.name).joined(separator: ", "))") }
+        return parts.joined(separator: ", ")
     }
 
     private var cardContent: some View {
@@ -111,7 +123,7 @@ struct KanbanCardView: View {
         let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
             || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 if let due = task.dueDate { dueLabel(due) }
                 if project.loadMeasure == .hours, let hours = task.estimateHours {
                     Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h").monospacedDigit()
