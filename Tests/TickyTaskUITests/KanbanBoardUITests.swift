@@ -132,7 +132,8 @@ final class KanbanBoardUITests: XCTestCase {
         element(app, "kanban-editor-done").click()
         XCTAssertTrue(element(app, "kanban-card-Triage support inbox").waitForExistence(timeout: 5), "the card is renamed")
         XCTAssertFalse(element(app, "kanban-editor-title").exists, "the editor closed")
-        XCTAssertTrue(app.staticTexts["0/1"].firstMatch.exists, "the card shows its step count")
+        openEditor(app, "Triage support inbox")
+        XCTAssertTrue(element(app, "kanban-step-toggle-Read new mail").waitForExistence(timeout: 5), "the step was saved")
     }
 
     func testAnInvalidJiraLinkIsRefused() {

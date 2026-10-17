@@ -45,4 +45,25 @@ struct KanbanEditorTests {
         try s.redo(in: project)
         #expect(step.title == "Final")
     }
+
+    @Test("The editor's pre-save checks refuse what the operations would, without changing anything")
+    func preSaveChecks() throws {
+        let (s, _, project, card) = try board()
+        let doing = project.orderedColumns[1]
+        project.wipPolicy = .block
+        try s.editColumn(doing, wipLimit: .some(1))
+        _ = try s.createTask(in: project, title: "Busy", column: doing)
+        let entries = project.activities.count
+        #expect(throws: KanbanServiceError.wipBlocked([doing.id])) {
+            try s.checkMove(.cards([card.id], to: .columnHeader(doing.id)), in: project)
+        }
+        let other = try s.createTask(in: project, title: "Other")
+        try s.setDependencies(other, [card])
+        let afterSetup = project.activities.count
+        #expect(throws: KanbanServiceError.self, "a cycle") { try s.checkDependencies(card, [other]) }
+        #expect(throws: KanbanServiceError.self) { try KanbanService.checkEdit([.estimateHours: .double(-1)]) }
+        try KanbanService.checkEdit([.title: .string("Fine"), .jiraURL: nil])
+        #expect(card.column?.id == project.orderedColumns[0].id && card.dependsOn.isEmpty)
+        #expect(project.activities.count == afterSetup && afterSetup > entries)
+    }
 }

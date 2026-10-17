@@ -576,10 +576,9 @@ struct KanbanService {
         case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason
     }
 
-    /// Edits card fields; only changed fields are recorded. Every value is checked first.
-    func edit(_ task: KanbanTask, _ values: [TaskField: KanbanValue?]) throws {
-        try RecurrenceMaterializer.checkpoint(context)
-        guard let project = task.project else { throw KanbanServiceError.notFound }
+    /// Throws what `edit` would throw for `values`, changing nothing (the editor checks
+    /// everything before it saves anything).
+    static func checkEdit(_ values: [TaskField: KanbanValue?]) throws {
         for (field, value) in values {
             switch (field, value) {
             case let (.title, .string(t)?): guard !t.trimmingCharacters(in: .whitespaces).isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
@@ -592,6 +591,31 @@ struct KanbanService {
             default: throw KanbanServiceError.invariant("\(field.rawValue) can't hold that value.")
             }
         }
+    }
+
+    /// Throws if `op` would be refused (a blocking WIP limit), changing nothing.
+    func checkMove(_ op: MoveOp, in project: KanbanProject) throws {
+        if case let .blocked(columns) = KanbanMoves.plan(op, in: BoardSnapshot.make(project: project), now: now()).wip {
+            throw KanbanServiceError.wipBlocked(columns)
+        }
+    }
+
+    /// Throws if `setDependencies` would refuse `prerequisites`, changing nothing.
+    func checkDependencies(_ task: KanbanTask, _ prerequisites: [KanbanTask]) throws {
+        guard let project = task.project else { throw KanbanServiceError.notFound }
+        for prerequisite in prerequisites {
+            guard prerequisite.project?.id == project.id else { throw KanbanServiceError.invariant("Dependencies stay within a board.") }
+            if prerequisite.id == task.id || dependsTransitively(prerequisite, on: task) {
+                throw KanbanServiceError.invariant("“\(prerequisite.title)” already depends on this card.")
+            }
+        }
+    }
+
+    /// Edits card fields; only changed fields are recorded. Every value is checked first.
+    func edit(_ task: KanbanTask, _ values: [TaskField: KanbanValue?]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let project = task.project else { throw KanbanServiceError.notFound }
+        try Self.checkEdit(values)
         let changes = values.compactMap { field, value -> KanbanFieldChange? in
             let old = taskValue(task, field.rawValue)
             return old == value ? nil : KanbanFieldChange(entity: .task, id: task.id, field: field.rawValue, old: old, new: value)
@@ -610,13 +634,7 @@ struct KanbanService {
 
     /// Replaces a card's prerequisites; refuses self edges and cycles.
     func setDependencies(_ task: KanbanTask, _ prerequisites: [KanbanTask]) throws {
-        guard let project = task.project else { throw KanbanServiceError.notFound }
-        for prerequisite in prerequisites {
-            guard prerequisite.project?.id == project.id else { throw KanbanServiceError.invariant("Dependencies stay within a board.") }
-            if prerequisite.id == task.id || dependsTransitively(prerequisite, on: task) {
-                throw KanbanServiceError.invariant("“\(prerequisite.title)” already depends on this card.")
-            }
-        }
+        try checkDependencies(task, prerequisites)
         try setRelation(task, field: "dependsOn", ids: prerequisites.map(\.id))
     }
 

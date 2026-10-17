@@ -12,7 +12,7 @@ struct KanbanTaskEditor: View {
     @Environment(\.dismiss) private var dismiss
 
     struct StepDraft: Identifiable, Equatable {
-        let id: UUID
+        var id: UUID
         var title: String
         var isDone: Bool
         var isNew = false
@@ -168,7 +168,7 @@ struct KanbanTaskEditor: View {
             LabeledContent("Depends on") {
                 Menu(dependencyIDs.isEmpty ? "None" : dependencyTitles) {
                     ForEach(otherCards) { card in
-                        Toggle(card.title, isOn: Binding(
+                        Toggle(displayTitle(card), isOn: Binding(
                             get: { dependencyIDs.contains(card.id) },
                             set: { if $0 { dependencyIDs.insert(card.id) } else { dependencyIDs.remove(card.id) } }))
                     }
@@ -214,7 +214,7 @@ struct KanbanTaskEditor: View {
                     Spacer()
                     if entry.revertedByActivityID != nil {
                         Text("Reverted").font(.caption).foregroundStyle(.secondary)
-                    } else if entry.seq > (project?.historyBoundarySeq ?? 0) {
+                    } else if entry.seq > (project?.historyBoundarySeq ?? 0), entry.kindRaw != KanbanActivityKind.memberArchived.rawValue {
                         Button("Revert") { revert(entry) }
                             .buttonStyle(.borderless)
                             .accessibilityIdentifier("kanban-editor-revert-\(entry.seq)")
@@ -241,12 +241,16 @@ struct KanbanTaskEditor: View {
         (project?.resources ?? []).filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
     }
 
+    /// Live cards, plus archived ones this card still depends on (so they can be removed).
     private var otherCards: [KanbanTask] {
-        (project?.tasks ?? []).filter { $0.id != task.id && $0.archivedAt == nil }.sorted { $0.title < $1.title }
+        (project?.tasks ?? []).filter { $0.id != task.id && ($0.archivedAt == nil || dependencyIDs.contains($0.id)) }
+            .sorted { $0.title < $1.title }
     }
 
+    private func displayTitle(_ card: KanbanTask) -> String { card.archivedAt == nil ? card.title : "\(card.title) (archived)" }
+
     private var dependencyTitles: String {
-        otherCards.filter { dependencyIDs.contains($0.id) }.map(\.title).joined(separator: ", ")
+        otherCards.filter { dependencyIDs.contains($0.id) }.map(displayTitle).joined(separator: ", ")
     }
 
     /// Unfinished steps first, then finished ones (they sink), each in their order.
@@ -295,65 +299,81 @@ struct KanbanTaskEditor: View {
         return nil
     }
 
+    /// Checks everything first, so no step can be refused once saving starts; each step is
+    /// then its own Change Log entry. If a save itself fails, the message says what's saved.
     private func save() {
         if let problem = problem() { error = problem; return }
         guard let project else { return dismiss() }
         let service = app.kanbanService(context)
         let day = Calendar.current.startOfDay
         let currentRow: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+        let move: MoveOp? = columnID.flatMap { id in
+            id != task.column?.id || row != currentRow ? .cards([task.id], to: .cell(columnID: id, row: row, beforeCardID: nil)) : nil
+        }
+        var values: [KanbanService.TaskField: KanbanValue?] = [
+            .title: .string(title.trimmingCharacters(in: .whitespaces)),
+            .priority: .int(priority.rawValue),
+            .isCritical: .bool(isCritical),
+            .startDate: hasStart ? .date(day(start)) : nil,
+            .dueDate: hasDue ? .date(day(due)) : nil,
+            .estimateHours: hasEstimate ? .double(estimate) : nil,
+            .jiraURL: trimmedJira.isEmpty ? nil : .string(trimmedJira),
+            .isBlocked: .bool(isBlocked),
+            .blockedReason: isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
+                ? .string(blockedReason.trimmingCharacters(in: .whitespaces)) : nil,
+        ]
+        let labels = labelIDs != Set(task.labels.map(\.id)) ? project.labels.filter { labelIDs.contains($0.id) } : nil
+        let prerequisites = dependencyIDs != Set(task.dependsOn.map(\.id)) ? project.tasks.filter { dependencyIDs.contains($0.id) } : nil
         do {
-            // The move first: a blocking WIP limit refuses it before anything else is saved.
-            if let columnID, columnID != task.column?.id || row != currentRow {
-                try service.move(.cards([task.id], to: .cell(columnID: columnID, row: row, beforeCardID: nil)), in: project)
-            }
-            var values: [KanbanService.TaskField: KanbanValue?] = [
-                .title: .string(title.trimmingCharacters(in: .whitespaces)),
-                .priority: .int(priority.rawValue),
-                .isCritical: .bool(isCritical),
-                .startDate: hasStart ? .date(day(start)) : nil,
-                .dueDate: hasDue ? .date(day(due)) : nil,
-                .estimateHours: hasEstimate ? .double(estimate) : nil,
-                .jiraURL: trimmedJira.isEmpty ? nil : .string(trimmedJira),
-                .isBlocked: .bool(isBlocked),
-                .blockedReason: isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? .string(blockedReason.trimmingCharacters(in: .whitespaces)) : nil,
-            ]
             if notes != loadedNotes {
                 let document = NotesAttributedString.document(from: notes)
                 values[.notesRich] = .data(try NotesCodec.encode(document))
                 values[.notes] = .string(document.plainText)
             }
+            if let move { try service.checkMove(move, in: project) }
+            try KanbanService.checkEdit(values)
+            if let prerequisites { try service.checkDependencies(task, prerequisites) }
+        } catch {
+            self.error = error.localizedDescription
+            return
+        }
+        var saved: [String] = []
+        do {
+            if let move { try service.move(move, in: project); saved.append("the move") }
             try service.edit(task, values)
-            if labelIDs != Set(task.labels.map(\.id)) {
-                try service.setLabels(task, project.labels.filter { labelIDs.contains($0.id) })
-            }
-            if dependencyIDs != Set(task.dependsOn.map(\.id)) {
-                try service.setDependencies(task, project.tasks.filter { dependencyIDs.contains($0.id) })
-            }
+            saved.append("the details")
+            if let labels { try service.setLabels(task, labels); saved.append("labels") }
+            if let prerequisites { try service.setDependencies(task, prerequisites); saved.append("dependencies") }
+            loadedNotes = notes
             let suggest = try saveSteps(service)
             if suggest, task.column?.kind != .done { suggestDone = true } else { dismiss() }
         } catch {
-            self.error = error.localizedDescription
+            self.error = saved.isEmpty ? error.localizedDescription
+                : "\(error.localizedDescription) Already saved: \(saved.joined(separator: ", ")). Press Done to save the rest."
         }
     }
 
-    /// Applies step deletions, renames, ticks and additions; returns whether to suggest Done.
+    /// Applies step deletions, renames, ticks and additions. A new step takes its saved id at
+    /// once, so pressing Done again never adds it twice. Suggests Done only when a tick
+    /// finished the list and every step on the card is done afterwards.
     private func saveSteps(_ service: KanbanService) throws -> Bool {
-        var suggest = false
+        var ticked = false
         let kept = Set(steps.map(\.id))
         for subtask in task.subtasks where !kept.contains(subtask.id) { try service.deleteSubtask(subtask) }
-        for draft in steps {
+        for index in steps.indices {
+            let draft = steps[index]
             let subtask: KanbanSubtask
             if draft.isNew {
                 subtask = try service.addSubtask(to: task, title: draft.title.trimmingCharacters(in: .whitespaces))
+                steps[index] = StepDraft(id: subtask.id, title: subtask.title, isDone: subtask.isDone)
             } else {
                 guard let existing = task.subtasks.first(where: { $0.id == draft.id }) else { continue }
                 subtask = existing
                 try service.renameSubtask(subtask, draft.title)
             }
-            if subtask.isDone != draft.isDone, try service.setSubtaskDone(subtask, draft.isDone) { suggest = true }
+            if subtask.isDone != draft.isDone, try service.setSubtaskDone(subtask, draft.isDone) { ticked = true }
         }
-        return suggest
+        return ticked && !task.subtasks.isEmpty && task.subtasks.allSatisfy(\.isDone)
     }
 
     private func moveToDone() {
@@ -363,9 +383,11 @@ struct KanbanTaskEditor: View {
     }
 
     private func revert(_ entry: KanbanActivity) {
+        let id = task.id, project = self.project
         do {
             _ = try app.kanbanService(context).revert(entry)
-            load()
+            // Reverting the card's creation removes it.
+            if task.isDeleted || project?.tasks.contains(where: { $0.id == id }) != true { dismiss() } else { load() }
         } catch {
             self.error = error.localizedDescription
         }
