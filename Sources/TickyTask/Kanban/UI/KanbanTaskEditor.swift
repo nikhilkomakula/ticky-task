@@ -214,7 +214,7 @@ struct KanbanTaskEditor: View {
                     Spacer()
                     if entry.revertedByActivityID != nil {
                         Text("Reverted").font(.caption).foregroundStyle(.secondary)
-                    } else if entry.seq > (project?.historyBoundarySeq ?? 0), entry.kindRaw != KanbanActivityKind.memberArchived.rawValue {
+                    } else if KanbanService.offersRevert(entry) {
                         Button("Revert") { revert(entry) }
                             .buttonStyle(.borderless)
                             .accessibilityIdentifier("kanban-editor-revert-\(entry.seq)")

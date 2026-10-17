@@ -131,9 +131,16 @@ struct KanbanToolbarTrailing: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var prompt: KanbanTextPrompt?
+    @State private var changeLog: KanbanProject?
 
     var body: some View {
         if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
+            Button { changeLog = project } label: { Image(systemName: "clock.arrow.circlepath") }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .help("Change Log")
+                .accessibilityIdentifier("kanban-change-log")
+                .sheet(item: $changeLog) { KanbanChangeLogView(project: $0) }
             Button {
                 prompt = .init(title: "New card", placeholder: "Title") { title in
                     _ = try app.kanbanService(context).createTask(in: project, title: title)

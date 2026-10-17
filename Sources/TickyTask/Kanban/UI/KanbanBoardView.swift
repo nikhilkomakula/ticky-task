@@ -78,7 +78,15 @@ struct KanbanBoardView: View {
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
         .sheet(item: $movingTask) { KanbanMoveSheet(task: $0) }
-        .onDisappear { drag.cancel() }
+        .onAppear {
+            app.kanbanBoardActions = KanbanBoardActions(projectID: project.id,
+                undo: { [app, context, project] in app.runKanban { try app.kanbanService(context).undo(in: project) } },
+                redo: { [app, context, project] in app.runKanban { try app.kanbanService(context).redo(in: project) } })
+        }
+        .onDisappear {
+            drag.cancel()
+            if app.kanbanBoardActions?.projectID == project.id { app.kanbanBoardActions = nil }
+        }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {

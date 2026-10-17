@@ -808,6 +808,15 @@ struct KanbanService {
         return entry
     }
 
+    /// Whether to offer Revert on `activity`: not already reverted, after any restore, and not
+    /// an informational entry. (Revert still checks for newer changes when it runs.)
+    static func offersRevert(_ activity: KanbanActivity) -> Bool {
+        guard activity.revertedByActivityID == nil, let project = activity.project, activity.seq > project.historyBoundarySeq,
+              let kind = KanbanActivityKind(rawValue: activity.kindRaw), ![.memberArchived, .scheduled].contains(kind),
+              let payload = try? KanbanActivityPayload.decode(activity.payload) else { return false }
+        return !(kind == .structure && payload.changes.isEmpty && payload.graph == nil)
+    }
+
     /// ⌘Z: reverts the newest user operation on the board's undo stack.
     func undo(in project: KanbanProject) throws {
         guard let history, let id = history.peekUndo(project.id), let activity = try activity(id) else { return }

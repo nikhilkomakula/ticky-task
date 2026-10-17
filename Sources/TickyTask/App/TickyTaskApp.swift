@@ -42,6 +42,9 @@ struct TickyTaskApp: App {
                 FindTaskCommand(appState: appState)
                 WeeklySummaryCommand(appState: appState)
             }
+            CommandGroup(replacing: .undoRedo) {
+                KanbanUndoCommands(appState: appState)
+            }
             CommandGroup(before: .toolbar) {
                 ModuleCommand(appState: appState, module: .planner, key: "1")
                 ModuleCommand(appState: appState, module: .kanban, key: "2")
