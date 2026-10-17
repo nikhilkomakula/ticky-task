@@ -107,7 +107,8 @@ struct KanbanAllProjectsView: View {
                 .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
-            .accessibilityElement(children: .combine)
+            // `.contain`, not `.combine`: a combined element drops the over-allocation badge's identifier.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kanban-person-\(person.name)")
         }
     }
