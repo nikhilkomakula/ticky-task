@@ -358,9 +358,11 @@ enum BackupStore {
             project.suggestDoneWhenSubtasksComplete = dto.suggestDoneWhenSubtasksComplete
             project.collapsedRowKeys = dto.collapsedRowKeys
             project.boardState = dto.boardState
-            project.nextActivitySeq = dto.nextActivitySeq
+            // Never below an imported entry's number, whatever the file says.
+            let highest = kanban.activities.filter { $0.projectId == dto.id }.map(\.seq).max() ?? 0
+            project.nextActivitySeq = max(dto.nextActivitySeq, highest + 1)
             // Rows are rebuilt from the backup, so earlier entries can't be reverted.
-            project.historyBoundarySeq = dto.nextActivitySeq - 1
+            project.historyBoundarySeq = project.nextActivitySeq - 1
             context.insert(project)
             projectMap[dto.id] = project
         }

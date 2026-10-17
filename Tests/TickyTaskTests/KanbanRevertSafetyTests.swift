@@ -292,4 +292,122 @@ struct KanbanRevertSafetyTests {
         #expect(throws: (any Error).self) { try b.service.undo(in: b.project) }
         #expect(b.history.peekUndo(b.project.id) == top && !b.history.canRedo(b.project.id) && card.title == "New")
     }
+
+    // MARK: - Round 3 (Codex re-review)
+
+    @Test("Adding a column, ⌘Z, ⇧⌘Z brings the same column back")
+    func addColumnUndoRedo() throws {
+        let b = try board()
+        let column = try b.service.addColumn(to: b.project, name: "Review")
+        let id = column.id
+        try b.service.undo(in: b.project)
+        #expect(!b.project.columns.contains { $0.id == id })
+        try b.service.redo(in: b.project)
+        #expect(b.project.orderedColumns.map(\.id).contains(id))
+        #expect(b.project.orderedColumns.map(\.sortIndex) == [0, 1, 2, 3])
+    }
+
+    @Test("Delete a prerequisite, ⌘Z, ⇧⌘Z, ⌘Z: the dependency the undo restored survives each step")
+    func incomingDependencyRedo() throws {
+        let b = try board()
+        let a = try b.service.createTask(in: b.project, title: "A"), dependent = try b.service.createTask(in: b.project, title: "B")
+        try b.service.setDependencies(dependent, [a])
+        let id = a.id
+        b.history.clear()
+        try b.service.deleteTask(a)
+        try b.service.undo(in: b.project)
+        #expect(dependent.dependsOn.map(\.id) == [id])
+        try b.service.redo(in: b.project)
+        #expect(!b.project.tasks.contains { $0.id == id } && dependent.dependsOn.isEmpty)
+        try b.service.undo(in: b.project)
+        #expect(dependent.dependsOn.map(\.id) == [id])
+    }
+
+    @Test("Reverting a column's kind change is refused once the column holds cards")
+    func kindChangeRevertWithCards() throws {
+        let b = try board()
+        let column = try b.service.addColumn(to: b.project, name: "Shipped")
+        try b.service.editColumn(column, kind: .done)
+        let kindChange = b.last()
+        let card = try b.service.createTask(in: b.project, title: "T", column: column)
+        #expect(throws: KanbanServiceError.self) { try b.service.revert(kindChange) }
+        #expect(column.kind == .done && card.completedAt != nil)
+    }
+
+    @Test("A membership archive can't be reverted while its person is archived")
+    func revertMembershipOfArchivedPerson() throws {
+        let b = try board()
+        let mia = try #require(b.mia.person)
+        try b.service.archiveMembership(b.mia)
+        let archive = b.last()
+        try b.service.archivePerson(mia)
+        #expect(throws: KanbanServiceError.self) { try b.service.revert(archive) }
+        #expect(b.mia.archivedAt != nil)
+    }
+
+    @Test("⌘Z doesn't undo past a person archive that changed the same membership")
+    func undoPastPersonArchive() throws {
+        let b = try board()
+        let zoe = try b.service.createPerson(name: "Zoe", initials: "ZO")
+        let membership = try b.service.addMembership(zoe, to: b.project)
+        let group = try b.service.archivePerson(zoe)
+        #expect(throws: KanbanServiceError.self) { try b.service.undo(in: b.project) }
+        #expect(b.project.resources.contains { $0.id == membership.id })
+        try b.service.undoPersonArchive(zoe, group: group)
+        #expect(zoe.archivedAt == nil && membership.archivedAt == nil)
+    }
+
+    @Test("An empty archive group can't undo a later archive")
+    func emptyGroupIsConsumed() throws {
+        let b = try board()
+        let zoe = try b.service.createPerson(name: "Zoe", initials: "ZO")
+        let empty = try b.service.archivePerson(zoe)
+        try b.service.undoPersonArchive(zoe, group: empty)
+        let membership = try b.service.addMembership(zoe, to: b.project)
+        _ = try b.service.archivePerson(zoe)
+        #expect(throws: KanbanServiceError.self) { try b.service.undoPersonArchive(zoe, group: empty) }
+        #expect(zoe.archivedAt != nil && membership.archivedAt != nil)
+    }
+
+    @Test("After branching reverts that net out, the earlier edit can still be reverted")
+    func branchingCancellation() throws {
+        let b = try board()
+        let card = try b.service.createTask(in: b.project, title: "0")
+        try b.service.edit(card, [.title: .string("1")]); let x = b.last()
+        try b.service.edit(card, [.title: .string("2")]); let a = b.last()
+        let r1 = try b.service.revert(a)          // "1"
+        try b.service.revert(r1)                  // "2"
+        try b.service.revert(a)                   // "1" again
+        #expect(card.title == "1")
+        try b.service.revert(x)
+        #expect(card.title == "0")
+    }
+
+    enum MoreDestructive: String, CaseIterable { case deletePerson, undoAddColumn, undoAddMembership, redoDelete }
+
+    @Test("More destructive paths fail closed with the disk unchanged", arguments: MoreDestructive.allCases)
+    func moreDestructiveFailures(_ path: MoreDestructive) throws {
+        let (b, dir) = try diskBoard()
+        let loner = try b.service.createPerson(name: "Loner", initials: "LO")
+        let card = try b.service.createTask(in: b.project, title: "Card")
+        b.history.clear()
+        switch path {
+        case .deletePerson: break
+        case .undoAddColumn: _ = try b.service.addColumn(to: b.project, name: "Review")
+        case .undoAddMembership: _ = try b.service.addMembership(loner, to: b.project)
+        case .redoDelete: try b.service.deleteTask(card); try b.service.undo(in: b.project)
+        }
+        let before = try KanbanBackupDTO.snapshot(context: reopen(dir)).deterministicallySorted()
+        var restarted = false
+        PersistenceRecovery.testHook = { restarted = true }
+        defer { PersistenceRecovery.testHook = nil; PersistenceFaults.armed = [] }
+        PersistenceFaults.armed = [.transaction]
+        switch path {
+        case .deletePerson: #expect(throws: (any Error).self) { try b.service.deletePerson(loner) }
+        case .undoAddColumn, .undoAddMembership: #expect(throws: (any Error).self) { try b.service.undo(in: b.project) }
+        case .redoDelete: #expect(throws: (any Error).self) { try b.service.redo(in: b.project) }
+        }
+        #expect(restarted, "\(path): fails closed")
+        #expect(try KanbanBackupDTO.snapshot(context: reopen(dir)).deterministicallySorted() == before, "\(path): disk unchanged")
+    }
 }

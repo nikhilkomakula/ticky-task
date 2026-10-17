@@ -235,7 +235,9 @@ struct KanbanMigrationGateTests {
         var tasks: [UUID: [String: String]] = [:]
         var subtasks: [UUID: String] = [:]
         var tagLinks: Set<String> = []
-        var counts: [String: Int] = [:]
+        var lists: [UUID: String] = [:]
+        var tags: [UUID: String] = [:]
+        var occurrences: [UUID: String] = [:]
     }
 
     private static func uuid(_ data: Data?) -> UUID? {
@@ -288,7 +290,8 @@ struct KanbanMigrationGateTests {
                    \(pick("ZTASKITEM", "ZTEMPLATEID")), \(pick("ZTASKITEM", "ZTIMEMINUTES")), \(pick("ZTASKITEM", "ZCOLORHEX")),
                    \(pick("ZTASKITEM", "ZALARMENABLED")), \(pick("ZTASKITEM", "ZCOMPLETEDAT")), \(critical), ZCUSTOMLIST,
                    \(pick("ZTASKITEM", "ZSORTINDEX")), \(pick("ZTASKITEM", "ZOCCURRENCEKEY")), \(pick("ZTASKITEM", "ZOCCURRENCEMODIFIED")),
-                   Z_PK
+                   Z_PK, \(pick("ZTASKITEM", "ZFREQUENCY")), \(pick("ZTASKITEM", "ZINTERVAL")), \(pick("ZTASKITEM", "ZSTARTDATE")),
+                   \(pick("ZTASKITEM", "ZRECURRENCEEFFECTIVEFROMKEY")), \(pick("ZTASKITEM", "ZCREATEDAT")), \(pick("ZTASKITEM", "ZUPDATEDAT"))
             FROM ZTASKITEM
             """
         var out = RawPlanner()
@@ -306,6 +309,8 @@ struct KanbanMigrationGateTests {
                 "critical": "\((r[12] as? Int ?? 0) != 0)", "list": (r[13] as? Int).flatMap { lists[$0] }?.uuidString ?? "∅",
                 "sortIndex": "\(double(r[14]) ?? 0)", "occurrenceKey": text(r[15]),
                 "occurrenceModified": (r[16] as? Int).map { "\($0 != 0)" } ?? "∅",
+                "rule": (r[18] as? Int).map { "\($0)/\(r[19] as? Int ?? 0)/\(Self.ms(double(r[20])))" } ?? "∅",
+                "effectiveFrom": text(r[21]), "createdAt": Self.ms(double(r[22])), "updatedAt": Self.ms(double(r[23])),
             ]
         }
         for r in rows("SELECT ZID, ZTITLE, ZISDONE, \(pick("ZSUBTASK", "ZSORTINDEX")), ZPARENT FROM ZSUBTASK") {
@@ -327,8 +332,16 @@ struct KanbanMigrationGateTests {
                 }
             }
         }
-        for table in ["ZCUSTOMLIST", "ZTASKTAG", "ZTASKOCCURRENCE"] {
-            out.counts[table] = rows("SELECT COUNT(*) FROM \(table)").first?[0] as? Int ?? 0
+        for r in rows("SELECT ZID, ZNAME, ZSORTINDEX FROM ZCUSTOMLIST") {
+            if let id = Self.uuid(r[0] as? Data) { out.lists[id] = "\(text(r[1]))|\(double(r[2]) ?? 0)" }
+        }
+        for r in rows("SELECT ZID, ZNAME, \(pick("ZTASKTAG", "ZCOLORHEX")) FROM ZTASKTAG") {
+            if let id = Self.uuid(r[0] as? Data) { out.tags[id] = "\(text(r[1]))|\(text(r[2]))" }
+        }
+        for r in rows("SELECT ZID, ZDAYKEY, ZISDONE, ZSKIPPED, ZTITLEOVERRIDE, ZTIMEOVERRIDE, ZTEMPLATE FROM ZTASKOCCURRENCE") {
+            guard let id = Self.uuid(r[0] as? Data) else { continue }
+            let template = (r[6] as? Int).flatMap { taskPK[$0] }?.uuidString ?? "∅"
+            out.occurrences[id] = "\(text(r[1]))|\((r[2] as? Int ?? 0) != 0)|\((r[3] as? Int ?? 0) != 0)|\(text(r[4]))|\((r[5] as? Int).map { "\($0)" } ?? "∅")|\(template)"
         }
         return out
     }
@@ -344,15 +357,19 @@ struct KanbanMigrationGateTests {
                 "colorHex": t.colorHex ?? "∅", "alarm": "\(t.alarmEnabled)", "completedAt": ms(t.completedAt),
                 "critical": "\(t.isCritical)", "list": t.customList?.id.uuidString ?? "∅", "sortIndex": "\(t.sortIndex)",
                 "occurrenceKey": t.occurrenceKey ?? "∅", "occurrenceModified": t.occurrenceModified.map { "\($0)" } ?? "∅",
+                "rule": t.recurrence.map { "\($0.frequency.rawValue)/\($0.interval)/\(ms($0.startDate))" } ?? "∅",
+                "effectiveFrom": t.recurrenceEffectiveFromKey ?? "∅", "createdAt": ms(t.createdAt), "updatedAt": ms(t.updatedAt),
             ]
             for tag in t.tags { out.tagLinks.insert("\(t.id.uuidString)→\(tag.id.uuidString)") }
         }
         for sub in try context.fetch(FetchDescriptor<Subtask>()) {
             out.subtasks[sub.id] = "\(sub.title)|\(sub.isDone)|\(sub.sortIndex)|\(sub.parent?.id.uuidString ?? "∅")"
         }
-        out.counts = ["ZCUSTOMLIST": try context.fetchCount(FetchDescriptor<CustomList>()),
-                      "ZTASKTAG": try context.fetchCount(FetchDescriptor<TaskTag>()),
-                      "ZTASKOCCURRENCE": try context.fetchCount(FetchDescriptor<TaskOccurrence>())]
+        for list in try context.fetch(FetchDescriptor<CustomList>()) { out.lists[list.id] = "\(list.name)|\(list.sortIndex)" }
+        for tag in try context.fetch(FetchDescriptor<TaskTag>()) { out.tags[tag.id] = "\(tag.name)|\(tag.colorHex ?? "∅")" }
+        for o in try context.fetch(FetchDescriptor<TaskOccurrence>()) {
+            out.occurrences[o.id] = "\(o.dayKey)|\(o.isDone)|\(o.skipped)|\(o.titleOverride ?? "∅")|\(o.timeOverride.map { "\($0)" } ?? "∅")|\(o.template?.id.uuidString ?? "∅")"
+        }
         return out
     }
 
@@ -389,7 +406,8 @@ struct KanbanMigrationGateTests {
             // The migrated rows must match the untouched fixture file itself, read raw.
             let pristine = try rawPlanner(Self.fixtures.appendingPathComponent("\(tag)/TickyTask.store"))
             let migrated = try rawPlannerFromModels(context)
-            #expect(migrated.counts == pristine.counts, "\(tag): planner row counts")
+            #expect(migrated.lists == pristine.lists && migrated.tags == pristine.tags, "\(tag): every list and tag, field for field")
+            #expect(migrated.occurrences == pristine.occurrences, "\(tag): every skip and override record, field for field")
             #expect(Set(migrated.tasks.keys) == Set(pristine.tasks.keys), "\(tag): the same task ids")
             #expect(migrated.subtasks == pristine.subtasks, "\(tag): every subtask, with its parent")
             #expect(migrated.tagLinks == pristine.tagLinks && !pristine.tasks.isEmpty, "\(tag): every tag link")

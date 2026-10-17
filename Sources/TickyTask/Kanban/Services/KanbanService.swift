@@ -165,6 +165,13 @@ struct KanbanService {
             if payload.groupID == group { entries.append((activity, payload)) }
         }
         guard entries.allSatisfy({ $0.0.revertedByActivityID == nil }) else { throw KanbanServiceError.conflict("That archive was already undone.") }
+        guard entries.allSatisfy({ ($0.0.project?.historyBoundarySeq ?? 0) < $0.0.seq }) else {
+            throw KanbanServiceError.conflict("That archive is from before a restore, so it can't be undone.")
+        }
+        if entries.isEmpty, try memberships(of: person).contains(where: { $0.archivedAt == person.archivedAt }) {
+            // An empty group can only undo the archive it made, not a later one that archived boards.
+            throw KanbanServiceError.conflict("A later archive of \(person.name) has to be undone instead.")
+        }
         var conflicts: [String] = []
         for (activity, payload) in entries {
             guard let project = activity.project else { continue }
@@ -223,7 +230,9 @@ struct KanbanService {
         context.insert(column)
         column.project = project
         var order = ordered
-        order.insert(column, at: min(max(index ?? order.count, 0), order.count))
+        let position = min(max(index ?? order.count, 0), order.count)
+        order.insert(column, at: position)
+        column.sortIndex = Double(position)
         let changes = renumber(order)
         try save(project, kind: .structure, taskIDs: [], summary: "Added column \(name)",
                  payload: KanbanActivityPayload(changes: changes, graph: KanbanRemovedGraph(columns: [KanbanColumnDTO(column)])))
@@ -440,7 +449,7 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         guard let project = task.project else { throw KanbanServiceError.notFound }
         let graph = KanbanRemovedGraph(tasks: [KanbanTaskDTO(task)], subtasks: task.subtasks.map(KanbanSubtaskDTO.init),
-                                       incomingDependencies: task.dependents.map { [$0.id, task.id] })
+                                       incomingDependencies: dependents(of: task).map { [$0.id, task.id] })
         let data = try KanbanActivityPayload(graph: graph).encoded()
         let title = task.title, id = task.id
         context.delete(task)   // last: its subtasks cascade, its edges are nullified
@@ -508,9 +517,7 @@ struct KanbanService {
             throw KanbanServiceError.conflict("That change is from before a restore, so it can't be reverted.")
         }
         let payload = try KanbanActivityPayload.decode(activity.payload)
-        // ⌘Z/⇧⌘Z replay their stacks last-in-first-out, so every newer user operation is
-        // already undone; a Change Log revert of an arbitrary entry needs this check.
-        if recordAsUserOperation { try requireNoNewerChanges(to: activity, payload, in: project) }
+        try requireNoNewerChanges(to: activity, payload, in: project)
         // Informational entries (a board's creation, a person archive's per-board record,
         // scheduling to the planner) have no board-level inverse.
         let informational = kind == .structure && payload.changes.isEmpty && payload.graph == nil
@@ -518,7 +525,8 @@ struct KanbanService {
             throw KanbanServiceError.conflict("That change can't be reverted here.")
         }
         let inverse = try inverse(of: kind, payload, in: project)
-        if let problem = KanbanInvariants(project).applying(inverse.kind, inverse.payload).violation {
+        let archivedPeople = Set(try context.fetch(FetchDescriptor<KanbanPerson>()).filter { $0.archivedAt != nil }.map(\.id))
+        if let problem = KanbanInvariants(project, archivedPeople: archivedPeople).applying(inverse.kind, inverse.payload).violation {
             throw KanbanServiceError.conflict("Reverting that would leave the board invalid: \(problem).")
         }
         let data = try inverse.payload.encoded()
@@ -617,6 +625,10 @@ struct KanbanService {
     }
 
     private func task(_ id: UUID, in project: KanbanProject) -> KanbanTask? { project.tasks.first { $0.id == id } }
+
+    private func dependents(of task: KanbanTask) -> [KanbanTask] {
+        task.project?.tasks.filter { $0.dependsOn.contains { $0.id == task.id } } ?? []
+    }
 
     private func assignedSteps(_ resource: KanbanResource) -> [KanbanSubtask] {
         resource.project?.tasks.flatMap(\.subtasks).filter { $0.assignee?.id == resource.id } ?? []
@@ -885,18 +897,18 @@ struct KanbanService {
     private func requireNoNewerChanges(to activity: KanbanActivity, _ payload: KanbanActivityPayload,
                                        in project: KanbanProject) throws {
         let footprint = Self.footprint(activity, payload)
+        let bySeq = Dictionary(project.activities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for later in project.activities where later.seq > activity.seq && later.revertedByActivityID == nil {
-            // Walk its revert chain back to the original entry.
-            var link = later.revertsActivityID, inChain = false, depth = 0, root = later
-            while let id = link, let previous = project.activities.first(where: { $0.id == id }) {
+            // A later entry that reverts another later entry cancels it: no net change
+            // (an undone move, an undone undo …).
+            if let reverted = later.revertsActivityID.flatMap({ bySeq[$0] }), reverted.seq > activity.seq { continue }
+            // Its revert chain leading back to this entry (this entry's own inverses).
+            var link = later.revertsActivityID, inChain = false
+            while let id = link {
                 if id == activity.id { inChain = true; break }
-                depth += 1
-                root = previous
-                link = previous.revertsActivityID
+                link = bySeq[id]?.revertsActivityID
             }
             guard !inChain else { continue }
-            // An odd chain cancels a still-newer original (e.g. a move that was undone): no net change.
-            if depth % 2 == 1, root.seq > activity.seq { continue }
             guard let laterPayload = try? KanbanActivityPayload.decode(later.payload) else {
                 throw KanbanServiceError.conflict("A newer entry can't be read, so this one can't be reverted safely.")
             }
@@ -937,7 +949,9 @@ struct KanbanService {
     /// The inverse of an entry, after checking every row still holds the values it left.
     /// Throws `.conflict` (before any mutation) otherwise.
     private func inverse(of kind: KanbanActivityKind, _ payload: KanbanActivityPayload, in project: KanbanProject) throws -> Inverse {
-        for change in payload.changes {
+        let ownRows = Set((payload.graph?.columns.map(\.id) ?? []) + (payload.graph?.resources.map(\.id) ?? [])
+            + (payload.graph?.tasks.map(\.id) ?? []) + (payload.graph?.subtasks.map(\.id) ?? []))
+        for change in payload.changes where !(kind == .deleted && ownRows.contains(change.id)) {
             guard let current = currentValue(change, in: project) else {
                 throw KanbanServiceError.conflict("Something this change touched no longer exists.")
             }
@@ -1001,7 +1015,9 @@ struct KanbanService {
             || project.tasks.flatMap(\.subtasks).contains(where: { $0.assignee?.id == membership.id }) {
             throw KanbanServiceError.conflict("\(membership.displayName) has cards now; archive them instead.")
         }
-        for card in cards where card.dependents.contains(where: { !removedCards.contains($0.id) })
+        // Dependents a put-back graph restored itself (its incoming edges) may stay; others block.
+        let restoredEdges = Set(graph.incomingDependencies.compactMap { $0.count == 2 ? "\($0[0])>\($0[1])" : nil })
+        for card in cards where dependents(of: card).contains(where: { !removedCards.contains($0.id) && !restoredEdges.contains("\($0.id)>\(card.id)") })
             || card.subtasks.contains(where: { step in !graph.subtasks.contains { $0.id == step.id } }) {
             throw KanbanServiceError.conflict("“\(card.title)” has steps or dependents now; archive it instead.")
         }
@@ -1010,11 +1026,14 @@ struct KanbanService {
             tasks: cards.map(KanbanTaskDTO.init),
             subtasks: (steps + cards.flatMap(\.subtasks)).reduce(into: [KanbanSubtask]()) { all, s in if !all.contains(where: { $0.id == s.id }) { all.append(s) } }
                 .map(KanbanSubtaskDTO.init),
-            incomingDependencies: cards.flatMap { card in card.dependents.filter { !removedCards.contains($0.id) }.map { [$0.id, card.id] } })
+            incomingDependencies: cards.flatMap { card in dependents(of: card).filter { !removedCards.contains($0.id) }.map { [$0.id, card.id] } })
         let keptTransitions = reversedTransitions.filter { !removedCards.contains($0.taskID) }
-        return Inverse(kind: .deleted, payload: KanbanActivityPayload(transitions: keptTransitions, changes: reversedChanges, graph: removed)) {
+        // Field changes to rows this removes don't apply (and couldn't be checked on redo).
+        let removedRows = Set(columns.map(\.id) + memberships.map(\.id) + cards.map(\.id) + steps.map(\.id))
+        let keptChanges = reversedChanges.filter { !removedRows.contains($0.id) }
+        return Inverse(kind: .deleted, payload: KanbanActivityPayload(transitions: keptTransitions, changes: keptChanges, graph: removed)) {
             applyTransitions(keptTransitions, in: project)
-            reversedChanges.forEach { set($0, in: project) }
+            keptChanges.forEach { set($0, in: project) }
             steps.forEach { context.delete($0) }       // deletions last
             cards.forEach { context.delete($0) }
             columns.forEach { context.delete($0) }
@@ -1062,6 +1081,7 @@ struct KanbanService {
                                               allocationPercent: dto.allocationPercent, sortIndex: dto.sortIndex)
                 resource.role = dto.role; resource.capacityHoursPerWeekOverride = dto.capacityHoursPerWeekOverride
                 resource.openTaskTargetOverride = dto.openTaskTargetOverride; resource.startDate = dto.startDate; resource.endDate = dto.endDate
+                resource.archivedAt = dto.archivedAt
                 context.insert(resource); resource.project = project
             }
             var inserted: [UUID: KanbanTask] = [:]

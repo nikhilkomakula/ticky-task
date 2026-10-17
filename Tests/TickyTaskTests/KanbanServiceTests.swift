@@ -269,6 +269,7 @@ struct KanbanServiceTests {
         DiscardedContexts.keep(context)
         let b = try board(context)
         let card = try b.service.createTask(in: b.project, title: "Card")
+        let saved = try KanbanBackupDTO.snapshot(context: ModelContext(try ModelContainerProvider.makeContainer(at: dir.appendingPathComponent("TickyTask.store")))).deterministicallySorted()
 
         PersistenceFaults.armed = [.transaction]
         #expect(throws: (any Error).self) { try b.service.move(.cards([card.id], to: .columnHeader(b.doing.id)), in: b.project) }
@@ -282,8 +283,7 @@ struct KanbanServiceTests {
         #expect(restarted, "a failed delete fails closed")
 
         let reopened = ModelContext(try ModelContainerProvider.makeContainer(at: dir.appendingPathComponent("TickyTask.store")))
-        let onDisk = try reopened.fetch(FetchDescriptor<KanbanTask>())
-        #expect(onDisk.map(\.id) == [card.id] && onDisk.first?.column?.kind == .backlog, "the disk keeps the last saved state")
+        #expect(try KanbanBackupDTO.snapshot(context: reopened).deterministicallySorted() == saved, "the disk keeps the last saved state")
     }
 
     @Test("Change-log entries are numbered in order and survive a reopen")
