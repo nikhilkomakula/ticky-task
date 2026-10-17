@@ -15,8 +15,7 @@ struct KanbanDashboardView: View {
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
         let s = app.kanbanMetrics.snapshot(of: project, key: key, calendar: calendar)
-        let log = app.kanbanMetrics.activities(of: project, key: key)
-        let flow = KanbanReplay.cfd(s, activities: log)   // once, for both history charts
+        let flow = app.kanbanMetrics.flow(of: project, key: key, calendar: calendar)   // cached, for both history charts
         let hours = s.loadMeasure == .hours
         let names = Dictionary(s.cards.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
         let columns = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
@@ -56,9 +55,9 @@ struct KanbanDashboardView: View {
                 }
                 DashboardCard(title: "Cumulative flow, 90 days", id: "cfd") { FlowChart(days: flow, hours: hours) }
                 DashboardCard(title: "Completed work (by latest completion)", id: "throughput",
-                              subtitle: "Reopened work moves out of earlier weeks") { ThroughputChart(weeks: KanbanReplay.throughput(s, activities: log)) }
+                              subtitle: "Reopened work moves out of earlier weeks") { ThroughputChart(weeks: app.kanbanMetrics.throughput(of: project, key: key, calendar: calendar)) }
                 DashboardCard(title: "Age of work in progress", id: "aging") {
-                    AgingList(aging: KanbanReplay.agingWIP(s, activities: log), names: names, columns: columns,
+                    AgingList(aging: app.kanbanMetrics.aging(of: project, key: key, calendar: calendar), names: names, columns: columns,
                               open: { id in app.revealKanban(taskID: id, projectID: project.id) })
                 }
                 DashboardCard(title: "Burn-up, 90 days", id: "burnup") { BurnUpChart(points: KanbanReplay.burnUp(flow, hours: hours), hours: hours) }

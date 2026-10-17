@@ -14,7 +14,6 @@ struct MenuBarContentView: View {
     @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
     @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
     @AppStorage("defaultModule") private var defaultModule = AppModule.planner.rawValue
-    @Query(filter: #Predicate<KanbanTask> { $0.dueDate != nil }) private var kanbanDueTasks: [KanbanTask]
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
 
@@ -106,11 +105,17 @@ struct MenuBarContentView: View {
                     .accessibilityIdentifier("menubar-quit")
                 }
 
-                MiniMonthCalendar(selectedDayKey: $selectedDayKey,
-                                  markedDays: mode == .kanban ? KanbanPopover.dueDayKeys(kanbanDueTasks) : [],
-                                  acceptsDrops: mode == .planner)
-                    .padding(8)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Group {
+                    if mode == .kanban {
+                        MenuBarKanbanCalendarView(selectedDayKey: $selectedDayKey)
+                    } else {
+                        MiniMonthCalendar(selectedDayKey: $selectedDayKey,
+                                          markedDays: [],
+                                          acceptsDrops: true)
+                            .padding(8)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                }
 
                 if ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).showsSwitcher {
                     Picker("Show", selection: Binding(get: { mode }, set: { app.popoverModule = $0 })) {
@@ -199,6 +204,25 @@ struct MenuBarContentView: View {
             NSApp.activate(ignoringOtherApps: true)
             openSettings()
         }
+    }
+}
+
+/// Kanban-only child that restricts the query to active tasks/projects only,
+/// so Planner mode does not instantiate it.
+private struct MenuBarKanbanCalendarView: View {
+    @Binding var selectedDayKey: String
+    @Query(filter: #Predicate<KanbanTask> {
+        $0.dueDate != nil &&
+        $0.archivedAt == nil &&
+        $0.project?.archivedAt == nil
+    }) private var kanbanDueTasks: [KanbanTask]
+
+    var body: some View {
+        MiniMonthCalendar(selectedDayKey: $selectedDayKey,
+                          markedDays: KanbanPopover.dueDayKeys(kanbanDueTasks),
+                          acceptsDrops: false)
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

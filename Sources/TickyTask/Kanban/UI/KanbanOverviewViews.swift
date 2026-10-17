@@ -31,7 +31,7 @@ struct KanbanAllProjectsView: View {
             } else {
                 switch tab {
                 case .boards: boards(zip(live, snapshots).map { ($0, $1) })
-                case .people: people(KanbanMetrics.peopleRollup(snapshots), snapshots: snapshots)
+                case .people: people(app.kanbanMetrics.peopleOrdered(live, key: key, calendar: calendar), snapshots: snapshots)
                 }
             }
         }
