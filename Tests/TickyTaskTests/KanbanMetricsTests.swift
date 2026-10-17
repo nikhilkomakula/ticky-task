@@ -69,6 +69,19 @@ struct KanbanMetricsTests {
         #expect(weeks(s, next) == [0, 10, 0])
     }
 
+    @Test func countModeCountsEveryOpenCardWhateverItsDates() throws {
+        let ravi = F.member("Ravi")
+        let later = (0..<6).map { _ in F.card(F.doing, ravi, due: F.date(10, 28)) }
+        let s = F.board([ravi], later)
+        let r = try row(s, ravi)
+        #expect(r.load == 6 && r.utilisation?.band == .red)
+        let loose = F.card(F.backlog, nil, start: F.date(11, 2))
+        let dragged = F.board([ravi], later + [loose])
+        #expect(M.projectedLoad(dragged, member: ravi, dragged: [loose.id], toColumn: F.doing, toResource: ravi.id).load == 7)
+        #expect(M.capacityHeatmap(s, weeks: 3).first?.weeks.first == .ratio(load: 0, target: 5, .green),
+                "the heatmap still places cards in the weeks their dates touch")
+    }
+
     @Test func loadCountsOnlyOpenUnarchived() throws {
         let ravi = F.member("Ravi")
         var archived = F.card(F.doing, ravi)
@@ -478,10 +491,26 @@ struct KanbanMetricsTests {
     @Test func archivedDepBlocksWithRemedy() {
         var prerequisite = F.card(F.done)
         prerequisite.archived = true
-        var card = F.card()
+        let unfinished = F.card(F.doing)
+        var card = F.card(created: F.date(10, 1)), mixed = F.card(created: F.date(10, 2)), blocked = F.card(created: F.date(10, 3))
         card.dependsOn = [prerequisite.id]
-        let backlog = M.unassignedBacklog(F.board([], [prerequisite, card]))
-        #expect(backlog.ready.isEmpty && backlog.waitingOnArchived == [card.id])
+        mixed.dependsOn = [prerequisite.id, unfinished.id]
+        blocked.dependsOn = [prerequisite.id]
+        blocked.isBlocked = true
+        let backlog = M.unassignedBacklog(F.board([], [prerequisite, unfinished, card, mixed, blocked]))
+        #expect(backlog.ready.isEmpty)
+        #expect(backlog.waitingOnArchived == [card.id, mixed.id, blocked.id], "shown whatever else blocks the card")
+    }
+
+    @Test func backlogGroupsUseHoursInHoursMode() {
+        var estimated = F.card(hours: 2.5), zero = F.card(hours: 0), defaulted = F.card()
+        let label = UUID()
+        estimated.labels = [label]
+        zero.priority = TaskPriority.high.rawValue
+        defaulted.priority = TaskPriority.high.rawValue
+        let backlog = M.unassignedBacklog(F.board([], [estimated, zero, defaulted], hours: true))
+        #expect(backlog.byPriority == [.critical: 0, .high: 4, .medium: 0, .low: 2.5])
+        #expect(backlog.byLabel == [label: 2.5, nil: 4])
     }
 
     @Test func multiLabelCountsPerLabel() {
@@ -624,6 +653,10 @@ struct KanbanMetricsTests {
         good.jiraURL = "https://jira.example.com/browse/PLAT-1"
         var bad = F.card(F.doing, ravi)
         bad.jiraURL = "PLAT-2"
+        for malformed in ["https://", "http:///path", "ftp://jira.example.com/PLAT-3", "  ", "jira.example.com/PLAT-4"] {
+            #expect(!M.isWebURL(malformed), "\(malformed)")
+        }
+        #expect(M.isWebURL(" HTTPS://jira.example.com/browse/PLAT-1 "))
         bad.subtasksTotal = 2
         bad.subtasksDone = 2
         var finished = F.card(F.done)

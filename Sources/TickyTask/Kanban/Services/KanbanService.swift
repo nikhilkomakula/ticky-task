@@ -94,8 +94,19 @@ struct KanbanService {
     /// Edits a board's name, appearance or settings; only changed fields are recorded.
     func editProject(_ project: KanbanProject, _ values: [ProjectField: KanbanValue]) throws {
         try RecurrenceMaterializer.checkpoint(context)
+        for (field, value) in values {
+            guard let current = projectValue(project, field.rawValue), Self.sameKind(current, value) else {
+                throw KanbanServiceError.invariant("\(field.rawValue) can't hold that kind of value.")
+            }
+        }
         if case let .ints(days)? = values[.workWeekDays], days.contains(where: { !(1...7).contains($0) }) {
             throw KanbanServiceError.invariant("Work days are weekday numbers 1–7.")
+        }
+        if case let .string(raw)? = values[.wipPolicyRaw], KanbanWIPPolicy(rawValue: raw) == nil {
+            throw KanbanServiceError.invariant("Unknown WIP policy \(raw).")
+        }
+        if case let .string(raw)? = values[.loadMeasureRaw], KanbanLoadMeasure(rawValue: raw) == nil {
+            throw KanbanServiceError.invariant("Unknown load measure \(raw).")
         }
         let changes = values.compactMap { field, value -> KanbanFieldChange? in
             let old = projectValue(project, field.rawValue)
@@ -969,6 +980,14 @@ struct KanbanService {
         case let ("assignee", .uuid(id)?): subtask.assignee = project.resources.first { $0.id == id }
         case ("assignee", nil): subtask.assignee = nil
         default: break
+        }
+    }
+
+    private static func sameKind(_ a: KanbanValue, _ b: KanbanValue) -> Bool {
+        switch (a, b) {
+        case (.string, .string), (.int, .int), (.double, .double), (.bool, .bool), (.date, .date), (.uuid, .uuid),
+             (.data, .data), (.uuids, .uuids), (.ints, .ints): true
+        default: false
         }
     }
 

@@ -146,9 +146,10 @@ enum KanbanMetrics {
         return (0..<weeks).map { k in v * Double(d.workDays(max(from, 7 * k), min(end, 7 * k + 6))) / Double(spread) }
     }
 
-    /// v₀: this week's share of a card's load.
+    /// v₀: this week's share of a card's load. In count mode every open card counts in
+    /// full, however it's scheduled; only hours are distributed over weeks.
     static func thisWeek(_ s: MetricsSnapshot, _ d: MetricsDays, _ c: MetricsSnapshot.Card) -> Double {
-        weeklyLoads(s, d, c, weeks: 1)[0]
+        s.loadMeasure == .taskCount ? load(s, c) : weeklyLoads(s, d, c, weeks: 1)[0]
     }
 
     static func countTarget(_ s: MetricsSnapshot, _ m: MetricsSnapshot.Member) -> Double {
@@ -429,11 +430,12 @@ enum KanbanMetrics {
     struct Backlog: Sendable, Equatable {
         /// Oldest first.
         var items: [UUID]
-        var byPriority: [PriorityRow: Int]
+        /// Σ m: cards in count mode, hours in hours mode.
+        var byPriority: [PriorityRow: Double]
         /// nil is "No label".
-        var byLabel: [UUID?: Int]
+        var byLabel: [UUID?: Double]
         var ready: [UUID]
-        /// Ready except for a prerequisite that is archived: "Waiting on an archived task".
+        /// Has an archived prerequisite: "Waiting on an archived task", whatever else blocks it.
         var waitingOnArchived: [UUID]
         var unassignedActiveCount: Int
     }
@@ -446,18 +448,15 @@ enum KanbanMetrics {
                              byLabel: [:], ready: [], waitingOnArchived: [],
                              unassignedActiveCount: s.cards.filter { !$0.archived && $0.resource == nil && s.kind(of: $0) == .active }.count)
         for c in cards {
-            result.byPriority[priorityRow(c), default: 0] += 1
-            if c.labels.isEmpty { result.byLabel[nil, default: 0] += 1 }
-            for label in c.labels { result.byLabel[label, default: 0] += 1 }
+            let m = measure(s, c)
+            result.byPriority[priorityRow(c), default: 0] += m
+            if c.labels.isEmpty { result.byLabel[nil, default: 0] += m }
+            for label in c.labels { result.byLabel[label, default: 0] += m }
             // A prerequisite that no longer exists can't block; an archived one does, because
             // archiving can be undone.
             let prerequisites = c.dependsOn.compactMap { byID[$0] }
-            guard !c.isBlocked else { continue }
-            if prerequisites.allSatisfy(s.isDone) {
-                result.ready.append(c.id)
-            } else if prerequisites.allSatisfy({ s.isDone($0) || $0.archived }) {
-                result.waitingOnArchived.append(c.id)
-            }
+            if prerequisites.contains(where: \.archived) { result.waitingOnArchived.append(c.id) }
+            if !c.isBlocked, prerequisites.allSatisfy(s.isDone) { result.ready.append(c.id) }
         }
         return result
     }
@@ -540,13 +539,18 @@ enum KanbanMetrics {
         var pastEndHoldingWork: [UUID] = []
     }
 
+    static func isWebURL(_ text: String?) -> Bool {
+        guard let text, let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        return !(url.host() ?? "").isEmpty
+    }
+
     static func hygieneReport(_ s: MetricsSnapshot) -> Hygiene {
         var h = Hygiene()
         for c in s.cards where !c.archived {
             if s.isOpen(c) {
                 if c.dueDate == nil { h.missingDue.append(c.id) }
-                let url = (c.jiraURL ?? "").trimmingCharacters(in: .whitespaces).lowercased()
-                if !(url.hasPrefix("http://") || url.hasPrefix("https://")) { h.missingJira.append(c.id) }
+                if !isWebURL(c.jiraURL) { h.missingJira.append(c.id) }
                 if s.loadMeasure == .hours, c.estimateHours == nil { h.missingEstimate.append(c.id) }
                 if c.subtasksTotal > 0, c.subtasksDone == c.subtasksTotal { h.subtasksDoneNotDone.append(c.id) }
             } else if c.subtasksDone < c.subtasksTotal {

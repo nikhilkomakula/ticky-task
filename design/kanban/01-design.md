@@ -194,7 +194,8 @@ rollback (B11).
 - Every row of §4 has a unit test.
 
 ### 2.2 Service invariants (`KanbanService`, `@MainActor`)
-Every mutation follows the same sequence:
+Every board change follows the same sequence (view state — row collapse, `boardState`, sidebar order — is saved
+without an activity and isn't undoable; I-D6):
 1. Checkpoint unrelated edits.
 2. Validate.
 3. Apply the change.

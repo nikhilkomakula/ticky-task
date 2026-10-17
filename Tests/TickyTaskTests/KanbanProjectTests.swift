@@ -86,6 +86,19 @@ struct KanbanProjectTests {
         #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.workWeekDays: .ints([0, 8])]) }
     }
 
+    @Test("An edit with a value of the wrong kind is refused before anything changes")
+    func editProjectRejectsWrongKinds() throws {
+        let (s, history) = service()
+        let project = try s.createProject(name: "Platform", key: "PLAT")
+        history.clear()
+        let entries = project.activities.count
+        #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.name: .string("Core"), .hoursPerDay: .int(6)]) }
+        #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.loadMeasureRaw: .string("points")]) }
+        #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.wipPolicyRaw: .string("never")]) }
+        #expect(project.name == "Platform" && project.hoursPerDay == 8 && project.loadMeasure == .taskCount)
+        #expect(project.activities.count == entries && !history.canUndo(project.id))
+    }
+
     @Test("A board can be archived and restored, and ⌘Z undoes the archive")
     func archiveProject() throws {
         let (s, history) = service()
