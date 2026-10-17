@@ -44,6 +44,8 @@ struct KanbanBoardTransferTests {
         let board = try #require(try to.fetch(FetchDescriptor<KanbanProject>()).first)
         #expect(board.id != project.id, "imported rows get fresh ids")
         #expect(board.orderedColumns.map(\.name) == project.orderedColumns.map(\.name))
+        #expect(board.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name) == project.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name),
+                "labels keep their order")
         #expect(Set(board.tasks.map(\.title)) == ["Build API", "Write docs", "Shipped"])
         let api = try #require(board.tasks.first { $0.title == "Build API" })
         #expect(api.column?.name == "In Progress" && api.resource?.displayName == "Ravi" && api.labels.count == 1 && api.subtasks.count == 1)

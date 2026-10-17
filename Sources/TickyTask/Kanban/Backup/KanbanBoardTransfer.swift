@@ -314,7 +314,7 @@ enum KanbanBoardTransfer {
 
         var labels: [UUID: KanbanLabel] = [:]
         var labelCount = project.labels.count
-        for dto in k.labels.filter({ mine($0.projectId) }) {
+        for dto in k.labels.filter({ mine($0.projectId) }).sorted(by: { $0.sortIndex < $1.sortIndex }) {   // the file is in id order
             if merging, let match = project.labels.first(where: { $0.name == dto.name }) {
                 labels[dto.id] = match
                 continue
