@@ -268,7 +268,9 @@ struct KanbanTaskEditor: View {
 
     /// This card's change-log entries, newest first, each with Revert.
     private var historySection: some View {
-        let entries = (project?.activities ?? []).filter { $0.taskIDs.contains(task.id) }.sorted { $0.seq > $1.seq }
+        let entries: [KanbanActivity] = task.map { card in
+            (card.project?.activities ?? []).filter { $0.taskIDs.contains(card.id) }.sorted { $0.seq > $1.seq }
+        } ?? []
         return Section("History") {
             if entries.isEmpty {
                 Text("No changes yet.").foregroundStyle(.secondary)

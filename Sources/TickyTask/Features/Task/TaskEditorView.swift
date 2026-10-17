@@ -11,7 +11,7 @@ import SwiftData
 struct TaskEditorView: View {
     enum Mode {
         case edit(TaskItem)
-        case create(dayKey: String?, customList: TaskList?)
+        case create(dayKey: String?, customList: CustomList?)
     }
 
     @Environment(\.modelContext) private var context
@@ -26,7 +26,7 @@ struct TaskEditorView: View {
     @State private var originalSubtasks: [SubtaskDraft]
     @State private var newSubtask = ""
     @State private var createDayKey: String?
-    @State private var createCustomList: TaskList?
+    @State private var createCustomList: CustomList?
 
     /// The owning series' rule when `task` is an occurrence; `nil` for a one-off.
     @State private var seriesRule: RecurrenceRule?
@@ -62,7 +62,7 @@ struct TaskEditorView: View {
         _createCustomList = State(initialValue: nil)
     }
 
-    init(newTaskWithDayKey dayKey: String?, customList: TaskList? = nil) {
+    init(newTaskWithDayKey dayKey: String?, customList: CustomList? = nil) {
         self.mode = .create(dayKey: dayKey, customList: customList)
         let attributes = SharedAttributes.default
         _shared = State(initialValue: attributes)
@@ -370,7 +370,7 @@ struct TaskEditorView: View {
             guard !rule.isEquivalent(to: loadedRule) else { return .unchanged }
             return .replace(rule.rule(replacing: seriesRule, startDate: seriesRule.startDate))
         }
-        guard repeatEnabled, let day = task.dayKey.flatMap({ WeekMath.date(fromDayKey: $0) }) else { return .unchanged }
+        guard repeatEnabled, let day = (task?.dayKey ?? effectiveDayKey).flatMap({ WeekMath.date(fromDayKey: $0) }) else { return .unchanged }
         return .startSeries(rule.rule(replacing: nil, startDate: day))
     }
 
