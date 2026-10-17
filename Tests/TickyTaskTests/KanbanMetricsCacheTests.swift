@@ -48,13 +48,20 @@ struct KanbanMetricsCacheTests {
         var activities: [MetricsActivity] { MetricsActivity.records(of: project) }
     }
 
+    /// The fixture's "now" (Wed 14 Oct 2026), so the results don't depend on the test run's date.
+    private func pinnedCache() -> KanbanMetricsCache {
+        let cache = KanbanMetricsCache()
+        cache.now = { F.now }
+        return cache
+    }
+
     private func key(_ generation: Int, _ clock: String = "test") -> KanbanMetricsCache.Key {
         KanbanMetricsCache.Key(generation: generation, clock: clock, weekStartsMonday: true)
     }
 
     @Test("Under one key the derived results are served from the cache; a new generation recomputes them")
     func cachedUntilTheKeyChanges() throws {
-        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        let cache = pinnedCache(), b = try Board(), calendar = F.calendar()
         _ = try b.card("A", on: F.date(10, 1))
         let flow = cache.flow(of: b.project, key: key(1), calendar: calendar)
         let summary = cache.summary(of: b.project, key: key(1), calendar: calendar)
@@ -69,7 +76,7 @@ struct KanbanMetricsCacheTests {
 
     @Test("A clock change recomputes too")
     func clockChangeRecomputes() throws {
-        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        let cache = pinnedCache(), b = try Board(), calendar = F.calendar()
         _ = try b.card("A", on: F.date(10, 1))
         let summary = cache.summary(of: b.project, key: key(1, "day1"), calendar: calendar)
         _ = try b.card("B", on: F.date(10, 2))
@@ -78,7 +85,7 @@ struct KanbanMetricsCacheTests {
 
     @Test("Cached results equal the direct calls on the cache's own snapshot and log")
     func cachedEqualsDirect() throws {
-        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        let cache = pinnedCache(), b = try Board(), calendar = F.calendar()
         let a = try b.card("A", on: F.date(10, 1))
         try b.move(a, to: b.doing, on: F.date(10, 3))
         let k = key(1)
@@ -95,7 +102,7 @@ struct KanbanMetricsCacheTests {
 
     @Test("The ordered people match the rollup, in the same order every time")
     func orderedPeople() throws {
-        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        let cache = pinnedCache(), b = try Board(), calendar = F.calendar()
         try b.service.addMembership(try b.service.createPerson(name: "Ravi", initials: "RV"), to: b.project)
         try b.service.addMembership(try b.service.createPerson(name: "Mia", initials: "MI"), to: b.project)
         let ordered = cache.peopleOrdered([b.project], key: key(1), calendar: calendar)

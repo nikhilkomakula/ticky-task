@@ -12,6 +12,8 @@ final class KanbanMetricsCache {
         var weekStartsMonday: Bool
     }
 
+    /// "Now" for new snapshots; tests pin it.
+    var now: () -> Date = { Date() }
     private var key: Key?
     private var snapshots: [UUID: MetricsSnapshot] = [:]
     private var rollup: (projects: [UUID], rows: [UUID: KanbanMetrics.PersonRow])?
@@ -35,7 +37,7 @@ final class KanbanMetricsCache {
     func snapshot(of project: KanbanProject, key: Key, calendar: Calendar) -> MetricsSnapshot {
         reset(for: key)
         if let snapshot = snapshots[project.id] { return snapshot }
-        let snapshot = MetricsSnapshot(project: project, now: Date(), calendar: calendar)
+        let snapshot = MetricsSnapshot(project: project, now: now(), calendar: calendar)
         snapshots[project.id] = snapshot
         return snapshot
     }
