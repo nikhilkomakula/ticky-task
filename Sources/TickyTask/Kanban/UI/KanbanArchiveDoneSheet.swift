@@ -46,6 +46,8 @@ struct KanbanArchiveDoneSheet: View {
         }
         .padding(20)
         .frame(width: 420)
+        // A container, so its id doesn't replace the buttons' own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-archive-done-sheet")
     }
 
