@@ -388,9 +388,14 @@ enum KanbanBoardTransfer {
         for dto in k.tasks where tasks[dto.id] != nil {
             tasks[dto.id]?.dependsOn = dto.dependsOnIds.compactMap { tasks[$0] }
         }
-        for dto in k.subtasks {
+        // Each card's steps are renumbered 0, 1, 2… in the file's order: a position from the file
+        // is only an order, and a huge one would stop later additions from going after it.
+        var nextStep: [UUID: Double] = [:]
+        for dto in k.subtasks.sorted(by: { $0.sortIndex < $1.sortIndex }) {
             guard let task = dto.taskId.flatMap({ tasks[$0] }) else { continue }
-            let step = KanbanSubtask(title: dto.title, sortIndex: dto.sortIndex)
+            let position = nextStep[task.id, default: 0]
+            nextStep[task.id] = position + 1
+            let step = KanbanSubtask(title: dto.title, sortIndex: position)
             step.isDone = dto.isDone
             step.completedAt = dto.completedAt
             context.insert(step)

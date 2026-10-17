@@ -290,6 +290,23 @@ struct KanbanBoardTransferTests {
         #expect(try to.fetchCount(FetchDescriptor<KanbanPerson>()) == people && target.resources.count == 1)
     }
 
+    @Test("Imported steps are renumbered in their order, whatever positions the file had")
+    func stepsRenumbered() throws {
+        let (from, project) = try source()
+        let s = KanbanService(from)
+        let api = try #require(project.tasks.first { $0.title == "Build API" })
+        try s.addSubtask(to: api, title: "Tests")
+        let data = try T.export([project], context: from)
+        var envelope = try BackupCoding.decoder().decode(T.Envelope.self, from: data)
+        for i in envelope.kanban.subtasks.indices {
+            envelope.kanban.subtasks[i].sortIndex = envelope.kanban.subtasks[i].title == "Endpoints" ? 0x1p53 : 0x1p53 + 4096
+        }
+        let to = fresh()
+        try T.apply(try T.plan(try BackupCoding.encoder().encode(envelope), context: to), fileName: "f", context: to)
+        let steps = try to.fetch(FetchDescriptor<KanbanSubtask>()).sorted { $0.sortIndex < $1.sortIndex }
+        #expect(steps.map(\.title) == ["Endpoints", "Tests"] && steps.map(\.sortIndex) == [0, 1])
+    }
+
     @Test("Card positions that can't be extended refuse the merge too")
     func exhaustedCardPositions() throws {
         let (from, project) = try source()
