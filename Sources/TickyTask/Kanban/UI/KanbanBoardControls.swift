@@ -218,6 +218,7 @@ struct KanbanFilterChips: View {
         if let jira = f.hasJira { chips.append(Chip(label: jira ? "Has Jira" : "No Jira") { $0.hasJira = nil }) }
         if let estimate = f.hasEstimate { chips.append(Chip(label: estimate ? "Has estimate" : "No estimate") { $0.hasEstimate = nil }) }
         if f.openOnly { chips.append(Chip(label: "Open only") { $0.openOnly = false }) }
+        if f.excludeCritical { chips.append(Chip(label: "Not Critical") { $0.excludeCritical = false }) }
         for column in project.orderedColumns where f.columnIDs.contains(column.id) {
             chips.append(Chip(label: column.name) { $0.columnIDs.remove(column.id) })
         }

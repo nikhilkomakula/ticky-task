@@ -239,7 +239,8 @@ struct KanbanReplayTests {
     /// change-log entries, timed cold — snapshot, decoding the log, and every metric and
     /// replay the dashboard draws.
     @Test func referenceFixtureBudget() throws {
-        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let container = ModelContainerProvider.makeInMemoryContainer()
+        let context = ModelContext(container)
         let project = KanbanProject(name: "Reference", key: "REF")
         context.insert(project)
         let columns = (0..<10).map { i in KanbanColumn(name: "C\(i)", kind: i == 0 ? .backlog : i == 9 ? .done : .active, sortIndex: Double(i)) }
@@ -275,12 +276,19 @@ struct KanbanReplayTests {
         }
         try context.save()
 
+        // Timed cold: a fresh context reads the board for the first time.
+        let reader = ModelContext(container)
         let clock = ContinuousClock()
-        let phases = clock.measure { _ = MetricsSnapshot(project: project, now: F.now, calendar: F.calendar()) }
-        let decode = clock.measure { _ = MetricsActivity.records(of: project) }
-        let elapsed = ContinuousClock().measure {
-            let s = MetricsSnapshot(project: project, now: F.now, calendar: F.calendar())
-            let log = MetricsActivity.records(of: project)
+        var phases: [String] = []
+        let elapsed = clock.measure {
+            let board = try? reader.fetch(FetchDescriptor<KanbanProject>()).first
+            guard let board else { return }
+            var start = clock.now
+            func lap(_ name: String) { phases.append("\(name) \(clock.now - start)"); start = clock.now }
+            let s = MetricsSnapshot(project: board, now: F.now, calendar: F.calendar())
+            lap("snapshot")
+            let log = MetricsActivity.records(of: board)
+            lap("log")
             _ = KanbanMetrics.loadVsCapacity(s)
             _ = KanbanMetrics.capacityHeatmap(s, weeks: 12)
             _ = KanbanMetrics.composition(s)
@@ -292,15 +300,18 @@ struct KanbanReplayTests {
             _ = KanbanMetrics.blockedTasks(s)
             _ = KanbanMetrics.dueBuckets(s)
             _ = KanbanMetrics.hygieneReport(s)
+            lap("metrics")
             let flow = R.cfd(s, activities: log, days: 90)
             _ = R.burnUp(flow, hours: false)
             _ = R.throughput(s, activities: log, weeks: 12)
             _ = R.agingWIP(s, activities: log)
+            lap("replay")
         }
+        #expect(!phases.isEmpty, "the board was read")
         #if DEBUG
-        #expect(elapsed < .milliseconds(300), "Debug canary: \(elapsed) (snapshot \(phases), log \(decode))")
+        #expect(elapsed < .milliseconds(300), "Debug canary: \(elapsed) (\(phases.joined(separator: ", ")))")
         #else
-        #expect(elapsed < .milliseconds(100), "\(elapsed) (snapshot \(phases), log \(decode))")
+        #expect(elapsed < .milliseconds(100), "\(elapsed) (\(phases.joined(separator: ", ")))")
         #endif
     }
 
@@ -366,5 +377,17 @@ struct KanbanReplayTests {
         b.at(F.date(10, 6))
         let days = R.cfd(b.snapshot(hours: true), activities: b.activities, days: 14)
         #expect(day(days, F.date(10, 3))?.bands.first { $0.name == "To Do" }?.load == 20)
+    }
+
+    @Test func anArchivedLegacyCardLeavesOnItsArchiveDay() throws {
+        let b = try Board()
+        let a = try b.card("A", on: F.date(10, 1))
+        try b.service.archiveTask(a)
+        b.forget(a)                      // no log entries at all, as before the log existed
+        a.archivedAt = F.date(10, 4)
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        #expect(countsOn(day(days, F.date(10, 3)))["To Do"] == 1)
+        #expect(countsOn(day(days, F.date(10, 5)))["To Do"] == 0, "hidden from its archivedAt")
+        #expect(countsOn(days.last)["To Do"] == 0)
     }
 }

@@ -87,14 +87,23 @@ enum KanbanReplay {
             for t in event.payload.transitions where firstFrom[t.taskID] == nil { firstFrom[t.taskID] = t.from.columnID }
         }
         var synthesized: [(at: Date, id: UUID, column: UUID)] = []
+        // And an archive at their archivedAt when the log has no archive entry for them.
+        var archivedInLog = Set<UUID>()
+        for event in events {
+            for change in event.payload.changes where change.entity == .task && change.field == "archivedAt" { archivedInLog.insert(change.id) }
+        }
+        var hidden: [(at: Date, id: UUID)] = []
         let current = Set(s.cards.map(\.id))
         for card in s.cards where !created.contains(card.id) {
             synthesized.append((card.createdAt, card.id, firstFrom[card.id] ?? card.column))
+            if let at = card.archivedAt, !archivedInLog.contains(card.id) { hidden.append((at, card.id)) }
         }
         for (id, dto) in deletedDTO where !created.contains(id) && !current.contains(id) {
             if let column = firstFrom[id] ?? dto.columnId { synthesized.append((dto.createdAt, id, column)) }
+            if let at = dto.archivedAt, !archivedInLog.contains(id) { hidden.append((at, id)) }
         }
         synthesized.sort { $0.at < $1.at }
+        hidden.sort { $0.at < $1.at }
 
         var cards: [UUID: CardState] = [:]
         var count: [UUID: Int] = [:], load: [UUID: Double] = [:]
@@ -142,7 +151,7 @@ enum KanbanReplay {
         var days: [Day] = []
         var day = cal.startOfDay(for: from)
         let last = cal.startOfDay(for: through)
-        var index = 0, syntheticIndex = 0
+        var index = 0, syntheticIndex = 0, hiddenIndex = 0
         while day <= last {
             guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
             while syntheticIndex < synthesized.count, synthesized[syntheticIndex].at < next {
@@ -153,6 +162,13 @@ enum KanbanReplay {
             while index < events.count, effective[index] < next {
                 apply(events[index])
                 index += 1
+            }
+            while hiddenIndex < hidden.count, hidden[hiddenIndex].at < next {
+                if var state = cards[hidden[hiddenIndex].id] {
+                    state.visible = false
+                    set(hidden[hiddenIndex].id, state)
+                }
+                hiddenIndex += 1
             }
             var bands: [Band] = []
             // Live columns always appear (zero when empty), so bands line up from day to day.

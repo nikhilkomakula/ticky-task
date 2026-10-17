@@ -45,6 +45,8 @@ struct MetricsSnapshot: Sendable {
         var createdAt: Date
         var updatedAt: Date
         var archived = false
+        /// When it was archived (for replaying cards from before the change log).
+        var archivedAt: Date?
     }
 
     var projectID: UUID
@@ -641,7 +643,8 @@ extension MetricsSnapshot {
                             isCritical: t.isCritical, dueDate: t.dueDate, startDate: t.startDate, estimateHours: t.estimateHours,
                             isBlocked: t.isBlocked, blockedReason: t.blockedReason, dependsOn: t.dependsOn.map(\.id),
                             labels: t.labels.map(\.id), subtasksDone: t.subtasks.filter(\.isDone).count, subtasksTotal: t.subtasks.count,
-                            jiraURL: t.jiraURL, createdAt: t.createdAt, updatedAt: t.updatedAt, archived: t.archivedAt != nil)
+                            jiraURL: t.jiraURL, createdAt: t.createdAt, updatedAt: t.updatedAt, archived: t.archivedAt != nil,
+                            archivedAt: t.archivedAt)
             },
             blockedSince: blockedSince, now: now, calendar: calendar)
     }

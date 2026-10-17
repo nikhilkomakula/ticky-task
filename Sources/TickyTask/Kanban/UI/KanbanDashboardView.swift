@@ -42,7 +42,11 @@ struct KanbanDashboardView: View {
                 }
                 DashboardCard(title: "Team", id: "composition") { CompositionSummary(c: KanbanMetrics.composition(s), members: members) }
                 DashboardCard(title: hours ? "Priority by column (hours)" : "Priority by column", id: "priority") {
-                    PriorityGrid(s: s, hours: hours, open: { row in open { row == .critical ? ($0.criticalOnly = true) : ($0.priorities = [row.priority]) } })
+                    PriorityGrid(s: s, hours: hours, open: { row in
+                        open { filter in
+                            if row == .critical { filter.criticalOnly = true } else { filter.priorities = [row.priority]; filter.excludeCritical = true }
+                        }
+                    })
                 }
                 DashboardCard(title: hours ? "Hours with label" : "Tasks with label", id: "labels") {
                     LabelMixChart(s: s, labels: labelNames, hours: hours, open: { id in open { $0.labelIDs = [id] } })
@@ -500,18 +504,17 @@ private struct FlowChart: View {
     private static let palette: [Color] = [.green, .blue, .orange, .purple, .teal, .pink, .indigo, .brown, .mint, .cyan]
 
     var body: some View {
+        // One label per column id (names may repeat), with deleted columns marked and grey.
+        var seen = Set<UUID>(), columns: [(id: UUID, name: String, deleted: Bool)] = []
+        for band in (days.last?.bands ?? []) + days.flatMap(\.bands) where seen.insert(band.columnID).inserted {
+            columns.append((band.columnID, band.isDeleted ? "\(band.name) (deleted)" : band.name, band.isDeleted))
+        }
+        let labels = KanbanUI.uniqueNames(columns.map { ($0.id, $0.name) }, reserved: [])
+        let domain = columns.map { labels[$0.id] ?? $0.name }
+        let range = columns.enumerated().map { index, column in column.deleted ? Color.gray.opacity(0.5) : Self.palette[index % Self.palette.count] }
         let points: [Point] = days.flatMap { day in
             day.bands.map { Point(id: "\(day.day.timeIntervalSince1970)-\($0.columnID)", day: day.day,
-                                  band: $0.isDeleted ? "\($0.name) (deleted)" : $0.name, value: hours ? $0.load : Double($0.count)) }
-        }
-        // Stable colours, with deleted columns grey.
-        let bands = (days.last?.bands ?? []) + days.flatMap(\.bands)
-        var domain: [String] = [], range: [Color] = []
-        for band in bands {
-            let name = band.isDeleted ? "\(band.name) (deleted)" : band.name
-            guard !domain.contains(name) else { continue }
-            domain.append(name)
-            range.append(band.isDeleted ? Color.gray.opacity(0.5) : Self.palette[(domain.count - 1) % Self.palette.count])
+                                  band: labels[$0.columnID] ?? $0.name, value: hours ? $0.load : Double($0.count)) }
         }
         return Group {
             if points.allSatisfy({ $0.value == 0 }) {

@@ -100,6 +100,8 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
     var hasEstimate: Bool?
     /// Only cards not in a Done column.
     var openOnly = false
+    /// Leave out Critical cards (the priority rows of the dashboard count them apart).
+    var excludeCritical = false
     /// Only cards in these columns.
     var columnIDs: Set<UUID> = []
 
@@ -118,6 +120,7 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         hasJira = try? c.decodeIfPresent(Bool.self, forKey: .hasJira)
         hasEstimate = try? c.decodeIfPresent(Bool.self, forKey: .hasEstimate)
         openOnly = (try? c.decodeIfPresent(Bool.self, forKey: .openOnly)) ?? false
+        excludeCritical = (try? c.decodeIfPresent(Bool.self, forKey: .excludeCritical)) ?? false
         columnIDs = (try? c.decodeIfPresent(Set<UUID>.self, forKey: .columnIDs)) ?? []
     }
 
@@ -138,6 +141,7 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         if let hasJira, (task.jiraURL.map { KanbanMetrics.isWebURL($0) } ?? false) != hasJira { return false }
         if let hasEstimate, (task.estimateHours != nil) != hasEstimate { return false }
         if openOnly, task.column?.kind == .done { return false }
+        if excludeCritical, task.isCritical { return false }
         if !columnIDs.isEmpty, !(task.column.map { columnIDs.contains($0.id) } ?? false) { return false }
         return true
     }
