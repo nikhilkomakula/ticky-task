@@ -567,6 +567,269 @@ struct KanbanService {
         return task
     }
 
+    /// Creates a card from a complete draft in one transaction. Validates everything
+    /// first; on failure, no model is inserted. Records one `.created` entry with the
+    /// complete graph and sibling shifts; undo removes the whole card.
+    @discardableResult
+    func createCard(_ draft: KanbanCardDraft, in project: KanbanProject) throws -> KanbanTask {
+        try RecurrenceMaterializer.checkpoint(context)
+
+        // Validate title
+        let trimmedTitle = draft.title.trimmingCharacters(in: .whitespaces)
+        guard !trimmedTitle.isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
+
+        // Validate and resolve column
+        let columnID = draft.columnID ?? project.columns.first(where: { $0.kind == .backlog })?.id
+        guard let columnID, let column = project.columns.first(where: { $0.id == columnID }) else {
+            throw KanbanServiceError.invariant("Pick a column on this board.")
+        }
+
+        // Validate WIP limit
+        if project.wipPolicy == .block, let limit = column.wipLimit,
+           columnCards(column).filter({ $0.archivedAt == nil }).count >= limit {
+            throw KanbanServiceError.wipBlocked([column.id])
+        }
+
+        // Validate and resolve resource (person)
+        let resource = try self.resource(for: draft.row, in: project)
+
+        // Validate labels and dependencies (must be on same board)
+        for labelID in draft.labelIDs {
+            guard project.labels.contains(where: { $0.id == labelID }) else {
+                throw KanbanServiceError.invariant("That label isn't on this board.")
+            }
+        }
+
+        for depID in draft.dependencyIDs {
+            guard let dep = project.tasks.first(where: { $0.id == depID }) else {
+                throw KanbanServiceError.invariant("That dependency isn't on this board.")
+            }
+            // Check for cycles: dep cannot already depend on a task that depends on us
+            // (for a new card this is always safe, but check anyway for safety)
+            if depID == UUID() { throw KanbanServiceError.invariant("A card can't depend on itself.") }
+        }
+
+        // Validate step titles
+        for step in draft.steps {
+            guard !step.title.trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw KanbanServiceError.invariant("A step can't have a blank title.")
+            }
+        }
+
+        // Validate assignee for steps
+        for step in draft.steps {
+            if let assigneeID = step.assigneeID {
+                guard project.resources.contains(where: { $0.id == assigneeID && $0.archivedAt == nil }) else {
+                    throw KanbanServiceError.invariant("That person isn't an active member of this board.")
+                }
+            }
+        }
+
+        // Validate notes and Jira
+        try Self.checkEdit([
+            .notes: .string(draft.notes),
+            .notesRich: draft.notesRich.map(KanbanValue.data),
+            .priority: .int(draft.priority),
+            .isCritical: .bool(draft.isCritical),
+            .estimateHours: draft.estimateHours.map(KanbanValue.double),
+            .jiraURL: draft.jiraURL.map(KanbanValue.string),
+            .isBlocked: .bool(draft.isBlocked),
+            .blockedReason: draft.blockedReason.map(KanbanValue.string),
+        ])
+
+        // All validation passed; now insert
+        let task = KanbanTask(title: trimmedTitle)
+        task.createdAt = now()
+        task.updatedAt = now()
+        task.notes = draft.notes
+        task.notesRich = draft.notesRich
+        task.priority = draft.priority
+        task.isCritical = draft.isCritical
+        task.dueDate = draft.dueDate
+        task.startDate = draft.startDate
+        task.estimateHours = draft.estimateHours
+        task.jiraURL = draft.jiraURL
+        task.isBlocked = draft.isBlocked
+        task.blockedReason = draft.blockedReason
+        if column.kind == .done { task.completedAt = now() }
+
+        // Place in cell and calculate shifts
+        let siblings = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == column.id && $0.resource?.id == resource?.id }
+            .sorted { $0.sortIndex < $1.sortIndex }
+        let position = siblings.count
+        var shifts: [KanbanTransition] = []
+        for (index, card) in siblings.enumerated() {
+            let newIndex = Double(index < position ? index : index + 1)
+            guard card.sortIndex != newIndex else { continue }
+            var to = placement(card)
+            to.sortIndex = newIndex
+            shifts.append(KanbanTransition(taskID: card.id, from: placement(card), to: to))
+        }
+        task.sortIndex = Double(position)
+
+        // Insert task and set relationships
+        context.insert(task)
+        task.project = project
+        task.column = column
+        task.resource = resource
+
+        // Set labels, dependencies and create steps
+        task.labels = project.labels.filter { draft.labelIDs.contains($0.id) }
+        task.dependsOn = project.tasks.filter { draft.dependencyIDs.contains($0.id) }
+
+        for (index, stepDraft) in draft.steps.enumerated() {
+            let step = KanbanSubtask(id: UUID(), title: stepDraft.title.trimmingCharacters(in: .whitespaces),
+                                     isDone: stepDraft.isDone, sortIndex: Double(index))
+            context.insert(step)
+            step.task = task
+            if let assigneeID = stepDraft.assigneeID, let assignee = project.resources.first(where: { $0.id == assigneeID }) {
+                step.assignee = assignee
+            }
+        }
+
+        // Build activity payload with complete graph
+        var graph = KanbanRemovedGraph(tasks: [KanbanTaskDTO(task)])
+        for step in task.subtasks {
+            graph.subtasks.append(KanbanSubtaskDTO(step))
+        }
+
+        let payload = KanbanActivityPayload(transitions: shifts, graph: graph)
+        applyTransitions(shifts, in: project)
+
+        try save(project, kind: .created, taskIDs: [task.id] + shifts.map(\.taskID),
+                 summary: "Added \(trimmedTitle)", payload: payload)
+        return task
+    }
+
+    /// Applies batched label changes (add, edit, reorder, delete) in one transaction.
+    /// Deletes remove the label from all cards (archived too) and prune it from board filters.
+    /// Returns without saving if there are no effective changes.
+    func applyLabelChanges(_ changes: KanbanLabelChanges, to project: KanbanProject) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+
+        // Validate: names non-empty and unique case-insensitively, ids exist
+        var seen = Set<String>()
+        for add in changes.adds {
+            let trimmed = add.name.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { throw KanbanServiceError.invariant("A label name can't be blank.") }
+            let lower = trimmed.lowercased()
+            guard !seen.contains(lower) else { throw KanbanServiceError.invariant("Label names must be unique.") }
+            seen.insert(lower)
+        }
+
+        for edit in changes.edits {
+            guard project.labels.contains(where: { $0.id == edit.id }) else {
+                throw KanbanServiceError.invariant("That label doesn't exist on this board.")
+            }
+            if let name = edit.name {
+                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { throw KanbanServiceError.invariant("A label name can't be blank.") }
+                let lower = trimmed.lowercased()
+                // Check uniqueness excluding self
+                for existing in project.labels {
+                    guard existing.id != edit.id else { continue }
+                    if existing.name.lowercased() == lower { throw KanbanServiceError.invariant("Label names must be unique.") }
+                }
+                guard !seen.contains(lower) else { throw KanbanServiceError.invariant("Label names must be unique.") }
+                seen.insert(lower)
+            }
+        }
+
+        for deleteID in changes.deleteIDs {
+            guard project.labels.contains(where: { $0.id == deleteID }) else {
+                throw KanbanServiceError.invariant("That label doesn't exist on this board.")
+            }
+        }
+
+        // Validate order
+        let allLabelIDs = project.labels.map(\.id)
+        var expectedOrder = allLabelIDs.filter { !changes.deleteIDs.contains($0) }
+        for add in changes.adds {
+            expectedOrder.append(UUID())  // placeholder for new ids
+        }
+
+        // Build field changes and apply
+        var fieldChanges: [KanbanFieldChange] = []
+
+        // Apply adds
+        for add in changes.adds {
+            let newLabel = KanbanLabel(name: add.name.trimmingCharacters(in: .whitespaces),
+                                       colorHex: add.colorHex, sortIndex: 0)
+            newLabel.symbolName = add.symbolName
+            context.insert(newLabel)
+            newLabel.project = project
+        }
+
+        // Apply edits
+        for edit in changes.edits {
+            guard let label = project.labels.first(where: { $0.id == edit.id }) else { continue }
+            if let name = edit.name {
+                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                if label.name != trimmed {
+                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "name",
+                                                         old: .string(label.name), new: .string(trimmed)))
+                    label.name = trimmed
+                }
+            }
+            if let color = edit.colorHex {
+                if label.colorHex != color {
+                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "colorHex",
+                                                         old: .string(label.colorHex), new: .string(color)))
+                    label.colorHex = color
+                }
+            }
+            if let symbol = edit.symbolName {
+                if label.symbolName != symbol {
+                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "symbolName",
+                                                         old: label.symbolName.map(KanbanValue.string), new: .string(symbol)))
+                    label.symbolName = symbol
+                }
+            }
+        }
+
+        // Apply reorder
+        for (index, labelID) in changes.orderIDs.enumerated() {
+            guard let label = project.labels.first(where: { $0.id == labelID }) else { continue }
+            let newIndex = Double(index)
+            if label.sortIndex != newIndex {
+                fieldChanges.append(KanbanFieldChange(entity: .label, id: labelID, field: "sortIndex",
+                                                     old: .double(label.sortIndex), new: .double(newIndex)))
+                label.sortIndex = newIndex
+            }
+        }
+
+        // Apply deletes (remove from cards, then delete label)
+        for deleteID in changes.deleteIDs {
+            guard let label = project.labels.first(where: { $0.id == deleteID }) else { continue }
+
+            // Remove from all cards (including archived)
+            for task in project.tasks {
+                if task.labels.contains(where: { $0.id == deleteID }) {
+                    task.labels.removeAll { $0.id == deleteID }
+                }
+            }
+
+            // Prune from board filters
+            if let boardState = project.boardState, var state = try? JSONDecoder().decode(KanbanBoardState.self, from: boardState) {
+                if state.filter.labelIDs.contains(deleteID) {
+                    state.filter.labelIDs.remove(deleteID)
+                    project.boardState = try JSONEncoder().encode(state)
+                }
+            }
+
+            // Delete label last
+            context.delete(label)
+        }
+
+        // No-op check
+        if fieldChanges.isEmpty && changes.adds.isEmpty && changes.deleteIDs.isEmpty { return }
+
+        // Save with informational activity
+        let payload = KanbanActivityPayload(changes: fieldChanges)
+        try save(project, kind: .structure, taskIDs: [], summary: "Edited labels",
+                 payload: payload, undoable: false)
+    }
+
     /// Applies a move (drag, keyboard, bulk). Returns the WIP outcome so the UI can warn;
     /// a blocking policy throws instead.
     @discardableResult

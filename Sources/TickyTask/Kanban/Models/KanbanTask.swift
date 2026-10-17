@@ -55,4 +55,14 @@ final class KanbanTask {
         else { return nil }
         return String(jiraURL[range])
     }
+
+    /// Whether the card has content in its notes. Rich notes are decoded and checked
+    /// for non-whitespace plaintext; otherwise plain notes are checked. A valid empty
+    /// rich document wins over stale plain-text projection.
+    var hasNotes: Bool {
+        if let notesRich, !notesRich.isEmpty, let document = try? NotesCodec.decode(notesRich) {
+            return !document.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }

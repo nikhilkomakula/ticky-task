@@ -207,6 +207,8 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     /// Kanban auto-archive of finished cards (off by default).
     var kanbanAutoArchiveEnabled: Bool? = nil
     var kanbanAutoArchiveDays: Int? = nil
+    /// Kanban default labels for new boards (JSON string).
+    var kanbanDefaultLabels: String? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -250,7 +252,8 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             kanbanNotifyDueDates: d.object(forKey: "kanban.notifyDueDates") as? Bool,
             kanbanNotifyDueMinutes: d.object(forKey: "kanban.notifyDueMinutes") as? Int,
             kanbanAutoArchiveEnabled: d.object(forKey: "kanban.autoArchiveEnabled") as? Bool,
-            kanbanAutoArchiveDays: d.object(forKey: "kanban.autoArchiveDays") as? Int
+            kanbanAutoArchiveDays: d.object(forKey: "kanban.autoArchiveDays") as? Int,
+            kanbanDefaultLabels: d.string(forKey: "kanban.defaultLabels")
         )
     }
 
@@ -268,6 +271,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "kanban.weightedLoadDefault", "kanban.wipPolicyDefault", "kanban.loadMeasureDefault",
         "kanban.openTaskTargetDefault", "kanban.dueSoonThresholdDefault", "kanban.suggestDoneDefault",
         "kanban.notifyDueDates", "kanban.notifyDueMinutes", "kanban.autoArchiveEnabled", "kanban.autoArchiveDays",
+        "kanban.defaultLabels",
     ] + SummaryPreferences.portableKeys
 
     /// Reproduce the backed-up settings: clear every portable key first (so a
@@ -305,6 +309,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = kanbanNotifyDueMinutes { d.set(v, forKey: "kanban.notifyDueMinutes") }
         if let v = kanbanAutoArchiveEnabled { d.set(v, forKey: "kanban.autoArchiveEnabled") }
         if let v = kanbanAutoArchiveDays { d.set(v, forKey: "kanban.autoArchiveDays") }
+        if let v = kanbanDefaultLabels { d.set(v, forKey: "kanban.defaultLabels") }
         // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
         // A credential-bearing endpoint URL is never restored (it would land in plain defaults).
         for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)

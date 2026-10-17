@@ -8,6 +8,7 @@ struct KanbanBoardDefaults: Equatable, Sendable {
     var openTaskTarget: Double = 5
     var dueSoonThresholdDays = 3
     var suggestDone = true
+    var labels: [KanbanTemplate.Label]?
 
     init() {}
 
@@ -19,6 +20,17 @@ struct KanbanBoardDefaults: Equatable, Sendable {
         openTaskTarget = target.isFinite && target >= 0 ? target : 5
         dueSoonThresholdDays = max(0, d.integer(forKey: Self.dueSoonKey, default: 3))
         suggestDone = d.bool(forKey: Self.suggestDoneKey, default: true)
+
+        // Load default labels from JSON, or use nil to indicate factory defaults
+        if let jsonStr = d.string(forKey: Self.defaultLabelsKey) {
+            if let data = jsonStr.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([KanbanTemplate.Label].self, from: data) {
+                labels = decoded
+            } else {
+                // Malformed: use factory labels without overwriting stored value
+                labels = nil
+            }
+        }
     }
 
     static let weightedLoadKey = "kanban.weightedLoadDefault"
@@ -29,6 +41,35 @@ struct KanbanBoardDefaults: Equatable, Sendable {
     static let suggestDoneKey = "kanban.suggestDoneDefault"
     static let autoArchiveEnabledKey = "kanban.autoArchiveEnabled"
     static let autoArchiveDaysKey = "kanban.autoArchiveDays"
+    static let defaultLabelsKey = "kanban.defaultLabels"
+
+    /// Returns the labels to use for a new board: explicit defaults, factory labels, or empty.
+    /// - nil: use factory labels (KanbanTemplate.defaultLabels)
+    /// - empty array: use no labels
+    /// - non-empty: use these labels
+    func labelsForNewBoard() -> [KanbanTemplate.Label] {
+        if let labels { return labels }
+        return KanbanTemplate.defaultLabels
+    }
+
+    /// Saves these defaults to UserDefaults.
+    @MainActor
+    func save(to defaults: UserDefaults = .standard) throws {
+        defaults.set(weightedLoad, forKey: Self.weightedLoadKey)
+        defaults.set(wipPolicy.rawValue, forKey: Self.wipPolicyKey)
+        defaults.set(loadMeasure.rawValue, forKey: Self.loadMeasureKey)
+        defaults.set(openTaskTarget, forKey: Self.openTaskTargetKey)
+        defaults.set(dueSoonThresholdDays, forKey: Self.dueSoonKey)
+        defaults.set(suggestDone, forKey: Self.suggestDoneKey)
+
+        if let labels {
+            let data = try JSONEncoder().encode(labels)
+            let jsonStr = String(data: data, encoding: .utf8)
+            defaults.set(jsonStr, forKey: Self.defaultLabelsKey)
+        } else {
+            defaults.removeObject(forKey: Self.defaultLabelsKey)
+        }
+    }
 
     @MainActor
     func apply(to project: KanbanProject) {
