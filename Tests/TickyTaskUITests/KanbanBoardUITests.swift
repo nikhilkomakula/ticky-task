@@ -130,19 +130,26 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-editor-title").waitForExistence(timeout: 5), "the editor opens")
     }
 
-    /// Opens one of the editor's optional sections. On a short screen (CI's is 768 pt) the lower
-    /// headers sit under the editor's buttons, so scroll the header up clear of them first.
+    /// Opens one of the editor's optional sections, scrolled into view first.
     private func expandSection(_ app: XCUIApplication, _ id: String) {
         let header = element(app, "kanban-editor-\(id)-disclosure")
         XCTAssertTrue(header.waitForExistence(timeout: 5), "the \(id) section exists")
-        let buttonsTop = element(app, "kanban-editor-done").frame.minY
-        var delta: CGFloat = -120
-        for _ in 0..<8 where header.frame.maxY > buttonsTop - 12 {
-            let before = header.frame.minY
-            header.scroll(byDeltaX: 0, deltaY: delta)
-            if header.frame.minY > before { delta = -delta }   // that scrolled the wrong way
-        }
+        scrollIntoEditorView(app, header)
         header.click()
+    }
+
+    /// On a short screen (CI's is 768 pt) the editor's lower rows sit below its scroll area,
+    /// under the Archive/Delete bar; scroll the form until `target` is inside it.
+    private func scrollIntoEditorView(_ app: XCUIApplication, _ target: XCUIElement) {
+        let form = app.sheets.scrollViews.firstMatch
+        guard form.exists else { return }
+        var delta: CGFloat = -120
+        for _ in 0..<10 where target.frame.maxY > form.frame.maxY - 4 {
+            let before = target.frame.minY
+            form.scroll(byDeltaX: 0, deltaY: delta)
+            if target.frame.minY > before { delta = -delta }   // that scrolled the wrong way
+        }
+        XCTAssertTrue(target.frame.maxY <= form.frame.maxY && target.isHittable, "\(target.identifier) is in view")
     }
 
     func testEditACardsTitleAndAddAStep() {
@@ -156,6 +163,7 @@ final class KanbanBoardUITests: XCTestCase {
         expandSection(app, "subtasks")   // optional sections start collapsed
         let step = element(app, "kanban-editor-add-subtask")
         XCTAssertTrue(step.waitForExistence(timeout: 5))
+        scrollIntoEditorView(app, step)
         step.click()
         step.typeText("Read new mail\r")
         element(app, "kanban-editor-done").click()
@@ -172,6 +180,7 @@ final class KanbanBoardUITests: XCTestCase {
         expandSection(app, "links")
         let jira = element(app, "kanban-editor-jira")
         XCTAssertTrue(jira.waitForExistence(timeout: 5))
+        scrollIntoEditorView(app, jira)
         jira.click()
         jira.typeText("PLAT-9")
         XCTAssertTrue(element(app, "kanban-editor-jira-error").waitForExistence(timeout: 5), "the field explains the problem")

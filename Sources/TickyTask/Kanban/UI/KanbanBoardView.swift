@@ -58,10 +58,11 @@ struct KanbanBoardView: View {
         let shown = Dictionary(uniqueKeysWithValues: cells.map { key, cell in
             (key, doneHidden[key] != nil && !expandedDone.contains(key) ? KanbanDoneCards.recent(cell) : cell)
         })
+        let tucked = tuckedAway(cells, shown: shown)
         // Compute drag IDs once: only what's on screen travels (archived/filtered cards stay selected but don't drag).
         let dragIDs = selected.count > 1
             ? KanbanBulkMenu.ordered(project.tasks.filter { selected.contains($0.id) }, in: project)
-                .filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) }.map(\.id)
+                .filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) && !tucked.contains($0.id) }.map(\.id)
             : []
         let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort, cells: shown)
 
@@ -122,6 +123,9 @@ struct KanbanBoardView: View {
                 Text("You can bring it back from the Change Log.")
             }
         .onDisappear { drag.cancel() }
+        // Cards tucked away in a shortened Done cell leave the selection, so a drag or a bulk
+        // action never carries cards you can't see.
+        .onChange(of: tucked, initial: true) { _, tucked in selected.subtract(tucked) }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {
@@ -216,6 +220,14 @@ struct KanbanBoardView: View {
             guard done.contains(entry.key.column) else { return }
             let count = entry.value.count - KanbanDoneCards.recent(entry.value).count
             if count > 0 { hidden[entry.key] = count }
+        }
+    }
+
+    /// The cards shortened Done cells are hiding right now.
+    private func tuckedAway(_ cells: [CellKey: [KanbanTask]], shown: [CellKey: [KanbanTask]]) -> Set<UUID> {
+        cells.reduce(into: Set<UUID>()) { hidden, entry in
+            guard let visible = shown[entry.key], visible.count < entry.value.count else { return }
+            hidden.formUnion(Set(entry.value.map(\.id)).subtracting(visible.map(\.id)))
         }
     }
 

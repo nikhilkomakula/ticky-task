@@ -57,13 +57,15 @@ struct KanbanArchiveDoneSheet: View {
     private func summary(_ candidates: [KanbanTask]) -> String {
         guard !candidates.isEmpty else { return "No done cards to archive." }
         let ids = Set(candidates.map(\.id))
+        // The backlog counts a card as ready to pull only once its prerequisites are done and not
+        // archived (archiving can be undone), so only unassigned backlog cards are affected.
         let waiting = project.tasks.filter { task in
-            task.archivedAt == nil && task.column?.kind != .done && task.dependsOn.contains { ids.contains($0.id) }
+            task.archivedAt == nil && task.resource == nil && task.column?.kind == .backlog && task.dependsOn.contains { ids.contains($0.id) }
         }.count
         var text = "Archives \(candidates.count) \(candidates.count == 1 ? "card" : "cards"), including any hidden by filters. "
             + "Nothing is deleted: Show Archived brings them back into view, and ⌘Z or the Change Log undoes it."
         if waiting > 0 {
-            text += " \(waiting) open \(waiting == 1 ? "card depends" : "cards depend") on them and will show as waiting on an archived card."
+            text += " \(waiting) unassigned backlog \(waiting == 1 ? "card depends" : "cards depend") on them and won’t count as ready to pull while they’re archived."
         }
         return text
     }
