@@ -121,7 +121,7 @@ enum BackupStore {
         // notification behavior matches the restored settings without a relaunch.
         let defaults = UserDefaults.standard
         let reminderEnabled = defaults.bool(forKey: "endOfDayReminderEnabled")
-        let reminderMinutes = defaults.object(forKey: "endOfDayReminderMinutes") as? Int ?? 18 * 60
+        let reminderMinutes = defaults.integer(forKey: "endOfDayReminderMinutes", default: 18 * 60)
         Task { @MainActor in
             await NotificationService.scheduleEndOfDayReminder(enabled: reminderEnabled, minutes: reminderMinutes)
         }
