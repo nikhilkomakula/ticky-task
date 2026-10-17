@@ -6,7 +6,12 @@ import SwiftData
 /// which validates everything first, then applies the move, the field edit, labels,
 /// dependencies and steps through `KanbanService`.
 struct KanbanTaskEditor: View {
-    let task: KanbanTask
+    enum Mode {
+        case edit(KanbanTask)
+        case create(project: KanbanProject, column: UUID?, row: KanbanRowKey)
+    }
+
+    let mode: Mode
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -43,8 +48,36 @@ struct KanbanTaskEditor: View {
     @State private var confirmDelete = false
     @State private var schedulingDay: Date?
     @State private var scheduledNote: String?
+    @FocusState private var titleFocused: Bool
+    @State private var showLabelManager = false
 
-    private var project: KanbanProject? { task.project }
+    // MARK: - Initialization
+
+    init(task: KanbanTask) {
+        self.mode = .edit(task)
+    }
+
+    init(newCardIn project: KanbanProject, column: UUID?, row: KanbanRowKey) {
+        self.mode = .create(project: project, column: column ?? project.orderedColumns.first(where: { $0.kind == .backlog })?.id, row: row)
+    }
+
+    private var task: KanbanTask? {
+        guard case .edit(let t) = mode else { return nil }
+        return t
+    }
+
+    private var project: KanbanProject? {
+        switch mode {
+        case .edit(let t): return t.project
+        case .create(let p, _, _): return p
+        }
+    }
+
+    private var isCreateMode: Bool {
+        guard case .create = mode else { return false }
+        return true
+    }
+
     private var trimmedJira: String { jiraURL.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -59,6 +92,7 @@ struct KanbanTaskEditor: View {
                         .lineLimit(1...10)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kanban-editor-title")
+                        .focused($titleFocused)
                 }
                 Section("Details") { RichNotesEditor(text: $notes) }
                 placementSection
@@ -66,14 +100,23 @@ struct KanbanTaskEditor: View {
                 datesSection
                 linksSection
                 stepsSection
-                historySection
+                if !isCreateMode { historySection }
             }
             .formStyle(.grouped)
-            footer
+            if isCreateMode {
+                Divider()
+            } else {
+                footer
+            }
         }
         .frame(minWidth: 580, minHeight: 640)
-        .onAppear(perform: load)
-        .alert("Couldn’t save the card", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .onAppear {
+            load()
+            if isCreateMode {
+                titleFocused = true
+            }
+        }
+        .alert("Couldn't save the card", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your changes are still here. \(error ?? "")")
@@ -82,12 +125,14 @@ struct KanbanTaskEditor: View {
             Button("Move to Done") { moveToDone() }
             Button("Not now", role: .cancel) { dismiss() }
         } message: {
-            Text("Move “\(task.title)” to Done?")
+            if let task { Text("Move \"\(task.title)\" to Done?") }
         }
-        .confirmationDialog("Delete “\(task.title)”?", isPresented: $confirmDelete) {
-            Button("Delete Card", role: .destructive) { perform { try $0.deleteTask(task) } }
+        .confirmationDialog("Delete card?", isPresented: $confirmDelete) {
+            if let task {
+                Button("Delete Card", role: .destructive) { perform { try $0.deleteTask(task) } }
+            }
         } message: {
-            Text("You can bring it back from the Change Log.")
+            if let task { Text("You can bring it back from the Change Log.") }
         }
     }
 
@@ -99,9 +144,10 @@ struct KanbanTaskEditor: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("kanban-editor-cancel")
             Spacer()
-            Text(project?.name ?? "").font(.headline)
+            Text(isCreateMode ? "New card" : (project?.name ?? "")).font(.headline)
             Spacer()
             Button("Done", action: save)
+                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty && isCreateMode)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("kanban-editor-done")
         }
@@ -131,8 +177,18 @@ struct KanbanTaskEditor: View {
             .accessibilityIdentifier("kanban-editor-assignee")
             if let labels = project?.labels.sorted(by: { $0.sortIndex < $1.sortIndex }), !labels.isEmpty {
                 LabeledContent("Labels") {
-                    FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                    VStack(alignment: .leading, spacing: 8) {
+                        FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                        Button("Edit labels…") { showLabelManager = true }
+                            .font(.caption)
+                            .accessibilityIdentifier("kanban-editor-edit-labels")
+                    }
                 }
+            }
+        }
+        .sheet(isPresented: $showLabelManager) {
+            if let project {
+                KanbanLabelManagerSheet(project: project)
             }
         }
     }
@@ -238,24 +294,26 @@ struct KanbanTaskEditor: View {
 
     private var footer: some View {
         HStack {
-            Button("Archive") { perform { try $0.archiveTask(task) } }
-                .accessibilityIdentifier("kanban-editor-archive")
-            Button("Delete…", role: .destructive) { confirmDelete = true }
-                .accessibilityIdentifier("kanban-editor-delete")
-            Button("Schedule to day…") { schedulingDay = task.dueDate ?? Date() }
-                .help("Put this card on a day in the planner (once linked, rescheduling moves that task)")
-                .accessibilityIdentifier("kanban-editor-schedule")
-                .popover(isPresented: Binding(get: { schedulingDay != nil }, set: { if !$0 { schedulingDay = nil } })) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        DatePicker("Day", selection: Binding(get: { schedulingDay ?? Date() }, set: { schedulingDay = $0 }), displayedComponents: .date)
-                            .datePickerStyle(.graphical)
-                        Button("Schedule") { schedule() }
-                            .keyboardShortcut(.defaultAction)
-                            .accessibilityIdentifier("kanban-editor-schedule-confirm")
+            if let task {
+                Button("Archive") { perform { try $0.archiveTask(task) } }
+                    .accessibilityIdentifier("kanban-editor-archive")
+                Button("Delete…", role: .destructive) { confirmDelete = true }
+                    .accessibilityIdentifier("kanban-editor-delete")
+                Button("Schedule to day…") { schedulingDay = task.dueDate ?? Date() }
+                    .help("Put this card on a day in the planner (once linked, rescheduling moves that task)")
+                    .accessibilityIdentifier("kanban-editor-schedule")
+                    .popover(isPresented: Binding(get: { schedulingDay != nil }, set: { if !$0 { schedulingDay = nil } })) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            DatePicker("Day", selection: Binding(get: { schedulingDay ?? Date() }, set: { schedulingDay = $0 } ), displayedComponents: .date)
+                                .datePickerStyle(.graphical)
+                            Button("Schedule") { schedule() }
+                                .keyboardShortcut(.defaultAction)
+                                .accessibilityIdentifier("kanban-editor-schedule-confirm")
+                        }
+                        .padding(12)
                     }
-                    .padding(12)
-                }
-            if let scheduledNote { Text(scheduledNote).font(.caption).foregroundStyle(.secondary) }
+                if let scheduledNote { Text(scheduledNote).font(.caption).foregroundStyle(.secondary) }
+            }
             Spacer()
         }
         .padding(12)
@@ -269,7 +327,8 @@ struct KanbanTaskEditor: View {
 
     /// Live cards, plus archived ones this card still depends on (so they can be removed).
     private var otherCards: [KanbanTask] {
-        (project?.tasks ?? []).filter { $0.id != task.id && ($0.archivedAt == nil || dependencyIDs.contains($0.id)) }
+        let taskID = task?.id
+        return (project?.tasks ?? []).filter { taskID == nil || ($0.id != taskID && ($0.archivedAt == nil || dependencyIDs.contains($0.id))) }
             .sorted { $0.title < $1.title }
     }
 
@@ -287,26 +346,38 @@ struct KanbanTaskEditor: View {
     }
 
     private func load() {
-        title = task.title
-        let document = NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
-        notes = NotesAttributedString.attributedString(from: document)
-        loadedNotes = notes
-        priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
-        isCritical = task.isCritical
-        columnID = task.column?.id
-        row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
-        labelIDs = Set(task.labels.map(\.id))
-        hasStart = task.startDate != nil
-        start = task.startDate ?? Date()
-        hasDue = task.dueDate != nil
-        due = task.dueDate ?? Date()
-        hasEstimate = task.estimateHours != nil
-        estimate = task.estimateHours ?? (project?.defaultEstimateHours ?? 4)
-        jiraURL = task.jiraURL ?? ""
-        isBlocked = task.isBlocked
-        blockedReason = task.blockedReason ?? ""
-        dependencyIDs = Set(task.dependsOn.map(\.id))
-        steps = KanbanService.orderedSubtasks(task).map { StepDraft(id: $0.id, title: $0.title, isDone: $0.isDone) }
+        if let task {
+            // Edit mode: load from existing task
+            title = task.title
+            let document = NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
+            notes = NotesAttributedString.attributedString(from: document)
+            loadedNotes = notes
+            priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
+            isCritical = task.isCritical
+            columnID = task.column?.id
+            row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+            labelIDs = Set(task.labels.map(\.id))
+            hasStart = task.startDate != nil
+            start = task.startDate ?? Date()
+            hasDue = task.dueDate != nil
+            due = task.dueDate ?? Date()
+            hasEstimate = task.estimateHours != nil
+            estimate = task.estimateHours ?? (project?.defaultEstimateHours ?? 4)
+            jiraURL = task.jiraURL ?? ""
+            isBlocked = task.isBlocked
+            blockedReason = task.blockedReason ?? ""
+            dependencyIDs = Set(task.dependsOn.map(\.id))
+            steps = KanbanService.orderedSubtasks(task).map { StepDraft(id: $0.id, title: $0.title, isDone: $0.isDone) }
+        } else {
+            // Create mode: use initial values from mode
+            if case .create(_, let col, let r) = mode {
+                columnID = col
+                row = r
+            }
+            priority = .low
+            isCritical = false
+            estimate = project?.defaultEstimateHours ?? 4
+        }
     }
 
     private func addStep() {
@@ -330,6 +401,56 @@ struct KanbanTaskEditor: View {
     private func save() {
         if let problem = problem() { error = problem; return }
         guard let project else { return dismiss() }
+
+        if isCreateMode {
+            saveCreate(project)
+        } else {
+            saveEdit(project)
+        }
+    }
+
+    private func saveCreate(_ project: KanbanProject) {
+        let service = app.kanbanService(context)
+        let day = Calendar.current.startOfDay
+
+        var draft = KanbanCardDraft()
+        draft.title = title.trimmingCharacters(in: .whitespaces)
+        draft.columnID = columnID
+        draft.row = row
+        draft.priority = priority.rawValue
+        draft.isCritical = isCritical
+        draft.startDate = hasStart ? day(start) : nil
+        draft.dueDate = hasDue ? day(due) : nil
+        draft.estimateHours = hasEstimate ? estimate : nil
+        draft.jiraURL = trimmedJira.isEmpty ? nil : trimmedJira
+        draft.isBlocked = isBlocked
+        draft.blockedReason = isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
+            ? blockedReason.trimmingCharacters(in: .whitespaces) : nil
+        draft.labelIDs = Array(labelIDs)
+        draft.dependencyIDs = Array(dependencyIDs)
+        draft.steps = steps.map { KanbanCardDraft.Step(title: $0.title, isDone: $0.isDone, assigneeID: nil) }
+
+        if notes != loadedNotes {
+            let document = NotesAttributedString.document(from: notes)
+            do {
+                draft.notesRich = try NotesCodec.encode(document)
+                draft.notes = document.plainText
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
+        }
+
+        do {
+            _ = try service.createCard(draft, in: project)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func saveEdit(_ project: KanbanProject) {
+        guard let task else { return dismiss() }
         let service = app.kanbanService(context)
         let day = Calendar.current.startOfDay
         let currentRow: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
@@ -383,6 +504,7 @@ struct KanbanTaskEditor: View {
     /// once, so pressing Done again never adds it twice. Suggests Done only when a tick
     /// finished the list and every step on the card is done afterwards.
     private func saveSteps(_ service: KanbanService, saved: inout [String]) throws -> Bool {
+        guard let task else { return false }
         var ticked = false
         let kept = Set(steps.map(\.id))
         for subtask in task.subtasks where !kept.contains(subtask.id) {
@@ -413,12 +535,11 @@ struct KanbanTaskEditor: View {
     }
 
     private func schedule() {
-        guard let day = schedulingDay else { return }
+        guard let day = schedulingDay, let task else { return }
         do {
             try app.kanbanService(context).schedule(task, on: WeekMath.dayKey(for: day))
             scheduledNote = "On the planner for \(day.formatted(date: .abbreviated, time: .omitted))."
             schedulingDay = nil
-            // A linked task that moved keeps its alarm on the new day.
             Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
         } catch {
             self.error = error.localizedDescription
@@ -426,12 +547,13 @@ struct KanbanTaskEditor: View {
     }
 
     private func moveToDone() {
-        guard let project, let done = project.orderedColumns.first(where: { $0.kind == .done }) else { return dismiss() }
+        guard let project, let done = project.orderedColumns.first(where: { $0.kind == .done }), let task else { return dismiss() }
         let row: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
         perform { try $0.move(.cards([task.id], to: .cell(columnID: done.id, row: row, beforeCardID: nil)), in: project) }
     }
 
     private func revert(_ entry: KanbanActivity) {
+        guard let task else { return }
         let id = task.id, project = self.project
         do {
             _ = try app.kanbanService(context).revert(entry)

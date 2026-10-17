@@ -29,6 +29,18 @@ struct SharedAttributes: Equatable {
         colorHex = task.colorHex
         tagIDs = Set(task.tags.map(\.id))
     }
+
+    init() {
+        title = ""
+        timeMinutes = nil
+        alarmEnabled = false
+        priority = 0
+        isCritical = false
+        colorHex = nil
+        tagIDs = []
+    }
+
+    static var `default`: SharedAttributes { SharedAttributes() }
 }
 
 /// An editor's subtask row, held as a value until Done.
