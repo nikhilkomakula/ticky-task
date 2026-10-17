@@ -317,8 +317,12 @@ struct KanbanBoardView: View {
 
     /// Dragging a selected card carries the whole selection, in board order.
     private func dragSource(for task: KanbanTask) -> BoardDragSource {
-        // Archived cards in the selection stay selected (for Restore) but don't move.
-        selected.contains(task.id) && selected.count > 1 ? .cards(selection().filter { $0.archivedAt == nil }.map(\.id)) : .cards([task.id])
+        // Only what's on screen travels: archived cards stay selected (for Restore) and cards
+        // a filter hides stay put, so the drop does exactly what the drag shows.
+        guard selected.contains(task.id), selected.count > 1 else { return .cards([task.id]) }
+        let state = KanbanBoardState.decode(project.boardState)
+        let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
+        return .cards(selection().filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) }.map(\.id))
     }
 
     private func menuTasks(for task: KanbanTask) -> [KanbanTask] {
