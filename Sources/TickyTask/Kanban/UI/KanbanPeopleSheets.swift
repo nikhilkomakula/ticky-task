@@ -14,7 +14,6 @@ struct KanbanAddPersonSheet: View {
     @State private var initials = ""
     @State private var employment = KanbanEmployment.fte
     @State private var allocation = 100
-    @State private var assignment = KanbanAssignment.fullTime
     @State private var error: String?
 
     private var available: [KanbanPerson] {
@@ -42,11 +41,13 @@ struct KanbanAddPersonSheet: View {
                         Text("Contractor").tag(KanbanEmployment.contractor)
                     }
                 }
-                Picker("Assignment", selection: $assignment) {
-                    Text("Full-time").tag(KanbanAssignment.fullTime)
-                    Text("Part-time").tag(KanbanAssignment.partTime)
+                VStack(alignment: .leading, spacing: 4) {
+                    Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100, step: 1)
+                        .accessibilityIdentifier("kanban-membership-allocation")
+                    Text(allocation == 100 ? "100% · Full-time" : "\(allocation)% · Part-time")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Stepper("Allocation: \(allocation)%", value: $allocation, in: 5...100, step: 5)
             }
             .frame(width: 380)
             if let error {
@@ -74,7 +75,8 @@ struct KanbanAddPersonSheet: View {
         do {
             let person = try available.first { $0.id == personID }
                 ?? service.createPerson(name: name.trimmingCharacters(in: .whitespaces), initials: initials, employment: employment)
-            _ = try service.addMembership(person, to: project, allocationPercent: allocation, assignment: assignment)
+            let derivedAssignment = allocation == 100 ? KanbanAssignment.fullTime : .partTime
+            _ = try service.addMembership(person, to: project, allocationPercent: allocation, assignment: derivedAssignment)
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -93,7 +95,6 @@ struct KanbanMembershipSheet: View {
     @State private var initials = ""
     @State private var employment = KanbanEmployment.fte
     @State private var role = ""
-    @State private var assignment = KanbanAssignment.fullTime
     @State private var allocation = 100
     @State private var hasHours = false
     @State private var hours = 40.0
@@ -119,12 +120,13 @@ struct KanbanMembershipSheet: View {
                 }
                 Section("On this board") {
                     TextField("Role", text: $role)
-                    Picker("Assignment", selection: $assignment) {
-                        Text("Full-time").tag(KanbanAssignment.fullTime)
-                        Text("Part-time").tag(KanbanAssignment.partTime)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100, step: 1)
+                            .accessibilityIdentifier("kanban-membership-allocation")
+                        Text(allocation == 100 ? "100% · Full-time" : "\(allocation)% · Part-time")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100)
-                        .accessibilityIdentifier("kanban-membership-allocation")
                     Toggle("Weekly hours override", isOn: $hasHours)
                     if hasHours { TextField("Hours per week", value: $hours, format: .number) }
                     Toggle("Open-task target override", isOn: $hasTarget)
@@ -157,7 +159,6 @@ struct KanbanMembershipSheet: View {
         initials = resource.person?.initials ?? ""
         employment = resource.person?.employment ?? .fte
         role = resource.role ?? ""
-        assignment = resource.assignment
         allocation = resource.allocationPercent
         hasHours = resource.capacityHoursPerWeekOverride != nil
         hours = resource.capacityHoursPerWeekOverride ?? 40
@@ -173,9 +174,10 @@ struct KanbanMembershipSheet: View {
         let service = app.kanbanService(context)
         let day = Calendar.current.startOfDay
         let trimmedRole = role.trimmingCharacters(in: .whitespaces)
+        let derivedAssignment = allocation == 100 ? KanbanAssignment.fullTime : .partTime
         let values: [KanbanService.MembershipField: KanbanValue?] = [
             .role: trimmedRole.isEmpty ? nil : .string(trimmedRole),
-            .assignmentRaw: .string(assignment.rawValue),
+            .assignmentRaw: .string(derivedAssignment.rawValue),
             .allocationPercent: .int(allocation),
             .capacityHoursPerWeekOverride: hasHours ? .double(hours) : nil,
             .openTaskTargetOverride: hasTarget ? .double(target) : nil,

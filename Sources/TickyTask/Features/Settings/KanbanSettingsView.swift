@@ -23,6 +23,7 @@ struct KanbanSettingsView: View {
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var templates = KanbanTemplateStore.saved()
     @State private var message: String?
+    @State private var showDefaultLabelsSheet = false
 
     var body: some View {
         let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
@@ -51,6 +52,12 @@ struct KanbanSettingsView: View {
                 }
                 Stepper("Due soon: within \(dueSoon) day\(dueSoon == 1 ? "" : "s")", value: $dueSoon, in: 0...30)
                 Toggle("Offer to move a card to Done when its steps are done", isOn: $suggestDone)
+                HStack {
+                    Text("Default labels for new boards")
+                    Spacer()
+                    Button("Edit…", action: { showDefaultLabelsSheet = true })
+                        .accessibilityIdentifier("settings-kanban-default-labels")
+                }
             }
             Section("Menu bar") {
                 Picker("Quick add files cards in", selection: $popoverProjectID) {
@@ -123,6 +130,9 @@ struct KanbanSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { templates = KanbanTemplateStore.saved() }
+        .sheet(isPresented: $showDefaultLabelsSheet) {
+            KanbanLabelManagerSheet(defaults: ())
+        }
     }
 
     private static func time(_ minutes: Int) -> Date {
