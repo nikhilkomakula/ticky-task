@@ -181,7 +181,13 @@ final class KanbanBoardUITests: XCTestCase {
     private func drag(_ app: XCUIApplication, _ from: XCUIElement, to target: XCUIElement, at offset: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
         let start = from.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
         start.press(forDuration: 0.35, thenDragTo: target.coordinate(withNormalizedOffset: offset))
-        Thread.sleep(forTimeInterval: 1.2)
+    }
+
+    /// Waits for the board to settle into `condition` (layout after a drop is asynchronous).
+    private func eventually(timeout: TimeInterval = 6, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        return condition()
     }
 
     private func isInside(_ inner: XCUIElement, _ outer: XCUIElement) -> Bool {
@@ -195,7 +201,7 @@ final class KanbanBoardUITests: XCTestCase {
         let cell = element(app, "kanban-cell-In Progress-Ravi Kumar")
         XCTAssertTrue(card.waitForExistence(timeout: 5) && cell.exists)
         drag(app, card, to: cell, at: CGVector(dx: 0.5, dy: 0.9))
-        XCTAssertTrue(isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-In Progress-Ravi Kumar")),
+        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-In Progress-Ravi Kumar")) },
                       "the card moved to Ravi's In Progress cell")
     }
 
@@ -205,7 +211,7 @@ final class KanbanBoardUITests: XCTestCase {
         let card = element(app, "kanban-card-Build API")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         drag(app, card, to: element(app, "kanban-rowhdr-Mia Chen"))
-        XCTAssertTrue(isInside(element(app, "kanban-card-Build API"), element(app, "kanban-cell-In Progress-Mia Chen")),
+        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Build API"), element(app, "kanban-cell-In Progress-Mia Chen")) },
                       "same column, Mia's row")
     }
 
@@ -216,7 +222,7 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(done.frame.minX, todo.frame.minX)
         drag(app, done, to: todo, at: CGVector(dx: 0.1, dy: 0.5))
-        XCTAssertLessThan(element(app, "kanban-colhdr-Done").frame.minX, element(app, "kanban-colhdr-To Do").frame.minX, "Done is first now")
+        XCTAssertTrue(eventually { element(app, "kanban-colhdr-Done").frame.minX < element(app, "kanban-colhdr-To Do").frame.minX }, "Done is first now")
     }
 
     func testKeyboardMovesAFocusedCard() {
@@ -227,7 +233,7 @@ final class KanbanBoardUITests: XCTestCase {
         card.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).click()   // opens the editor, and focuses the card
         if element(app, "kanban-editor-cancel").waitForExistence(timeout: 3) { element(app, "kanban-editor-cancel").click() }
         app.typeKey(.rightArrow, modifierFlags: .command)
-        XCTAssertTrue(isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")),
+        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")) },
                       "⌘→ moves it to the next column")
     }
 }

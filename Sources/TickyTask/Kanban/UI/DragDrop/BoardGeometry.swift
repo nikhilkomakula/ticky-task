@@ -35,8 +35,10 @@ struct BoardFrames: Equatable, Sendable {
     var cells: [Cell] = []
     var columnHeaders: [ColumnHeader] = []
     var rowHeaders: [RowHeader] = []
-    /// The visible board, for auto-scroll.
+    /// The visible board, for auto-scroll and to ignore clipped content.
     var viewport: CGRect = .zero
+    /// Every membership row in board order, including rows the lazy grid hasn't drawn.
+    var rowOrder: [UUID] = []
 }
 
 /// Pure drop resolution, unit-tested without any UI (design 01 §4).
@@ -45,11 +47,18 @@ enum BoardGeometry {
     /// For cards, header zones win over cells; inside a cell the insertion point follows
     /// the planner's midpoint rule (drop on a card's lower half to land after it).
     static func resolve(pointer: CGPoint, source: BoardDragSource, frames: BoardFrames) -> BoardDropTarget? {
+        guard frames.viewport.contains(pointer) else { return nil }
         switch source {
         case let .cards(ids):
             let dragged = Set(ids)
-            if let header = frames.rowHeaders.first(where: { $0.frame.contains(pointer) }) { return .rowHeader(header.row) }
-            if let header = frames.columnHeaders.first(where: { $0.frame.contains(pointer) }) { return .columnHeader(header.id) }
+            // In stacking order: the pinned column headers (and the corner) sit above the rows,
+            // the pinned row headers above the cells, so whatever the pointer sees wins.
+            let headerBottom = frames.columnHeaders.map(\.frame.maxY).max() ?? -.infinity
+            if pointer.y <= headerBottom {
+                return frames.columnHeaders.first { $0.frame.contains(pointer) }.map { .columnHeader($0.id) }
+            }
+            if let header = frames.rowHeaders.first(where: { !$0.isSummary && $0.frame.contains(pointer) }) { return .rowHeader(header.row) }
+            if let strip = frames.rowHeaders.first(where: { $0.isSummary && $0.frame.contains(pointer) }) { return .rowHeader(strip.row) }
             guard let cell = frames.cells.first(where: { $0.frame.contains(pointer) }) else { return nil }
             let siblings = frames.cards
                 .filter { $0.columnID == cell.columnID && $0.row == cell.row && !dragged.contains($0.id) }
@@ -58,12 +67,20 @@ enum BoardGeometry {
             return .cell(columnID: cell.columnID, row: cell.row, beforeCardID: before)
         case let .column(id):
             // Anywhere over the board: the slot follows the pointer across the columns.
-            guard frames.viewport.contains(pointer) else { return nil }
             return .columnSlot(frames.columnHeaders.filter { $0.id != id && $0.frame.midX < pointer.x }.count)
         case let .row(id):
-            guard frames.viewport.contains(pointer) else { return nil }
-            let others = frames.rowHeaders.filter { !$0.isSummary && $0.row != .unassigned && $0.row != .resource(id) }
-            return .rowSlot(others.filter { $0.frame.midY < pointer.y }.count)
+            // The lazy grid only draws some rows, so place the row relative to a visible one
+            // and count its index in the complete order.
+            let order = frames.rowOrder.filter { $0 != id }
+            let visible = frames.rowHeaders.compactMap { header -> (id: UUID, frame: CGRect)? in
+                guard !header.isSummary, let rid = header.row.resourceID, rid != id else { return nil }
+                return (rid, header.frame)
+            }.sorted { $0.frame.minY < $1.frame.minY }
+            if let before = visible.first(where: { pointer.y < $0.frame.midY }), let index = order.firstIndex(of: before.id) {
+                return .rowSlot(index)
+            }
+            if let last = visible.last, let index = order.firstIndex(of: last.id) { return .rowSlot(index + 1) }
+            return nil
         }
     }
 

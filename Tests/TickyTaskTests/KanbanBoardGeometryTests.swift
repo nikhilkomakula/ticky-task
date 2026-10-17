@@ -34,7 +34,8 @@ struct KanbanBoardGeometryTests {
                 .init(row: .resource(mia), frame: CGRect(x: 0, y: 300, width: 200, height: 60)),
                 .init(row: .resource(mia), frame: CGRect(x: 200, y: 300, width: 500, height: 60), isSummary: true),
             ],
-            viewport: CGRect(x: 0, y: 0, width: 700, height: 360))
+            viewport: CGRect(x: 0, y: 0, width: 700, height: 360),
+            rowOrder: [ravi, mia])
     }
 
     @Test func cellInsertionFollowsTheMidpointRule() {
@@ -66,6 +67,27 @@ struct KanbanBoardGeometryTests {
                 "Unassigned and collapsed strips aren't slots")
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 50, y: 50), source: .row(mia), frames: frames) == .rowSlot(0))
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 900, y: 50), source: .row(mia), frames: frames) == nil)
+    }
+
+    @Test func whatThePointerSeesWins() {
+        var f = frames
+        // Mia's collapsed strip scrolled up under the pinned column headers.
+        f.rowHeaders.append(.init(row: .resource(mia), frame: CGRect(x: 200, y: 10, width: 500, height: 60), isSummary: true))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 500, y: 20), source: .cards([a]), frames: f) == .columnHeader(doing),
+                "the pinned column header is on top")
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 100, y: 20), source: .cards([a]), frames: f) == nil, "the corner isn't a target")
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 380), source: .cards([a]), frames: frames) == nil,
+                "clipped content outside the board isn't a target")
+    }
+
+    @Test func rowSlotsCountTheCompleteOrder() {
+        let w = UUID(), x = UUID(), y = UUID(), z = UUID()
+        // Only y and z are drawn; w and x are scrolled away.
+        let f = BoardFrames(rowHeaders: [.init(row: .resource(y), frame: CGRect(x: 0, y: 100, width: 200, height: 50)),
+                                         .init(row: .resource(z), frame: CGRect(x: 0, y: 150, width: 200, height: 50))],
+                            viewport: CGRect(x: 0, y: 0, width: 700, height: 400), rowOrder: [w, x, y, z])
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 50, y: 110), source: .row(z), frames: f) == .rowSlot(2), "just above y, after x")
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 50, y: 190), source: .row(w), frames: f) == .rowSlot(3), "below z, last")
     }
 
     @Test func dropsMapToServiceOperations() {

@@ -34,7 +34,7 @@ struct KanbanBoardView: View {
         let people = app.kanbanMetrics.people(allProjects, key: key, calendar: calendar)
         let tasks = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let collapsed = Set(project.collapsedRowKeys)
-        let _ = configureDrag(metrics: metrics)
+        let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID))
 
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
@@ -75,6 +75,7 @@ struct KanbanBoardView: View {
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
         .sheet(item: $movingTask) { KanbanMoveSheet(task: $0) }
+        .onDisappear { drag.cancel() }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {
@@ -151,9 +152,10 @@ struct KanbanBoardView: View {
     }
 
     /// Points the drag controller at this board (not observed state, so this redraws nothing).
-    private func configureDrag(metrics: MetricsSnapshot) {
+    private func configureDrag(metrics: MetricsSnapshot, rowOrder: [UUID]) {
         drag.project = project
         drag.metrics = metrics
+        if drag.rowOrder != rowOrder { drag.rowOrder = rowOrder }
         drag.commit = { [app, context, project] op in
             app.runKanban { _ = try app.kanbanService(context).move(op, in: project) }
         }
@@ -195,9 +197,9 @@ struct KanbanBoardView: View {
             let siblings = snapshot.cards(in: card.columnID, row: card.row).map(\.id)
             let position = siblings.firstIndex(of: id) ?? 0
             switch (press.key, command, option) {
-            case (.upArrow, true, true):
+            case (.upArrow, true, true), (.leftArrow, true, true):
                 return position > 0 ? run(.cards([id], to: .cell(columnID: card.columnID, row: card.row, beforeCardID: siblings[position - 1]))) : .handled
-            case (.downArrow, true, true):
+            case (.downArrow, true, true), (.rightArrow, true, true):
                 guard position < siblings.count - 1 else { return .handled }
                 let before = position + 2 < siblings.count ? siblings[position + 2] : nil
                 return run(.cards([id], to: .cell(columnID: card.columnID, row: card.row, beforeCardID: before)))
@@ -378,7 +380,8 @@ private struct KanbanCell: View {
         }
         .padding(6)
         .frame(width: KanbanUI.columnWidth, alignment: .top)
-        .frame(minHeight: 72, alignment: .top)
+        // The full row height, so the blank space under short cells is a drop target too.
+        .frame(minHeight: 72, maxHeight: .infinity, alignment: .top)
         .background((KanbanUI.color(column.colorHex) ?? .clear).opacity(0.06))
         .publishBoardFrame { BoardFrames(cells: [.init(columnID: column.id, row: row.key, frame: $0)]) }
         .contentShape(Rectangle())

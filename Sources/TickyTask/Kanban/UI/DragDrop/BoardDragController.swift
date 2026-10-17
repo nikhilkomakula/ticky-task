@@ -29,10 +29,18 @@ final class BoardDragController {
     private(set) var wipNote: WIPNote?
     /// By membership id.
     private(set) var projected: [UUID: Projection] = [:]
+    /// Bumped when the frames move during a drag, so the indicator follows the board.
+    private(set) var geometryRevision = 0
     private var grabOffset: CGSize = .zero
 
     // Set by the board; not observed, so frame churn while scrolling redraws nothing.
-    @ObservationIgnored var frames = BoardFrames()
+    @ObservationIgnored var frames = BoardFrames() {
+        didSet { if frames.rowOrder != rowOrder { frames.rowOrder = rowOrder } }
+    }
+    /// Every membership row in board order (the lazy grid publishes only drawn rows).
+    @ObservationIgnored var rowOrder: [UUID] = [] {
+        didSet { frames.rowOrder = rowOrder }
+    }
     @ObservationIgnored var project: KanbanProject?
     @ObservationIgnored var metrics: MetricsSnapshot?
     @ObservationIgnored var commit: (MoveOp) -> Void = { _ in }
@@ -65,8 +73,11 @@ final class BoardDragController {
         pointer = start
         recompute()
         autoScroll?.invalidate()
-        autoScroll = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
+        autoScroll = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return timer.invalidate() }   // the board went away mid-drag
+                self.tick()
+            }
         }
     }
 
@@ -76,7 +87,11 @@ final class BoardDragController {
     }
 
     /// The board's frames moved (scrolling, auto-scroll): the pointer may be over something new.
-    func framesChanged() { if isActive { recompute() } }
+    func framesChanged() {
+        guard isActive else { return }
+        geometryRevision &+= 1
+        recompute()
+    }
 
     func end() {
         if let source, let target, let op = BoardGeometry.operation(source: source, target: target) { commit(op) }
@@ -131,7 +146,9 @@ final class BoardDragController {
         guard let first = dragged.first else { return }
         let (columnID, resource) = destination(of: first)
 
-        if let columnID, let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit {
+        // As `KanbanMoves` decides: only a column that gains cards can go over its limit.
+        if let columnID, let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit,
+           dragged.contains(where: { $0.column?.id != columnID }) {
             let staying = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == columnID && !ids.contains($0.id) }.count
             let count = staying + dragged.count
             if count > limit {
@@ -155,6 +172,7 @@ final class BoardDragController {
     // MARK: - Insertion indicator, in global coordinates
 
     var insertionLine: CGRect? {
+        _ = geometryRevision
         guard let target else { return nil }
         let thickness: CGFloat = DragChrome.lineThickness
         switch target {
@@ -177,12 +195,19 @@ final class BoardDragController {
             let x = index < others.count ? others[index].frame.minX : (others.last?.frame.maxX ?? reference.frame.maxX)
             return CGRect(x: x - thickness / 2, y: reference.frame.minY, width: thickness, height: frames.viewport.maxY - reference.frame.minY)
         case let .rowSlot(index):
-            let others = frames.rowHeaders.filter {
-                if !$0.isSummary, case let .resource(id) = $0.row { return !isDragging(row: id) }
-                return false
-            }.sorted { $0.frame.minY < $1.frame.minY }
-            guard let reference = frames.rowHeaders.first else { return nil }
-            let y = index < others.count ? others[index].frame.minY : (others.last?.frame.maxY ?? reference.frame.maxY)
+            // `index` counts the complete order without the dragged row: draw above the row
+            // now at that index, or below the one before it.
+            guard case let .row(source)? = source, let reference = frames.rowHeaders.first(where: { !$0.isSummary }) else { return nil }
+            let order = frames.rowOrder.filter { $0 != source }
+            func header(_ id: UUID) -> CGRect? { frames.rowHeaders.first { !$0.isSummary && $0.row == .resource(id) }?.frame }
+            let y: CGFloat
+            if index < order.count, let frame = header(order[index]) {
+                y = frame.minY
+            } else if index > 0, index - 1 < order.count, let frame = header(order[index - 1]) {
+                y = frame.maxY
+            } else {
+                return nil
+            }
             return CGRect(x: reference.frame.minX, y: y - thickness / 2, width: frames.viewport.maxX - reference.frame.minX, height: thickness)
         case .columnHeader, .rowHeader:
             return nil
@@ -191,7 +216,8 @@ final class BoardDragController {
 
     /// The header or cell to outline as the drop target.
     var highlight: CGRect? {
-        switch target {
+        _ = geometryRevision
+        return switch target {
         case let .columnHeader(id)?: frames.columnHeaders.first { $0.id == id }?.frame
         case let .rowHeader(row)?: frames.rowHeaders.first { $0.row == row && !$0.isSummary }?.frame
         case let .cell(column, row, _)?: frames.cells.first { $0.columnID == column && $0.row == row }?.frame
@@ -226,17 +252,37 @@ extension View {
     /// card); high priority so the drag wins over the card's own tap, as in the planner.
     func boardDraggable(_ source: BoardDragSource, controller: BoardDragController, frame: @escaping () -> CGRect?,
                         task: KanbanTask? = nil, title: String = "") -> some View {
-        highPriorityGesture(
-            DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                .onChanged { value in
-                    if controller.source != source {
-                        controller.begin(source, frame: frame(), start: value.startLocation, task: task, title: title)
+        modifier(BoardDraggable(source: source, controller: controller, frame: frame, task: task, title: title))
+    }
+}
+
+private struct BoardDraggable: ViewModifier {
+    let source: BoardDragSource
+    let controller: BoardDragController
+    let frame: () -> CGRect?
+    let task: KanbanTask?
+    let title: String
+    /// Resets when the gesture ends or is cancelled; `onEnded` only runs for an end.
+    @GestureState private var isDragging = false
+
+    func body(content: Content) -> some View {
+        content
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .updating($isDragging) { _, state, _ in state = true }
+                    .onChanged { value in
+                        if controller.source != source {
+                            controller.begin(source, frame: frame(), start: value.startLocation, task: task, title: title)
+                        }
+                        controller.update(pointer: value.location)
                     }
-                    controller.update(pointer: value.location)
-                }
-                .onEnded { _ in
-                    withAnimation(DragChrome.dropSpring) { controller.end() }
-                }
-        )
+                    .onEnded { _ in
+                        withAnimation(DragChrome.dropSpring) { controller.end() }
+                    }
+            )
+            .onChange(of: isDragging) { _, dragging in
+                // A cancelled gesture (no `onEnded`) leaves nothing behind.
+                if !dragging, controller.source == source { controller.cancel() }
+            }
     }
 }
