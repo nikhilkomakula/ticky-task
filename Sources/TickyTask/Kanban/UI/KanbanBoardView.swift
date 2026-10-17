@@ -689,16 +689,21 @@ private struct KanbanCardSlot<Card: View>: View {
     @ViewBuilder let card: () -> Card
     @State private var overCard = false
     @State private var overButtons = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let shown = !isDragging && task.archivedAt == nil && (overCard || overButtons || isFocused)
         card()
             .onHover { overCard = $0 }
             .overlay(alignment: .topTrailing) {
-                if !isDragging, task.archivedAt == nil, overCard || overButtons || isFocused {
+                if shown {
                     KanbanCardHoverActions(task: task, onEdit: onEdit, onDelete: onDelete)
                         .onHover { overButtons = $0 }
-                        .padding(6)
+                        .padding(4)
+                        .transition(.opacity)
                 }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: shown)
+            .accessibilityElement(children: .contain)
     }
 }
