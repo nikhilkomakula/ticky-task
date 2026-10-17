@@ -1033,9 +1033,11 @@ struct KanbanService {
             if let resource = task.resource, resource.archivedAt != nil, let column = task.column?.id {
                 // After every card that will be in this Unassigned cell: the live ones and those
                 // coming back to it in place, so no two share a position.
-                let next = nextUnassigned[column] ?? (project.tasks.filter { card in
-                    card.column?.id == column && card.resource == nil && (card.archivedAt == nil || affected.contains { $0.id == card.id })
-                }.map(\.sortIndex).max() ?? -1) + 1
+                let comingBack = Set(affected.map(\.id))
+                let inCell = project.tasks.filter { card in
+                    card.column?.id == column && card.resource == nil && (card.archivedAt == nil || comingBack.contains(card.id))
+                }
+                let next: Double = nextUnassigned[column] ?? ((inCell.map(\.sortIndex).max() ?? -1) + 1)
                 to.resourceID = nil
                 to.sortIndex = next
                 nextUnassigned[column] = next + 1

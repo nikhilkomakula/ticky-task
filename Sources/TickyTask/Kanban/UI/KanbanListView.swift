@@ -56,6 +56,25 @@ struct KanbanListView: View {
         let labels: String
         let estimate: Double
         let archived: Bool
+        var dueText: String { hasDue ? due.formatted(date: .abbreviated, time: .omitted) : "—" }
+        var estimateText: String { estimate < 0 ? "—" : "\(estimate.formatted(.number.precision(.fractionLength(0...1))))h" }
+
+        init(_ task: KanbanTask, columns: [KanbanColumn]) {
+            let level = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
+            id = task.id
+            self.task = task
+            title = task.title
+            column = task.column?.name ?? ""
+            columnIndex = columns.firstIndex { $0.id == task.column?.id } ?? 0
+            assignee = task.resource.flatMap { $0.archivedAt == nil ? $0.displayName : nil } ?? "Unassigned"
+            priority = task.isCritical ? 3 : task.priority
+            priorityLabel = task.isCritical ? "Critical" : level.label
+            due = task.dueDate ?? .distantFuture
+            hasDue = task.dueDate != nil
+            labels = task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name).joined(separator: ", ")
+            estimate = task.estimateHours ?? -1
+            archived = task.archivedAt != nil
+        }
     }
 
     var body: some View {
@@ -63,38 +82,12 @@ struct KanbanListView: View {
         let columns = project.orderedColumns
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let order = sortOrder(state)
-        let rows = project.tasks
+        let rows: [Row] = project.tasks
             .filter { (state.showArchived || $0.archivedAt == nil) && state.filter.matches($0, calendar: calendar) }
-            .map { task in
-                let priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
-                return Row(id: task.id, task: task, title: task.title, column: task.column?.name ?? "",
-                           columnIndex: columns.firstIndex { $0.id == task.column?.id } ?? 0,
-                           assignee: task.resource.flatMap { $0.archivedAt == nil ? $0.displayName : nil } ?? "Unassigned",
-                           priority: task.isCritical ? 3 : task.priority, priorityLabel: task.isCritical ? "Critical" : priority.label,
-                           due: task.dueDate ?? .distantFuture, hasDue: task.dueDate != nil,
-                           labels: task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name).joined(separator: ", "),
-                           estimate: task.estimateHours ?? -1, archived: task.archivedAt != nil)
-            }
+            .map { Row($0, columns: columns) }
             .sorted(using: order.wrappedValue)
         let byID = Dictionary(rows.map { ($0.id, $0.task) }, uniquingKeysWith: { a, _ in a })
-        Table(rows, selection: $selection, sortOrder: order) {
-            TableColumn("Title", value: \.title) { row in
-                Text(row.title).foregroundStyle(row.archived ? .secondary : .primary)
-                    .accessibilityIdentifier("kanban-list-row-\(row.title)")
-            }
-            TableColumn("Column", value: \.columnIndex) { Text($0.column) }
-            TableColumn("Assignee", value: \.assignee) { Text($0.assignee) }
-            TableColumn("Priority", value: \.priority) { Text($0.priorityLabel) }
-            TableColumn("Due", value: \.due) { row in
-                Text(row.hasDue ? row.due.formatted(date: .abbreviated, time: .omitted) : "—")
-            }
-            TableColumn("Labels", value: \.labels) { Text($0.labels) }
-            if project.loadMeasure == .hours {
-                TableColumn("Estimate", value: \.estimate) { row in
-                    Text(row.estimate < 0 ? "—" : "\(row.estimate.formatted(.number.precision(.fractionLength(0...1))))h")
-                }
-            }
-        }
+        table(rows, order: order, hours: project.loadMeasure == .hours)
         .contextMenu(forSelectionType: UUID.self) { ids in
             KanbanBulkMenu(project: project, tasks: KanbanBulkMenu.ordered(ids.compactMap { byID[$0] }, in: project),
                            onOpen: { editingTask = $0 })
@@ -103,6 +96,23 @@ struct KanbanListView: View {
         }
         .accessibilityIdentifier("kanban-list")
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
+    }
+
+    // Split out, with explicit key paths and plain text cells, so it type-checks quickly.
+    private func table(_ rows: [Row], order: Binding<[KeyPathComparator<Row>]>, hours: Bool) -> some View {
+        Table(rows, selection: $selection, sortOrder: order) {
+            TableColumn("Title", value: \Row.title) { (row: Row) in
+                Text(row.title)
+                    .foregroundStyle(row.archived ? Color.secondary : Color.primary)
+                    .accessibilityIdentifier("kanban-list-row-\(row.title)")
+            }
+            TableColumn("Column", value: \Row.columnIndex) { (row: Row) in Text(row.column) }
+            TableColumn("Assignee", value: \Row.assignee) { (row: Row) in Text(row.assignee) }
+            TableColumn("Priority", value: \Row.priority) { (row: Row) in Text(row.priorityLabel) }
+            TableColumn("Due", value: \Row.due) { (row: Row) in Text(row.dueText) }
+            TableColumn("Labels", value: \Row.labels) { (row: Row) in Text(row.labels) }
+            TableColumn("Estimate", value: \Row.estimate) { (row: Row) in Text(hours ? row.estimateText : "—") }
+        }
     }
 }
 
@@ -117,12 +127,14 @@ struct KanbanBulkMenu: View {
 
     /// Cards in board order: column, then row, then position (design 01 §4, multi-selection).
     static func ordered(_ tasks: [KanbanTask], in project: KanbanProject) -> [KanbanTask] {
-        let columns = Dictionary(project.orderedColumns.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let rows = Dictionary(project.resources.map { ($0.id, $0.sortIndex) }, uniquingKeysWith: { a, _ in a })
-        return tasks.sorted {
-            (columns[$0.column?.id ?? UUID()] ?? .max, $0.resource.flatMap { rows[$0.id] } ?? -1, $0.sortIndex)
-                < (columns[$1.column?.id ?? UUID()] ?? .max, $1.resource.flatMap { rows[$0.id] } ?? -1, $1.sortIndex)
+        let columns: [UUID: Int] = Dictionary(project.orderedColumns.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let rows: [UUID: Double] = Dictionary(project.resources.map { ($0.id, $0.sortIndex) }, uniquingKeysWith: { a, _ in a })
+        func key(_ task: KanbanTask) -> (Int, Double, Double) {
+            let column = task.column.flatMap { columns[$0.id] } ?? .max
+            let row = task.resource.flatMap { rows[$0.id] } ?? -1
+            return (column, row, task.sortIndex)
         }
+        return tasks.sorted { key($0) < key($1) }
     }
 
     var body: some View {
