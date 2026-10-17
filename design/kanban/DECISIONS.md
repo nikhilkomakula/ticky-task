@@ -28,6 +28,7 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | I1-h | Round 7 | **INCREMENT-1: APPROVED** | Merged to main via PR (no tag) |
 | I2-a | Increment 2 (templates, board edits, metrics) | **CHANGES REQUESTED** — 1 blocker: count-mode load ignored cards dated after this week (§0 says `v₀ = v` in count mode); 5 should-fix: board edits accepted values of the wrong kind (unundoable), backlog groups counted cards in hours mode, view state saved without a change-log entry, an archived prerequisite hidden by other blockers, malformed Jira URLs passing hygiene | Fixed all but view state, which is exempt by design (I-D6) |
 | I2-b | Round 2 | **CHANGES REQUESTED** — fixes 1, 2, 3, 5, 6 confirmed; **I-D6 accepted**; 2 should-fix: negative or non-finite board defaults accepted (a −4 h default estimate cancels real work), a zero-capacity member with work not counted as over capacity | Fixed: numeric board settings must be finite and ≥ 0; `.noCapacity` with load counts as over capacity |
+| I2-c | Round 3 | **INCREMENT-2: APPROVED** — no findings | PR after increment 1 merges (no tag) |
 
 ### R2 issues and how they were resolved
 
