@@ -1,573 +1,120 @@
+import Testing
 import Foundation
 import SwiftData
-import Testing
 @testable import TickyTask
 
-@Suite(.serialized) @MainActor
+/// Board export and import between two stores (design 01 §7), on in-memory containers.
+@MainActor
+@Suite("Kanban board transfer", .serialized)
 struct KanbanBoardTransferTests {
-    // MARK: - Test Helpers
+    typealias T = KanbanBoardTransfer
 
-    private func makeInMemoryContext() -> ModelContext {
-        ModelContext(ModelContainerProvider.makeInMemoryContainer())
+    /// A board on one "Mac": Ravi and Mia (Mia later archived), labelled cards in each column,
+    /// a dependency, a step assigned to Ravi.
+    private func source() throws -> (ModelContext, KanbanProject) {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context)
+        let project = try s.createProject(name: "Platform", key: "PLAT", template: .software)
+        let ravi = try s.addMembership(try s.createPerson(name: "Ravi", initials: "RV"), to: project)
+        let mia = try s.addMembership(try s.createPerson(name: "Mia", initials: "MI", employment: .contractor), to: project, allocationPercent: 50)
+        let columns = project.orderedColumns
+        let api = try s.createTask(in: project, title: "Build API", column: columns[2], row: .resource(ravi.id))
+        let docs = try s.createTask(in: project, title: "Write docs", column: columns[1], row: .resource(mia.id))
+        let shipped = try s.createTask(in: project, title: "Shipped", column: columns.last!, row: .resource(ravi.id))
+        try s.setLabels(api, [project.labels.sorted { $0.sortIndex < $1.sortIndex }[0]])
+        try s.setDependencies(docs, [api])
+        let step = try s.addSubtask(to: api, title: "Endpoints")
+        _ = step
+        try s.archiveMembership(mia)
+        _ = shipped
+        return (context, project)
     }
 
-    private func makeFixtureBoard(context: ModelContext) -> (project: KanbanProject, people: [KanbanPerson], tasks: [KanbanTask]) {
-        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+    private func fresh() -> ModelContext { ModelContext(ModelContainerProvider.makeInMemoryContainer()) }
 
-        // Create people
-        let alice = KanbanPerson(id: UUID(), name: "Alice", initials: "AW", employment: .fte)
-        alice.createdAt = t0
-        context.insert(alice)
-
-        let bob = KanbanPerson(id: UUID(), name: "Bob", initials: "BC", employment: .contractor)
-        bob.createdAt = t0
-        context.insert(bob)
-
-        // Create project
-        let project = KanbanProject(id: UUID(), name: "Test Board", key: "TEST", sortIndex: 1)
-        project.createdAt = t0
-        project.updatedAt = t0
-        context.insert(project)
-
-        // Create columns
-        let backlog = KanbanColumn(id: UUID(), name: "Backlog", sortIndex: 1)
-        backlog.kindRaw = "backlog"
-        backlog.project = project
-        context.insert(backlog)
-
-        let inProgress = KanbanColumn(id: UUID(), name: "In Progress", sortIndex: 2)
-        inProgress.kindRaw = "active"
-        inProgress.project = project
-        context.insert(inProgress)
-
-        let done = KanbanColumn(id: UUID(), name: "Done", sortIndex: 3)
-        done.kindRaw = "done"
-        done.project = project
-        context.insert(done)
-
-        // Create resources
-        let res1 = KanbanResource()
-        res1.id = UUID()
-        res1.person = alice
-        res1.project = project
-        res1.assignmentRaw = KanbanAssignment.fullTime.rawValue
-        res1.allocationPercent = 100
-        res1.sortIndex = 1
-        context.insert(res1)
-
-        let res2 = KanbanResource()
-        res2.id = UUID()
-        res2.person = bob
-        res2.project = project
-        res2.assignmentRaw = KanbanAssignment.partTime.rawValue
-        res2.allocationPercent = 50
-        res2.sortIndex = 2
-        context.insert(res2)
-
-        // Create tasks
-        let task1 = KanbanTask(id: UUID(), title: "Task 1", priority: 1, sortIndex: 1)
-        task1.project = project
-        task1.column = backlog
-        task1.resource = res1
-        task1.createdAt = t0
-        task1.updatedAt = t0
-        context.insert(task1)
-
-        let task2 = KanbanTask(id: UUID(), title: "Task 2", priority: 0, sortIndex: 2)
-        task2.project = project
-        task2.column = inProgress
-        task2.resource = res2
-        task2.createdAt = t0
-        task2.updatedAt = t0
-        context.insert(task2)
-
-        let task3 = KanbanTask(id: UUID(), title: "Task 3", priority: 2, sortIndex: 3)
-        task3.project = project
-        task3.column = done
-        task3.completedAt = t0
-        task3.createdAt = t0
-        task3.updatedAt = t0
-        context.insert(task3)
-
-        // Create subtasks
-        let subtask1 = KanbanSubtask(id: UUID(), title: "Subtask 1", isDone: false, sortIndex: 1)
-        subtask1.task = task1
-        subtask1.assignee = res1
-        context.insert(subtask1)
-
-        try? context.save()
-
-        return (project: project, people: [alice, bob], tasks: [task1, task2, task3])
+    @Test("Export then import into an empty store reproduces the board")
+    func roundTrip() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let plan = try T.plan(data, context: to)
+        #expect(plan.boards.map(\.name) == ["Platform"] && plan.people.count == 2, "the archived member's person travels too")
+        #expect(plan.people.allSatisfy { $0.match == .none && $0.linkTo == nil })
+        try T.apply(plan, fileName: "platform.tickytask-board", context: to)
+        let board = try #require(try to.fetch(FetchDescriptor<KanbanProject>()).first)
+        #expect(board.id != project.id, "imported rows get fresh ids")
+        #expect(board.orderedColumns.map(\.name) == project.orderedColumns.map(\.name))
+        #expect(Set(board.tasks.map(\.title)) == ["Build API", "Write docs", "Shipped"])
+        let api = try #require(board.tasks.first { $0.title == "Build API" })
+        #expect(api.column?.name == "In Progress" && api.resource?.displayName == "Ravi" && api.labels.count == 1 && api.subtasks.count == 1)
+        #expect(board.tasks.first { $0.title == "Write docs" }?.dependsOn.map(\.title) == ["Build API"])
+        #expect(board.tasks.first { $0.title == "Write docs" }?.resource == nil, "Mia's membership is archived, so her card is Unassigned")
+        #expect(board.tasks.first { $0.title == "Shipped" }?.completedAt != nil)
+        #expect(board.resources.count == 2 && board.resources.filter { $0.archivedAt != nil }.count == 1)
+        let entries = board.activities
+        #expect(entries.map(\.summary) == ["Imported from platform.tickytask-board"] && entries.first?.seq == 1 && board.nextActivitySeq == 2)
+        #expect(!KanbanService.offersRevert(try #require(entries.first)), "the import note isn't revertible")
     }
 
-    // MARK: - Export Tests
-
-    @Test
-    func testExportBasicBoard() throws {
-        let context = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: context)
-
-        let data = try KanbanBoardTransfer.export(projects: [project], context: context)
-
-        // Verify JSON structure
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        struct Envelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let envelope = try decoder.decode(Envelope.self, from: data)
-        #expect(envelope.format == "tickytask-board")
-        #expect(envelope.version == 1)
-        #expect(!envelope.kanban.projects.isEmpty)
+    @Test("A taken key is renamed; people match by id, then by name")
+    func keysAndPeople() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        // The same store already has this board and these people: ids match.
+        let same = try T.plan(data, context: from)
+        #expect(same.boards.first?.key == "PLAT2" && same.boards.first?.keyWasTaken == true)
+        #expect(same.people.allSatisfy { $0.match == .sameID })
+        // Another store with a different "Ravi": a name match, linked by default.
+        let to = fresh()
+        let other = KanbanService(to)
+        let ravi = try other.createPerson(name: " ravi ", initials: "R")
+        let plan = try T.plan(data, context: to)
+        #expect(plan.people.first { $0.name == "Ravi" }?.linkTo == ravi.id)
+        try T.apply(plan, fileName: "f", context: to)
+        #expect(try to.fetch(FetchDescriptor<KanbanPerson>()).count == 2, "Ravi linked, Mia created")
     }
 
-    @Test
-    func testExportIncludesReferencedPeople() throws {
-        let context = makeInMemoryContext()
-        let (project, people, _) = makeFixtureBoard(context: context)
-
-        let data = try KanbanBoardTransfer.export(projects: [project], context: context)
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        struct Envelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let envelope = try decoder.decode(Envelope.self, from: data)
-        let kanban = envelope.kanban
-
-        #expect(kanban.people.count == 2)
-        #expect(kanban.projects.count == 1)
-        #expect(kanban.tasks.count == 3)
+    @Test("Merging into an existing board matches columns and reuses memberships")
+    func mergeInto() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        var plan = try T.plan(data, context: from)
+        plan.boards[0].mergeInto = project.id
+        let before = project.tasks.count
+        try T.apply(plan, fileName: "again", context: from)
+        #expect(project.tasks.count == before * 2)
+        #expect(project.orderedColumns.count == 5, "every column matched by name and kind")
+        #expect(project.resources.filter { $0.archivedAt == nil }.count == 1, "Ravi's existing membership is reused")
+        let copies = project.tasks.filter { $0.title == "Build API" }
+        #expect(copies.count == 2 && Set(copies.map(\.sortIndex)).count == 2, "appended in the cell, not on top of the original")
+        #expect(project.activities.contains { $0.summary == "Imported from again" })
     }
 
-    @Test
-    func testExportDeterministicOrder() throws {
-        let context = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: context)
-
-        let data1 = try KanbanBoardTransfer.export(projects: [project], context: context)
-        let data2 = try KanbanBoardTransfer.export(projects: [project], context: context)
-
-        #expect(data1 == data2)
+    @Test("Bad files are refused before anything is written")
+    func refusals() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        #expect(throws: T.TransferError.notABoardFile) { try T.plan(Data("{}".utf8), context: to) }
+        var envelope = try BackupCoding.decoder().decode(T.Envelope.self, from: data)
+        envelope.version = 99
+        #expect(throws: T.TransferError.newerVersion) { try T.plan(try BackupCoding.encoder().encode(envelope), context: to) }
+        envelope.version = 1
+        envelope.kanban.people.removeAll { $0.name == "Mia" }
+        #expect(throws: T.TransferError.missingPerson("Platform")) { try T.plan(try BackupCoding.encoder().encode(envelope), context: to) }
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = UUID()
+        #expect(throws: T.TransferError.noSuchBoard) { try T.apply(plan, fileName: "x", context: to) }
+        #expect(try to.fetchCount(FetchDescriptor<KanbanProject>()) == 0 && to.fetchCount(FetchDescriptor<KanbanPerson>()) == 0)
     }
 
-    // MARK: - CSV Tests
-
-    @Test
-    func testCSVExport() throws {
-        let context = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: context)
-
-        let csv = KanbanBoardTransfer.csv(project: project, context: context)
-
-        let lines = csv.split(separator: "\n", omittingEmptySubsequences: true)
-        #expect(lines.count >= 4)  // Header + at least 3 tasks
-        #expect(String(lines[0]).contains("Title"))
-        #expect(String(lines[0]).contains("Column"))
+    @Test("CSV quotes fields and neutralises formulas")
+    func csv() throws {
+        let (_, project) = try source()
+        let text = T.csv(project)
+        let lines = text.components(separatedBy: "\r\n")
+        #expect(lines.first == "Title,Column,Assignee,Priority,Critical,Due,Start,Estimate (h),Labels,Jira,Blocked,Subtasks")
+        #expect(lines.count == 5 && lines.last == "", "three cards and a trailing line end")
+        #expect(T.quote("a,b") == "\"a,b\"" && T.quote("say \"hi\"") == "\"say \"\"hi\"\"\"" && T.quote("=SUM(A1)") == "'=SUM(A1)")
     }
-
-    @Test
-    func testCSVQuoting() throws {
-        let context = makeInMemoryContext()
-
-        let project = KanbanProject(name: "Test", key: "TST", sortIndex: 1)
-        context.insert(project)
-
-        let col = KanbanColumn(name: "Backlog", sortIndex: 1)
-        col.kindRaw = "backlog"
-        col.project = project
-        context.insert(col)
-
-        let task = KanbanTask(title: "Task with \"quotes\", comma", priority: 0, sortIndex: 1)
-        task.project = project
-        task.column = col
-        context.insert(task)
-
-        try? context.save()
-
-        let csv = KanbanBoardTransfer.csv(project: project, context: context)
-        #expect(csv.contains("\"Task with \"\"quotes\"\", comma\""))
-    }
-
-    // MARK: - Preview Tests
-
-    @Test
-    func testPreviewValidatesFileFormat() throws {
-        let context = makeInMemoryContext()
-
-        struct BadEnvelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let badDto = KanbanBackupDTO(version: 1, people: [], projects: [], columns: [], resources: [], labels: [], tasks: [], subtasks: [], activities: [])
-        let badEnvelope = BadEnvelope(format: "wrong", version: 1, kanban: badDto)
-        let badJson = try JSONEncoder().encode(badEnvelope)
-
-        do {
-            _ = try KanbanBoardTransfer.preview(badJson, context: context)
-            #expect(false, "Should have thrown")
-        } catch {
-            #expect(error is BackupError)
-        }
-    }
-
-    @Test
-    func testPreviewRejectsIncompatibleVersion() throws {
-        let context = makeInMemoryContext()
-
-        struct Envelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let badDto = KanbanBackupDTO(version: 999, people: [], projects: [], columns: [], resources: [], labels: [], tasks: [], subtasks: [], activities: [])
-        let envelope = Envelope(format: "tickytask-board", version: 999, kanban: badDto)
-        let json = try JSONEncoder().encode(envelope)
-
-        do {
-            _ = try KanbanBoardTransfer.preview(json, context: context)
-            #expect(false, "Should have thrown")
-        } catch {
-            #expect(error is BackupError)
-        }
-    }
-
-    @Test
-    func testPreviewIdClashRemapping() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, people, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        // Insert same ids to trigger clash
-        for person in people {
-            let dup = KanbanPerson(id: person.id, name: "Duplicate", initials: "DUP", employment: .fte)
-            destContext.insert(dup)
-        }
-
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        #expect(plan.format == "tickytask-board")
-        #expect(plan.version == 1)
-        #expect(!plan.projectActions.isEmpty)
-    }
-
-    @Test
-    func testPreviewPersonNameMatching() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        // Insert person with same name but different id
-        let alice = KanbanPerson(id: UUID(), name: "Alice", initials: "AW", employment: .fte)
-        destContext.insert(alice)
-
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        let aliceAction = plan.personActions.first { $0.sourceName == "Alice" }
-        #expect(aliceAction?.action != nil)
-    }
-
-    @Test
-    func testPreviewProjectKeyClash() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        // Insert project with same key
-        let existing = KanbanProject(name: "Existing", key: "TEST", sortIndex: 1)
-        destContext.insert(existing)
-
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        let projectAction = plan.projectActions.first
-        if case .mergeInto = projectAction?.action {
-            // Expected: suggest merge
-        } else {
-            #expect(false, "Should suggest merge for key clash")
-        }
-    }
-
-    @Test
-    func testPreviewDanglingPersonIdRejected() throws {
-        // Create a simple invalid Kanban file with dangling person reference
-        let invalidData = """
-        {
-            "format": "tickytask-board",
-            "version": 1,
-            "kanban": {
-                "version": 1,
-                "people": [],
-                "projects": [{
-                    "id": "00000000-0000-0000-0000-000000000001",
-                    "name": "Test",
-                    "key": "TST",
-                    "details": "",
-                    "colorHex": "#000000",
-                    "symbolName": "square",
-                    "sortIndex": 1,
-                    "isPinned": false,
-                    "createdAt": "2024-01-01T00:00:00Z",
-                    "updatedAt": "2024-01-01T00:00:00Z",
-                    "archivedAt": null,
-                    "workWeekDays": [],
-                    "hoursPerDay": 8,
-                    "defaultCapacityHoursPerWeek": 40,
-                    "wipPolicyRaw": "ignore",
-                    "loadMeasureRaw": "hours",
-                    "openTaskTarget": 5,
-                    "defaultEstimateHours": 4,
-                    "weightedLoad": false,
-                    "dueSoonThresholdDays": 7,
-                    "suggestDoneWhenSubtasksComplete": false,
-                    "collapsedRowKeys": [],
-                    "boardState": null,
-                    "nextActivitySeq": 1
-                }],
-                "columns": [{
-                    "id": "00000000-0000-0000-0000-000000000002",
-                    "name": "Backlog",
-                    "sortIndex": 1,
-                    "colorHex": null,
-                    "wipLimit": null,
-                    "kindRaw": "backlog",
-                    "projectId": "00000000-0000-0000-0000-000000000001"
-                }],
-                "resources": [{
-                    "id": "00000000-0000-0000-0000-000000000003",
-                    "projectId": "00000000-0000-0000-0000-000000000001",
-                    "personId": "00000000-0000-0000-0000-000000000099",
-                    "role": null,
-                    "assignmentRaw": "full-time",
-                    "allocationPercent": 100,
-                    "capacityHoursPerWeekOverride": null,
-                    "openTaskTargetOverride": null,
-                    "startDate": null,
-                    "endDate": null,
-                    "sortIndex": 1,
-                    "archivedAt": null
-                }],
-                "labels": [],
-                "tasks": [],
-                "subtasks": [],
-                "activities": []
-            }
-        }
-        """.data(using: .utf8)!
-
-        let context = makeInMemoryContext()
-
-        do {
-            _ = try KanbanBoardTransfer.preview(invalidData, context: context)
-            #expect(false, "Should have thrown for dangling person id")
-        } catch {
-            #expect(error is BackupError)
-        }
-    }
-
-    // MARK: - Round-Trip Tests
-
-    @Test
-    func testRoundTripPreservesData() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, tasks) = makeFixtureBoard(context: sourceContext)
-
-        // Export
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        // Decode to verify structure
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        struct Envelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let envelope = try decoder.decode(Envelope.self, from: exportData)
-        let kanban = envelope.kanban
-
-        // Verify counts
-        #expect(kanban.people.count == 2)
-        #expect(kanban.projects.count == 1)
-        #expect(kanban.tasks.count == 3)
-        #expect(kanban.columns.count == 3)
-    }
-
-    @Test
-    func testPreviewPreservesProjectStructure() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        #expect(plan.entityCounts.projects == 1)
-        #expect(plan.entityCounts.people == 2)
-        #expect(plan.entityCounts.tasks == 3)
-        #expect(plan.entityCounts.columns == 3)
-    }
-
-    @Test
-    func testMultiProjectExport() throws {
-        let context = makeInMemoryContext()
-
-        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
-
-        // Create two projects
-        let proj1 = KanbanProject(name: "Project 1", key: "P1", sortIndex: 1)
-        proj1.createdAt = t0
-        proj1.updatedAt = t0
-        context.insert(proj1)
-
-        let proj2 = KanbanProject(name: "Project 2", key: "P2", sortIndex: 2)
-        proj2.createdAt = t0
-        proj2.updatedAt = t0
-        context.insert(proj2)
-
-        // Create columns for both
-        for proj in [proj1, proj2] {
-            let col = KanbanColumn(name: "Backlog", sortIndex: 1)
-            col.kindRaw = "backlog"
-            col.project = proj
-            context.insert(col)
-
-            let done = KanbanColumn(name: "Done", sortIndex: 2)
-            done.kindRaw = "done"
-            done.project = proj
-            context.insert(done)
-        }
-
-        try? context.save()
-
-        let data = try KanbanBoardTransfer.export(projects: [proj1, proj2], context: context)
-
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        struct Envelope: Codable {
-            let format: String
-            let version: Int
-            let kanban: KanbanBackupDTO
-        }
-
-        let envelope = try decoder.decode(Envelope.self, from: data)
-        let kanban = envelope.kanban
-
-        #expect(kanban.projects.count == 2)
-        #expect(kanban.columns.count == 4)
-    }
-
-    // MARK: - Apply Tests
-
-    @Test
-    func testApplyIntoEmptyStore() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        // Note: apply() requires file path which isn't available in tests yet
-        // This test verifies the structure would be preserved
-        #expect(plan.entityCounts.projects == 1)
-        #expect(plan.entityCounts.people == 2)
-        #expect(plan.entityCounts.tasks == 3)
-    }
-
-    @Test
-    func testApplyWithRenameKeepsReferencesConsistent() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        // Verify that rename action is present
-        #expect(!plan.projectActions.isEmpty)
-        let renameAction = plan.projectActions.first
-        if case .rename = renameAction?.action {
-            // Expected: rename with new key
-        } else {
-            #expect(false, "Expected rename action for new project")
-        }
-    }
-
-    @Test
-    func testApplyPreviewCountsAreAccurate() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        // Verify accurate entity counts
-        #expect(plan.entityCounts.people == 2)
-        #expect(plan.entityCounts.projects == 1)
-        #expect(plan.entityCounts.columns == 3)
-        #expect(plan.entityCounts.labels == 0)
-        #expect(plan.entityCounts.resources == 2)
-        #expect(plan.entityCounts.tasks == 3)
-        #expect(plan.entityCounts.subtasks == 1)
-    }
-
-    @Test
-    func testImportPlanPersonActionsAreGenerated() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        #expect(!plan.personActions.isEmpty)
-        #expect(plan.personActions.count == 2)
-    }
-
-    @Test
-    func testImportPlanProjectActionsAreGenerated() throws {
-        let sourceContext = makeInMemoryContext()
-        let (project, _, _) = makeFixtureBoard(context: sourceContext)
-
-        let exportData = try KanbanBoardTransfer.export(projects: [project], context: sourceContext)
-
-        let destContext = makeInMemoryContext()
-        let plan = try KanbanBoardTransfer.preview(exportData, context: destContext)
-
-        #expect(!plan.projectActions.isEmpty)
-        #expect(plan.projectActions.count == 1)
-    }
-}
-
-// MARK: - Test Error
-
-enum KanbanBoardTransferTestError: Error {
-    case unexpectedFormat
 }
