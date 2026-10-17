@@ -240,6 +240,7 @@ struct BoardFramesKey: PreferenceKey {
         value.columnHeaders += next.columnHeaders
         value.rowHeaders += next.rowHeaders
         if next.viewport != .zero { value.viewport = next.viewport }
+        if next.corner != .zero { value.corner = next.corner }
     }
 }
 

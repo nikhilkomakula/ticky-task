@@ -76,8 +76,21 @@ struct KanbanBoardGeometryTests {
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 500, y: 20), source: .cards([a]), frames: f) == .columnHeader(doing),
                 "the pinned column header is on top")
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 100, y: 20), source: .cards([a]), frames: f) == nil, "the corner isn't a target")
-        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 380), source: .cards([a]), frames: frames) == nil,
-                "clipped content outside the board isn't a target")
+        var clipped = frames
+        clipped.cells.append(.init(columnID: todo, row: .resource(mia), frame: CGRect(x: 200, y: 300, width: 250, height: 200)))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 340), source: .cards([a]), frames: clipped) != nil)
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 420), source: .cards([a]), frames: clipped) == nil,
+                "the clipped part of a cell below the board isn't a target")
+    }
+
+    @Test func thePinnedCornerCoversScrolledColumns() {
+        var f = frames
+        // Scrolled 100 pt sideways: To Do's header now starts under the pinned corner.
+        f.columnHeaders = [.init(id: todo, frame: CGRect(x: 100, y: 0, width: 250, height: 40)),
+                           .init(id: doing, frame: CGRect(x: 350, y: 0, width: 250, height: 40))]
+        f.corner = CGRect(x: 0, y: 0, width: 200, height: 40)
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 150, y: 20), source: .cards([a]), frames: f) == nil, "hidden under the corner")
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 250, y: 20), source: .cards([a]), frames: f) == .columnHeader(todo))
     }
 
     @Test func rowSlotsCountTheCompleteOrder() {

@@ -39,6 +39,8 @@ struct BoardFrames: Equatable, Sendable {
     var viewport: CGRect = .zero
     /// Every membership row in board order, including rows the lazy grid hasn't drawn.
     var rowOrder: [UUID] = []
+    /// The pinned top-left corner, which covers whatever scrolls under it.
+    var corner: CGRect = .zero
 }
 
 /// Pure drop resolution, unit-tested without any UI (design 01 §4).
@@ -51,6 +53,7 @@ enum BoardGeometry {
         switch source {
         case let .cards(ids):
             let dragged = Set(ids)
+            if frames.corner.contains(pointer) { return nil }
             // In stacking order: the pinned column headers (and the corner) sit above the rows,
             // the pinned row headers above the cells, so whatever the pointer sees wins.
             let headerBottom = frames.columnHeaders.map(\.frame.maxY).max() ?? -.infinity

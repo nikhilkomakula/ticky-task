@@ -269,6 +269,7 @@ struct KanbanBoardView: View {
                 .padding(.horizontal, 10)
                 .frame(width: KanbanUI.rowHeaderWidth, height: 40, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor))
+                .publishBoardFrame { BoardFrames(corner: $0) }   // inside the shift, so it reports where it's drawn
                 .stickyX(scroll)
                 .zIndex(1)
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
