@@ -182,6 +182,11 @@ struct KanbanMembershipSheet: View {
             .startDate: hasStart ? .date(day(start)) : nil,
             .endDate: hasEnd ? .date(day(end)) : nil,
         ]
+        // Check the person's fields first, so a refused name can't leave the membership saved.
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            error = "A person needs a name."
+            return
+        }
         do {
             try service.editMembership(resource, values)
             if let person = resource.person, name != person.name || initials != person.initials || employment != person.employment {

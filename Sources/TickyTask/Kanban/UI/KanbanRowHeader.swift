@@ -122,7 +122,7 @@ struct KanbanRowHeader: View {
     private var badges: some View {
         let endsSoon: Int? = resource?.endDate.map { Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()),
                                                                                     to: Calendar.current.startOfDay(for: $0)).day ?? 0 }
-        let crossBoard = person.map { $0.overAllocated || ($0.boards.count > 1 && $0.headline.band == .red) } ?? false
+        let crossBoard = person.map { $0.overAllocated || ($0.boards.count > 1 && $0.headline.isOverCapacity) } ?? false
         if (endsSoon.map { (0...30).contains($0) } ?? false) || crossBoard {
             HStack(spacing: 6) {
                 if let days = endsSoon, (0...30).contains(days) {

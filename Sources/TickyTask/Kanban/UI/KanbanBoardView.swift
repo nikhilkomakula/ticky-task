@@ -10,7 +10,8 @@ struct KanbanBoardView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
-    @State private var scrollX: CGFloat = 0
+    /// Only the sticky views read this, so scrolling doesn't redraw the board.
+    @State private var scroll = KanbanScrollOffset()
     @State private var prompt: KanbanTextPrompt?
     @State private var columnToDelete: KanbanColumn?
     @State private var isAddingPerson = false
@@ -21,11 +22,10 @@ struct KanbanBoardView: View {
         let snapshot = BoardSnapshot.make(project: project)
         let columns = project.orderedColumns
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
-        let now = Date()
-        let metrics = MetricsSnapshot(project: project, now: now, calendar: calendar)
+        let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
+        let metrics = app.kanbanMetrics.snapshot(of: project, key: key, calendar: calendar)
         let loads = Dictionary(KanbanMetrics.loadVsCapacity(metrics).map { ($0.memberID, $0) }, uniquingKeysWith: { a, _ in a })
-        let people = Dictionary(KanbanMetrics.peopleRollup(allProjects.map { MetricsSnapshot(project: $0, now: now, calendar: calendar) })
-            .map { ($0.personID, $0) }, uniquingKeysWith: { a, _ in a })
+        let people = app.kanbanMetrics.people(allProjects, key: key, calendar: calendar)
         let tasks = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let collapsed = Set(project.collapsedRowKeys)
 
@@ -48,11 +48,10 @@ struct KanbanBoardView: View {
             }
             .accessibilityIdentifier("kanban-board")
             .onScrollGeometryChange(for: CGFloat.self) { max(0, $0.contentOffset.x + $0.contentInsets.leading) } action: { _, x in
-                scrollX = x
+                scroll.x = x
             }
-            .onChange(of: app.highlightedKanbanTaskID) { _, id in
-                if let id { withAnimation { proxy.scrollTo(id, anchor: .center) } }
-            }
+            // Runs on appear too: Attention sets the card before this board exists.
+            .task(id: app.highlightedKanbanTaskID) { await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
         }
         .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
         .sheet(item: $columnToDelete) { KanbanDeleteColumnSheet(column: $0) }
@@ -79,9 +78,11 @@ struct KanbanBoardView: View {
                             onToggle: { toggle(row.key, collapsed: collapsed) },
                             onEdit: { editingMembership = resource },
                             onRemove: { archivingMembership = resource })
+                // The full row height, so cards scrolling under it stay covered.
                 .frame(width: KanbanUI.rowHeaderWidth, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color(nsColor: .windowBackgroundColor))
-                .offset(x: scrollX)
+                .stickyX(scroll)
                 .zIndex(1)
             if collapsed {
                 Text(columns.map { "\($0.name) \(snapshot.cards(in: $0.id, row: row.key).count)" }.joined(separator: " · "))
@@ -108,6 +109,18 @@ struct KanbanBoardView: View {
                 }
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Scrolls to a revealed card, expanding its row first if it's collapsed.
+    private func reveal(_ id: UUID?, proxy: ScrollViewProxy) async {
+        guard let id, let task = project.tasks.first(where: { $0.id == id }) else { return }
+        let row: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+        if project.collapsedRowKeys.contains(row.storageKey) {
+            app.runKanban { try app.kanbanService(context).setRowCollapsed(project, row, false) }
+        }
+        try? await Task.sleep(for: .milliseconds(150))   // let the card render first
+        withAnimation { proxy.scrollTo(id, anchor: .center) }
     }
 
     private var addPersonButton: some View {
@@ -116,7 +129,7 @@ struct KanbanBoardView: View {
         }
         .buttonStyle(.borderless)
         .padding(10)
-        .offset(x: scrollX)
+        .stickyX(scroll)
         .accessibilityIdentifier("kanban-add-person")
     }
 
@@ -139,7 +152,7 @@ struct KanbanBoardView: View {
                 .padding(.horizontal, 10)
                 .frame(width: KanbanUI.rowHeaderWidth, height: 40, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor))
-                .offset(x: scrollX)
+                .stickyX(scroll)
                 .zIndex(1)
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                 let cards = snapshot.cards.filter { $0.columnID == column.id }
@@ -200,6 +213,21 @@ struct KanbanBoardView: View {
         Divider()
         Button("Delete…", role: .destructive) { columnToDelete = column }
     }
+}
+
+/// The board's horizontal scroll offset, observed only by the views that stay put.
+@MainActor @Observable
+final class KanbanScrollOffset {
+    var x: CGFloat = 0
+}
+
+private struct StickyX: ViewModifier {
+    let scroll: KanbanScrollOffset
+    func body(content: Content) -> some View { content.offset(x: scroll.x) }
+}
+
+private extension View {
+    func stickyX(_ scroll: KanbanScrollOffset) -> some View { modifier(StickyX(scroll: scroll)) }
 }
 
 /// Name, count, `n/limit` (red when over) and, in hours mode, the column's hours.

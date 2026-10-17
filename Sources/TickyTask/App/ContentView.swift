@@ -49,7 +49,7 @@ struct ContentView: View {
                 Divider()
                 switch ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).resolve(app.module) {
                 case .planner: PlannerModuleView()
-                case .kanban: KanbanModuleView()
+                case .kanban: KanbanModuleView().id(app.kanbanRestoreToken)
                 }
             }
             DragOverlayView(controller: dragController)
@@ -93,8 +93,7 @@ struct ContentView: View {
         // A restore replaced the whole store: reset the session horizon and
         // regenerate, so restored recurring templates show occurrences at once.
         .onReceive(NotificationCenter.default.publisher(for: .tickyTaskStoreRestored)) { _ in
-            app.kanbanHistory.clear()
-            app.kanbanGeneration.bump()
+            reconcileKanbanAfterRestore()
             materializedThroughKey = ""
             runMaterialize(through: defaultHorizon)
             runCarryForward()
@@ -109,6 +108,8 @@ struct ContentView: View {
         // tasks still carry forward — and new occurrences appear — at midnight
         // without a relaunch or refocus.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            let today = WeekMath.dayKey(for: Date())
+            if app.kanbanDay != today { app.kanbanDay = today }
             carryForwardIfDayChanged()
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
@@ -186,6 +187,19 @@ struct ContentView: View {
     /// slide the occurrence window forward and run carry-forward for the new day
     /// (both idempotent; carry-forward is a no-op when disabled).
     @MainActor
+    /// A restore replaced the boards: drop undo history, invalidate caches, rebuild the
+    /// module (closing sheets that hold replaced rows) and leave a board that's gone (01 §2.5).
+    private func reconcileKanbanAfterRestore() {
+        app.kanbanHistory.clear()
+        app.kanbanGeneration.bump()
+        app.kanbanRestoreToken &+= 1
+        app.highlightedKanbanTaskID = nil
+        if case let .project(id) = app.kanban.selection,
+           ((try? context.fetchCount(FetchDescriptor<KanbanProject>(predicate: #Predicate { $0.id == id }))) ?? 0) == 0 {
+            app.kanban.selection = .allProjects
+        }
+    }
+
     private func carryForwardIfDayChanged() {
         guard WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
         runMaterialize(through: defaultHorizon)

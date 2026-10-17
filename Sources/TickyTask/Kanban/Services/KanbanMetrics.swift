@@ -171,6 +171,14 @@ enum KanbanMetrics {
         case noCapacity(load: Double)
 
         var band: Band? { if case let .ratio(_, band) = self { band } else { nil } }
+        /// Red, or no capacity while holding work.
+        var isOverCapacity: Bool {
+            switch self {
+            case .ratio(_, .red): true
+            case let .noCapacity(load): load > 0
+            default: false
+            }
+        }
         var value: Double? { if case let .ratio(u, _) = self { u } else { nil } }
     }
 
@@ -590,13 +598,7 @@ enum KanbanMetrics {
             utilisation: utilisation(load: load, target: target),
             openCards: s.cards.filter(s.isOpen).count, doneCards: s.cards.filter(s.isDone).count,
             overdue: dueBuckets(s).overdue.count, rollingOffWithin30Days: composition(s).rollOff[30]?.count ?? 0,
-            membersOverCapacity: rows.filter { row in
-                switch row.utilisation {
-                case .ratio(_, .red)?: true
-                case let .noCapacity(load)?: load > 0
-                default: false
-                }
-            }.count)
+            membersOverCapacity: rows.filter { $0.utilisation?.isOverCapacity == true }.count)
     }
 }
 

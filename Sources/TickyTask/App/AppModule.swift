@@ -11,8 +11,9 @@ enum AppModule: String, CaseIterable, Identifiable, Sendable {
 
 /// Which modules are visible. At least one always is: hiding both shows the planner.
 struct ModulePolicy: Equatable, Sendable {
-    static let showPlannerKey = "module.showPlanner"
-    static let showKanbanKey = "module.showKanban"
+    /// The keys the settings backup already carries (`AppSettingsDTO`).
+    static let showPlannerKey = "showPlannerModule"
+    static let showKanbanKey = "showKanbanModule"
 
     let showPlanner: Bool
     let showKanban: Bool

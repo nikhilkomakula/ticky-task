@@ -36,6 +36,30 @@ struct KanbanModuleTests {
         #expect(ModulePolicy(defaults).visible == [.planner])
     }
 
+    @Test("Module visibility travels with the settings backup")
+    func policyBackupRoundTrip() throws {
+        func defaults() throws -> UserDefaults {
+            let name = "ModuleBackup-\(UUID())"
+            let d = try #require(UserDefaults(suiteName: name))
+            d.removePersistentDomain(forName: name)
+            return d
+        }
+        let from = try defaults(), to = try defaults()
+        from.set(false, forKey: ModulePolicy.showKanbanKey)
+        AppSettingsDTO.capture(from: from).apply(to: to)
+        #expect(ModulePolicy(to).visible == [.planner])
+    }
+
+    @Test("A planner reveal (search) switches to the planner")
+    func plannerRevealSwitchesModule() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let task = try DataService(context).addTask(title: "Found", location: .day(WeekMath.dayKey(for: Date())))
+        let app = AppState()
+        app.module = .kanban
+        app.reveal(task)
+        #expect(app.module == .planner && app.highlightedTaskID == task.id)
+    }
+
     // MARK: - Memberships and people
 
     private func board() throws -> (KanbanService, KanbanHistory, KanbanProject, KanbanResource) {
@@ -62,6 +86,18 @@ struct KanbanModuleTests {
         try s.undo(in: project)
         #expect(mia.allocationPercent == 100 && mia.assignment == .fullTime && mia.endDate == nil)
         #expect(mia.capacityHoursPerWeekOverride == nil && mia.role == nil)
+    }
+
+    @Test("Reverting a date edit that would end a membership before it starts is refused")
+    func membershipDateRevert() throws {
+        let (s, _, project, mia) = try board()
+        let day = { (n: Double) in Date(timeIntervalSinceReferenceDate: 800_000_000 + n * 86_400) }
+        try s.editMembership(mia, [.startDate: .date(day(20)), .endDate: .date(day(30))])
+        try s.editMembership(mia, [.startDate: .date(day(10))])
+        let startEdit = try #require(project.activities.max { $0.seq < $1.seq })
+        try s.editMembership(mia, [.endDate: .date(day(15))])
+        #expect(throws: KanbanServiceError.self, "start back to the 20th would be after the 15th") { try s.revert(startEdit) }
+        #expect(mia.startDate == day(10) && mia.endDate == day(15))
     }
 
     @Test("Invalid membership values are refused before anything changes")
@@ -121,6 +157,30 @@ struct KanbanModuleTests {
         #expect(Set(items.map(\.task.title)) == ["Overdue", "Soon", "Blocked", "Urgent loose"])
         #expect(items.first { $0.task.title == "Urgent loose" }?.reasons == ["Unassigned"])
         #expect(items.first { $0.task.title == "Overdue" }?.reasons == ["Overdue"])
+    }
+
+    @Test("Over capacity: red, or no capacity while holding work")
+    func overCapacity() {
+        #expect(KanbanMetrics.utilisation(load: 6, target: 5).isOverCapacity)
+        #expect(!KanbanMetrics.utilisation(load: 5, target: 5).isOverCapacity)
+        #expect(KanbanMetrics.utilisation(load: 1, target: 0).isOverCapacity)
+        #expect(!KanbanMetrics.utilisation(load: 0, target: 0).isOverCapacity)
+    }
+
+    @Test("Metric snapshots are reused until the store or the day changes")
+    func metricsCache() throws {
+        let (s, _, project, mia) = try board()
+        let cache = KanbanMetricsCache()
+        let calendar = Calendar.current
+        let key = KanbanMetricsCache.Key(generation: 1, day: "20261017", weekStartsMonday: true, timeZone: "UTC")
+        #expect(cache.snapshot(of: project, key: key, calendar: calendar).cards.isEmpty)
+        _ = try s.createTask(in: project, title: "New", row: .resource(mia.id))
+        #expect(cache.snapshot(of: project, key: key, calendar: calendar).cards.isEmpty, "same key: cached")
+        var next = key
+        next.generation = 2
+        #expect(cache.snapshot(of: project, key: next, calendar: calendar).cards.count == 1, "a save invalidates it")
+        next.day = "20261018"
+        #expect(cache.people([project], key: next, calendar: calendar).count == 1)
     }
 
     @Test("A reveal opens the board on the card and clears the highlight")

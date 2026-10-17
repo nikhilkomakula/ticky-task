@@ -20,7 +20,8 @@ struct KanbanSidebar: View {
     var body: some View {
         let selection = Binding<KanbanSidebarItem?>(get: { app.kanban.selection }, set: { if let item = $0 { app.kanban.selection = item } })
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
-        let summaries = Dictionary(live.map { ($0.id, KanbanMetrics.summary(MetricsSnapshot(project: $0, now: Date(), calendar: calendar))) },
+        let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
+        let summaries = Dictionary(live.map { ($0.id, KanbanMetrics.summary(app.kanbanMetrics.snapshot(of: $0, key: key, calendar: calendar))) },
                                    uniquingKeysWith: { a, _ in a })
         VStack(spacing: 0) {
             List(selection: selection) {

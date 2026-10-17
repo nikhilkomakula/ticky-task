@@ -52,6 +52,11 @@ final class AppState {
     let kanbanGeneration = KanbanStoreGeneration()
     /// A refused or failed board change, shown as an alert by the Kanban module.
     var kanbanError: String?
+    /// Today's day key, refreshed by the root's minute timer, so metrics roll over at midnight.
+    var kanbanDay = WeekMath.dayKey(for: Date())
+    /// Bumped by a restore: the Kanban module is rebuilt, dropping sheets that hold replaced rows.
+    var kanbanRestoreToken = 0
+    @ObservationIgnored let kanbanMetrics = KanbanMetricsCache()
 
     private let calendar: Calendar
 
@@ -102,6 +107,7 @@ final class AppState {
     /// shows any day. Custom-list tasks use the week view (their lists row).
     /// Stores only the task's `id`, so a later-deleted task simply isn't found.
     func reveal(_ task: TaskItem) {
+        module = .planner
         if let key = task.dayKey, let date = WeekMath.date(fromDayKey: key, calendar: calendar) {
             weekAnchor = date
             selectedDayKey = key

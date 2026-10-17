@@ -12,9 +12,9 @@ struct KanbanAllProjectsView: View {
 
     var body: some View {
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
-        let now = Date()
+        let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
         let live = projects.filter { $0.archivedAt == nil }
-        let snapshots = live.map { MetricsSnapshot(project: $0, now: now, calendar: calendar) }
+        let snapshots = live.map { app.kanbanMetrics.snapshot(of: $0, key: key, calendar: calendar) }
         VStack(alignment: .leading, spacing: 0) {
             Picker("View", selection: $tab) {
                 ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
