@@ -112,6 +112,9 @@ struct KanbanInvariants {
             guard let person = membership.person else { return "a membership would have no person" }
             if archivedPeople.contains(person) { return "an archived person would be back on the board" }
             if !seen.insert(person).inserted { return "someone would be on the board twice" }
+        }
+        // Archived ones too: undoing an archive would bring them back as they are.
+        for membership in memberships.values {
             if let start = membership.start, let end = membership.end, end < start { return "a membership would end before it starts" }
         }
         // Dependencies stay acyclic.

@@ -52,8 +52,16 @@ final class AppState {
     let kanbanGeneration = KanbanStoreGeneration()
     /// A refused or failed board change, shown as an alert by the Kanban module.
     var kanbanError: String?
-    /// Today's day key, refreshed by the root's minute timer, so metrics roll over at midnight.
-    var kanbanDay = WeekMath.dayKey(for: Date())
+    /// Today's day key and the time zone, refreshed by the root's minute timer, on activation
+    /// and when the time zone changes, so metrics follow the calendar (01 §2.5).
+    var kanbanClock = AppState.currentKanbanClock()
+
+    static func currentKanbanClock() -> String { "\(WeekMath.dayKey(for: Date()))|\(TimeZone.current.identifier)" }
+
+    func refreshKanbanClock() {
+        let clock = Self.currentKanbanClock()
+        if kanbanClock != clock { kanbanClock = clock }
+    }
     /// Bumped by a restore: the Kanban module is rebuilt, dropping sheets that hold replaced rows.
     var kanbanRestoreToken = 0
     @ObservationIgnored let kanbanMetrics = KanbanMetricsCache()

@@ -98,6 +98,12 @@ struct KanbanModuleTests {
         try s.editMembership(mia, [.endDate: .date(day(15))])
         #expect(throws: KanbanServiceError.self, "start back to the 20th would be after the 15th") { try s.revert(startEdit) }
         #expect(mia.startDate == day(10) && mia.endDate == day(15))
+        // Archived memberships too: undoing the archive would bring the bad dates back.
+        let person = try #require(mia.person)
+        let group = try #require(try s.archivePerson(person))
+        #expect(throws: KanbanServiceError.self) { try s.revert(startEdit) }
+        try s.undoPersonArchive(person, group: group)
+        #expect(mia.archivedAt == nil && mia.startDate == day(10) && mia.endDate == day(15))
     }
 
     @Test("Invalid membership values are refused before anything changes")
@@ -172,15 +178,18 @@ struct KanbanModuleTests {
         let (s, _, project, mia) = try board()
         let cache = KanbanMetricsCache()
         let calendar = Calendar.current
-        let key = KanbanMetricsCache.Key(generation: 1, day: "20261017", weekStartsMonday: true, timeZone: "UTC")
+        let key = KanbanMetricsCache.Key(generation: 1, clock: "20261017|UTC", weekStartsMonday: true)
         #expect(cache.snapshot(of: project, key: key, calendar: calendar).cards.isEmpty)
         _ = try s.createTask(in: project, title: "New", row: .resource(mia.id))
         #expect(cache.snapshot(of: project, key: key, calendar: calendar).cards.isEmpty, "same key: cached")
         var next = key
         next.generation = 2
         #expect(cache.snapshot(of: project, key: next, calendar: calendar).cards.count == 1, "a save invalidates it")
-        next.day = "20261018"
+        next.clock = "20261017|Europe/London"
         #expect(cache.people([project], key: next, calendar: calendar).count == 1)
+        let other = try s.createProject(name: "Data", key: "DATA")
+        _ = try s.addMembership(try s.createPerson(name: "Ravi", initials: "RV"), to: other)
+        #expect(cache.people([project, other], key: next, calendar: calendar).count == 2, "a different set of boards isn't the cached one")
     }
 
     @Test("A reveal opens the board on the card and clears the highlight")

@@ -75,7 +75,14 @@ struct ContentView: View {
         .onChange(of: sortModeRaw) { _, _ in syncDragConfig() }
         .onChange(of: moveCompletedToBottom) { _, _ in syncDragConfig() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await runLaunchTasks() } }
+            if phase == .active {
+                app.refreshKanbanClock()
+                Task { await runLaunchTasks() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            NSTimeZone.resetSystemTimeZone()
+            app.refreshKanbanClock()
         }
         // Enabling the setting mid-session should catch up the current day at once.
         .onChange(of: autoCarryForward) { _, isOn in
@@ -108,8 +115,7 @@ struct ContentView: View {
         // tasks still carry forward — and new occurrences appear — at midnight
         // without a relaunch or refocus.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
-            let today = WeekMath.dayKey(for: Date())
-            if app.kanbanDay != today { app.kanbanDay = today }
+            app.refreshKanbanClock()
             carryForwardIfDayChanged()
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
