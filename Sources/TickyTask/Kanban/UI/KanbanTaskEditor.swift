@@ -677,31 +677,54 @@ struct FlowChips: View {
     }
 }
 
-/// A simple wrapping row layout.
+/// A simple wrapping row layout; `trailing` right-aligns each line (the card's markers).
 struct FlowLayout: Layout {
     var spacing: CGFloat = 4
+    var trailing = false
+
+    /// The subviews' sizes, broken into lines that fit `width`.
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [[(index: Int, size: CGSize)]] {
+        var lines: [[(index: Int, size: CGSize)]] = [[]]
+        var x: CGFloat = 0
+        for (index, view) in subviews.enumerated() {
+            var size = view.sizeThatFits(.unspecified)
+            size.width = min(size.width, width)   // an oversized item wraps inside itself
+            if x > 0, x + size.width > width { lines.append([]); x = 0 }
+            lines[lines.count - 1].append((index, size))
+            x += size.width + spacing
+        }
+        return lines.filter { !$0.isEmpty }
+    }
+
+    private func lineWidth(_ line: [(index: Int, size: CGSize)]) -> CGFloat {
+        var total: CGFloat = 0
+        for item in line { total += item.size.width }
+        return total + spacing * CGFloat(max(line.count - 1, 0))
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width { y += line + spacing; x = 0; line = 0 }
-            x += size.width + spacing
-            line = max(line, size.height)
-            widest = max(widest, x - spacing)
+        let all = lines(subviews, width: width)
+        var widest: CGFloat = 0, height: CGFloat = 0
+        for line in all {
+            widest = max(widest, lineWidth(line))
+            height += line.map(\.size.height).max() ?? 0
         }
-        return CGSize(width: min(widest, width), height: y + line)
+        height += spacing * CGFloat(max(all.count - 1, 0))
+        return CGSize(width: trailing && width.isFinite ? width : min(widest, width), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX { y += line + spacing; x = bounds.minX; line = 0 }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            line = max(line, size.height)
+        var y = bounds.minY
+        for line in lines(subviews, width: bounds.width) {
+            let used = lineWidth(line)
+            var x = trailing ? bounds.maxX - used : bounds.minX
+            let height = line.map(\.size.height).max() ?? 0
+            for item in line {
+                subviews[item.index].place(at: CGPoint(x: x, y: y + (height - item.size.height) / 2), proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += height + spacing
         }
     }
 }

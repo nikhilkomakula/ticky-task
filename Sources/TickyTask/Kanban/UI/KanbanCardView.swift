@@ -87,7 +87,7 @@ struct KanbanCardView: View {
                 Text(label.name)
                     .font(.system(size: 11))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)   // a very long name wraps inside its tag
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(color.opacity(0.2)))
@@ -104,7 +104,8 @@ struct KanbanCardView: View {
         let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
             || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
-            HStack(spacing: 4) {
+            // Right-aligned lines; a marker that doesn't fit moves to the next line whole.
+            FlowLayout(spacing: 4, trailing: true) {
                 if let due = task.dueDate { dueLabel(due) }
                 if project.loadMeasure == .hours, let hours = task.estimateHours {
                     Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h").monospacedDigit()
@@ -141,6 +142,7 @@ struct KanbanCardView: View {
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -171,9 +173,10 @@ struct KanbanCardView: View {
             Text(key).font(.system(size: 11).monospaced())
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .frame(maxWidth: 80)
         }
         .buttonStyle(.plain)
-        .help("Open Jira")
+        .help("Open Jira \(key)")
         .accessibilityLabel("Jira issue \(key)")
         .accessibilityAddTraits(.isButton)
     }
