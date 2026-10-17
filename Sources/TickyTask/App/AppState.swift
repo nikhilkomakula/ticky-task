@@ -206,4 +206,27 @@ final class AppState {
     static func visibleColumnCount(columns: Int, showWeekends: Bool) -> Int {
         showWeekends ? 7 : max(1, min(12, columns))
     }
+
+    // MARK: - Sheet Presentations (P2 stubs and P4 stubs)
+
+    /// Planner: new task editor sheet presentation.
+    var isPlannerNewTaskPresented = false
+    /// Kanban: new card editor sheet presentation.
+    var isKanbanNewCardPresented = false
+    /// Kanban: label manager sheet presentation (project ID).
+    var kanbanLabelManagerProjectID: UUID?
+    /// Kanban: change log sheet presentation (project ID).
+    var kanbanChangeLogProjectID: UUID?
+    /// Kanban: summary sheet presentation (project ID).
+    var kanbanSummaryProjectID: UUID?
+
+    /// Present the planner's new task editor in create mode for the selected day.
+    func presentPlannerNewTask() {
+        isPlannerNewTaskPresented = true
+    }
+
+    /// Present the Kanban card editor in create mode for the active board's backlog.
+    func presentKanbanNewCard() {
+        isKanbanNewCardPresented = true
+    }
 }

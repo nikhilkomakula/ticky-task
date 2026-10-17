@@ -49,6 +49,7 @@ struct TickyTaskApp: App {
             CommandGroup(after: .textEditing) {
                 FindTaskCommand(appState: appState)
                 WeeklySummaryCommand(appState: appState)
+                NewItemCommand(appState: appState)
             }
             CommandGroup(after: .help) {
                 ShortcutsCommand(appState: appState)
@@ -148,5 +149,39 @@ private struct WeeklySummaryCommand: View {
             appState.isWeeklySummaryPresented = true
         }
         .keyboardShortcut("y", modifiers: [.command, .shift])
+    }
+}
+
+/// The ⌘N "New item" command: creates a new task in Planner or a new card in Kanban,
+/// based on the visible module. In Kanban, disabled when no board is active.
+private struct NewItemCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
+    let appState: AppState
+
+    var body: some View {
+        let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
+        let module = policy.resolve(appState.module)
+        let isKanbanWithActiveBoard = module == .kanban && isActiveBoard()
+
+        Button(module == .planner ? "New Task" : "New Card") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+            if module == .planner {
+                appState.presentPlannerNewTask()
+            } else {
+                appState.presentKanbanNewCard()
+            }
+        }
+        .keyboardShortcut("n", modifiers: .command)
+        .disabled(module == .kanban && !isKanbanWithActiveBoard)
+    }
+
+    private func isActiveBoard() -> Bool {
+        if case .project = appState.kanban.selection {
+            return true
+        }
+        return false
     }
 }

@@ -192,60 +192,10 @@ struct KanbanToolbarLeading: View {
     }
 }
 
-/// Toolbar, trailing (before the global buttons): row expand/collapse and + Card (⌘N)
-/// for the open board.
+/// Deprecated: KanbanToolbarTrailing has been moved into MainWindowHeader for P3.
+/// Keeping this as a stub to avoid breaking existing code references.
 struct KanbanToolbarTrailing: View {
-    @Environment(AppState.self) private var app
-    @Environment(\.modelContext) private var context
-    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
-    @State private var prompt: KanbanTextPrompt?
-    @State private var changeLog: KanbanProject?
-    @State private var summary: KanbanProject?
-
     var body: some View {
-        if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
-            KanbanViewControls(project: project)
-            Button { summary = project } label: { Image(systemName: "text.badge.star") }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Kanban Summary")
-                .accessibilityLabel("Kanban Summary")
-                .accessibilityIdentifier("kanban-summary")
-                .sheet(item: $summary) { KanbanSummaryPresenter(project: $0) }
-            Button { changeLog = project } label: { Image(systemName: "clock.arrow.circlepath") }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Change Log")
-                .accessibilityIdentifier("kanban-change-log")
-                .sheet(item: $changeLog) { KanbanChangeLogView(project: $0) }
-            Button {
-                prompt = .init(title: "New card", placeholder: "Title") { title in
-                    _ = try app.kanbanService(context).createTask(in: project, title: title)
-                }
-            } label: {
-                Label("Card", systemImage: "plus")
-            }
-            .keyboardShortcut("n", modifiers: .command)
-            .help("New card in the backlog (⌘N)")
-            .accessibilityIdentifier("kanban-new-card")
-            .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
-            Menu {
-                Button("Expand all rows") { setAll(project, collapsed: false) }
-                    .keyboardShortcut(.downArrow, modifiers: [.control, .command])
-                Button("Collapse all rows") { setAll(project, collapsed: true) }
-                    .keyboardShortcut(.upArrow, modifiers: [.control, .command])
-            } label: {
-                Image(systemName: "rectangle.expand.vertical")
-            }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
-            .fixedSize()
-            .help("Expand or collapse rows (⌃⌘↓ / ⌃⌘↑)")
-            .accessibilityIdentifier("kanban-expand-collapse")
-        }
-    }
-
-    private func setAll(_ project: KanbanProject, collapsed: Bool) {
-        app.runKanban { try app.kanbanService(context).setAllRowsCollapsed(project, collapsed) }
+        EmptyView()
     }
 }

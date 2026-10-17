@@ -115,6 +115,10 @@ struct KanbanFilterPopover: View {
                     ForEach(project.labels.sorted { $0.sortIndex < $1.sortIndex }) { label in
                         Toggle(label.name, isOn: setBinding(\.labelIDs, label.id, filter))
                     }
+                    Button(action: { /* P4: open label manager */ }) {
+                        Label("Edit labels…", systemImage: "tag")
+                    }
+                    .accessibilityIdentifier("kanban-filter-edit-labels")
                 }
             }
             Picker("Jira link", selection: binding(\.hasJira, filter)) {
