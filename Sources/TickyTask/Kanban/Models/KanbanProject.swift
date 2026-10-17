@@ -40,6 +40,9 @@ final class KanbanProject {
     var boardState: Data?
     /// Next `KanbanActivity.seq`; activities replay in this order.
     var nextActivitySeq: Int = 1
+    /// Entries with `seq` at or below this came from before a restore and can't be
+    /// reverted (their rows were rebuilt from the backup).
+    var historyBoundarySeq: Int = 0
 
     @Relationship(deleteRule: .cascade, inverse: \KanbanColumn.project) var columns: [KanbanColumn] = []
     @Relationship(deleteRule: .cascade, inverse: \KanbanResource.project) var resources: [KanbanResource] = []

@@ -228,12 +228,23 @@ struct KanbanMigrationGateTests {
         return g
     }
 
-    /// Planner rows as stored: per table, the ids; per task, its core fields. Read straight
-    /// from SQLite, so it doesn't depend on SwiftData's migration.
+    /// Planner rows as stored, read straight from SQLite so the baseline doesn't depend on
+    /// SwiftData's migration: every task field the fixture's schema has, subtasks with
+    /// their parents, tag links, list membership, and the other tables' row counts.
     struct RawPlanner: Equatable {
-        var tasks: [UUID: String] = [:]   // id → title|notes|dayKey|isDone|priority
+        var tasks: [UUID: [String: String]] = [:]
+        var subtasks: [UUID: String] = [:]
+        var tagLinks: Set<String> = []
         var counts: [String: Int] = [:]
     }
+
+    private static func uuid(_ data: Data?) -> UUID? {
+        guard let data, data.count == 16 else { return nil }
+        return data.withUnsafeBytes { UUID(uuid: $0.load(as: uuid_t.self)) }
+    }
+
+    /// Core Data stores dates as seconds since 2001 (REAL, or INTEGER when whole).
+    private static func ms(_ seconds: Double?) -> String { seconds.map { "\(Int64(($0 * 1000).rounded()))" } ?? "∅" }
 
     private func rawPlanner(_ fixture: URL) throws -> RawPlanner {
         // A private copy: a WAL-mode file can't be read in place without creating sidecars.
@@ -245,33 +256,101 @@ struct KanbanMigrationGateTests {
         var db: OpaquePointer?
         guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
         defer { sqlite3_close(db) }
-        var out = RawPlanner()
-        var stmt: OpaquePointer?
-        let sql = "SELECT ZID, ZTITLE, ZNOTES, ZDAYKEY, ZISDONE, ZPRIORITY FROM ZTASKITEM"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw CocoaError(.fileReadCorruptFile) }
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            guard let blob = sqlite3_column_blob(stmt, 0), sqlite3_column_bytes(stmt, 0) == 16 else { continue }
-            let id = UUID(uuid: Data(bytes: blob, count: 16).withUnsafeBytes { $0.load(as: uuid_t.self) })
-            func text(_ i: Int32) -> String { sqlite3_column_text(stmt, i).map { String(cString: $0) } ?? "∅" }
-            let notes = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
-            out.tasks[id] = [text(1), notes, text(3), "\(sqlite3_column_int(stmt, 4) != 0)", "\(sqlite3_column_int(stmt, 5))"].joined(separator: "|")
+        func rows(_ sql: String) -> [[Any?]] {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+            var out: [[Any?]] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                out.append((0..<sqlite3_column_count(stmt)).map { i -> Any? in
+                    switch sqlite3_column_type(stmt, i) {
+                    case SQLITE_INTEGER: return Int(sqlite3_column_int64(stmt, i))
+                    case SQLITE_FLOAT: return sqlite3_column_double(stmt, i)
+                    case SQLITE_TEXT: return String(cString: sqlite3_column_text(stmt, i))
+                    case SQLITE_BLOB: return Data(bytes: sqlite3_column_blob(stmt, i), count: Int(sqlite3_column_bytes(stmt, i)))
+                    default: return nil
+                    }
+                })
+            }
+            return out
         }
-        sqlite3_finalize(stmt)
-        for table in ["ZSUBTASK", "ZCUSTOMLIST", "ZTASKTAG", "ZTASKOCCURRENCE"] {
-            guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM \(table)", -1, &stmt, nil) == SQLITE_OK else { continue }
-            if sqlite3_step(stmt) == SQLITE_ROW { out.counts[table] = Int(sqlite3_column_int(stmt, 0)) }
-            sqlite3_finalize(stmt)
+        func has(_ table: String, _ column: String) -> Bool {
+            rows("PRAGMA table_info(\(table))").contains { ($0[1] as? String) == column }
+        }
+        func pick(_ table: String, _ column: String) -> String { has(table, column) ? column : "NULL" }
+        func double(_ v: Any?) -> Double? { (v as? Double) ?? (v as? Int).map(Double.init) }
+        func text(_ v: Any?) -> String { (v as? String) ?? "∅" }
+        let lists = Dictionary(uniqueKeysWithValues: rows("SELECT Z_PK, ZID FROM ZCUSTOMLIST").compactMap { r in
+            (r[0] as? Int).flatMap { pk in Self.uuid(r[1] as? Data).map { (pk, $0) } } })
+        let critical = has("ZTASKITEM", "ZISCRITICAL") ? "ZISCRITICAL" : pick("ZTASKITEM", "ZNEEDSIMMEDIATEATTENTION")
+        let sql = """
+            SELECT ZID, ZTITLE, ZNOTES, ZDAYKEY, ZISDONE, \(pick("ZTASKITEM", "ZPRIORITY")), \(pick("ZTASKITEM", "ZNOTESRICH")),
+                   \(pick("ZTASKITEM", "ZTEMPLATEID")), \(pick("ZTASKITEM", "ZTIMEMINUTES")), \(pick("ZTASKITEM", "ZCOLORHEX")),
+                   \(pick("ZTASKITEM", "ZALARMENABLED")), \(pick("ZTASKITEM", "ZCOMPLETEDAT")), \(critical), ZCUSTOMLIST,
+                   \(pick("ZTASKITEM", "ZSORTINDEX")), \(pick("ZTASKITEM", "ZOCCURRENCEKEY")), \(pick("ZTASKITEM", "ZOCCURRENCEMODIFIED")),
+                   Z_PK
+            FROM ZTASKITEM
+            """
+        var out = RawPlanner()
+        var taskPK: [Int: UUID] = [:]
+        for r in rows(sql) {
+            guard let id = Self.uuid(r[0] as? Data) else { continue }
+            taskPK[r[17] as? Int ?? -1] = id
+            out.tasks[id] = [
+                "title": text(r[1]), "notes": (r[2] as? String) ?? "", "dayKey": text(r[3]),
+                "isDone": "\((r[4] as? Int ?? 0) != 0)", "priority": "\(r[5] as? Int ?? 0)",
+                "notesRich": (r[6] as? Data).map { "\($0.count)b:\($0.hashValue)" } ?? "∅",
+                "templateID": Self.uuid(r[7] as? Data)?.uuidString ?? "∅",
+                "timeMinutes": (r[8] as? Int).map { "\($0)" } ?? "∅", "colorHex": text(r[9]),
+                "alarm": "\((r[10] as? Int ?? 0) != 0)", "completedAt": Self.ms(double(r[11])),
+                "critical": "\((r[12] as? Int ?? 0) != 0)", "list": (r[13] as? Int).flatMap { lists[$0] }?.uuidString ?? "∅",
+                "sortIndex": "\(double(r[14]) ?? 0)", "occurrenceKey": text(r[15]),
+                "occurrenceModified": (r[16] as? Int).map { "\($0 != 0)" } ?? "∅",
+            ]
+        }
+        for r in rows("SELECT ZID, ZTITLE, ZISDONE, \(pick("ZSUBTASK", "ZSORTINDEX")), ZPARENT FROM ZSUBTASK") {
+            guard let id = Self.uuid(r[0] as? Data) else { continue }
+            let parent = (r[4] as? Int).flatMap { taskPK[$0] }?.uuidString ?? "∅"
+            out.subtasks[id] = "\(text(r[1]))|\((r[2] as? Int ?? 0) != 0)|\(double(r[3]) ?? 0)|\(parent)"
+        }
+        let tags = Dictionary(uniqueKeysWithValues: rows("SELECT Z_PK, ZID FROM ZTASKTAG").compactMap { r in
+            (r[0] as? Int).flatMap { pk in Self.uuid(r[1] as? Data).map { (pk, $0) } } })
+        if let join = rows("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Z_%TAGS'").first?[0] as? String {
+            let columns = rows("PRAGMA table_info(\(join))").compactMap { $0[1] as? String }
+            if columns.count >= 2 {
+                let taskColumn = columns.first { $0.hasSuffix("TASKS") } ?? columns[0]
+                let tagColumn = columns.first { $0.hasSuffix("TAGS") } ?? columns[1]
+                for r in rows("SELECT \(taskColumn), \(tagColumn) FROM \(join)") {
+                    if let task = (r[0] as? Int).flatMap({ taskPK[$0] }), let tag = (r[1] as? Int).flatMap({ tags[$0] }) {
+                        out.tagLinks.insert("\(task.uuidString)→\(tag.uuidString)")
+                    }
+                }
+            }
+        }
+        for table in ["ZCUSTOMLIST", "ZTASKTAG", "ZTASKOCCURRENCE"] {
+            out.counts[table] = rows("SELECT COUNT(*) FROM \(table)").first?[0] as? Int ?? 0
         }
         return out
     }
 
     private func rawPlannerFromModels(_ context: ModelContext) throws -> RawPlanner {
         var out = RawPlanner()
+        func ms(_ d: Date?) -> String { Self.ms(d?.timeIntervalSinceReferenceDate) }
         for t in try context.fetch(FetchDescriptor<TaskItem>()) {
-            out.tasks[t.id] = [t.title, t.notes, t.dayKey ?? "∅", "\(t.isDone)", "\(t.priority)"].joined(separator: "|")
+            out.tasks[t.id] = [
+                "title": t.title, "notes": t.notes, "dayKey": t.dayKey ?? "∅", "isDone": "\(t.isDone)", "priority": "\(t.priority)",
+                "notesRich": t.notesRich.map { "\($0.count)b:\($0.hashValue)" } ?? "∅",
+                "templateID": t.templateID?.uuidString ?? "∅", "timeMinutes": t.timeMinutes.map { "\($0)" } ?? "∅",
+                "colorHex": t.colorHex ?? "∅", "alarm": "\(t.alarmEnabled)", "completedAt": ms(t.completedAt),
+                "critical": "\(t.isCritical)", "list": t.customList?.id.uuidString ?? "∅", "sortIndex": "\(t.sortIndex)",
+                "occurrenceKey": t.occurrenceKey ?? "∅", "occurrenceModified": t.occurrenceModified.map { "\($0)" } ?? "∅",
+            ]
+            for tag in t.tags { out.tagLinks.insert("\(t.id.uuidString)→\(tag.id.uuidString)") }
         }
-        out.counts = ["ZSUBTASK": try context.fetchCount(FetchDescriptor<Subtask>()),
-                      "ZCUSTOMLIST": try context.fetchCount(FetchDescriptor<CustomList>()),
+        for sub in try context.fetch(FetchDescriptor<Subtask>()) {
+            out.subtasks[sub.id] = "\(sub.title)|\(sub.isDone)|\(sub.sortIndex)|\(sub.parent?.id.uuidString ?? "∅")"
+        }
+        out.counts = ["ZCUSTOMLIST": try context.fetchCount(FetchDescriptor<CustomList>()),
                       "ZTASKTAG": try context.fetchCount(FetchDescriptor<TaskTag>()),
                       "ZTASKOCCURRENCE": try context.fetchCount(FetchDescriptor<TaskOccurrence>())]
         return out
@@ -312,9 +391,11 @@ struct KanbanMigrationGateTests {
             let migrated = try rawPlannerFromModels(context)
             #expect(migrated.counts == pristine.counts, "\(tag): planner row counts")
             #expect(Set(migrated.tasks.keys) == Set(pristine.tasks.keys), "\(tag): the same task ids")
+            #expect(migrated.subtasks == pristine.subtasks, "\(tag): every subtask, with its parent")
+            #expect(migrated.tagLinks == pristine.tagLinks && !pristine.tasks.isEmpty, "\(tag): every tag link")
             for (id, row) in pristine.tasks where migrated.tasks[id] != row {
-                Issue.record("\(tag) \(id): stored \(row) ≠ migrated \(migrated.tasks[id] ?? "missing")")
-                break
+                let fields = row.keys.filter { row[$0] != migrated.tasks[id]?[$0] }.sorted()
+                Issue.record("\(tag) \(id): \(fields.map { "\($0) stored \(row[$0] ?? "") ≠ migrated \(migrated.tasks[id]?[$0] ?? "")" })")
             }
 
             // Build a full Kanban graph with comprehensive coverage

@@ -339,45 +339,27 @@ struct KanbanBackupTests {
         #expect(diff.droppedPlannerLinks == 0)
     }
 
-    // MARK: - (e) Settings DTO includes new Kanban keys
+    // MARK: - (e) Settings: the new keys ride along
 
-    @Test("AppSettingsDTO captures new Kanban keys")
-    func settingsDTOIncludesKanban() throws {
-        let dto = AppSettingsDTO(
-            appTheme: nil,
-            calendarColumns: nil,
-            weekStartsMonday: nil,
-            showWeekends: nil,
-            compactView: nil,
-            taskSortMode: nil,
-            moveCompletedToBottom: nil,
-            autoCarryForward: nil,
-            autoDeleteCompletedEnabled: nil,
-            autoDeleteCompletedDays: nil,
-            endOfDayReminderEnabled: nil,
-            endOfDayReminderMinutes: nil,
-            menuBarOnly: nil,
-            autoCheckUpdates: nil,
-            weeklySummary: nil,
-            showPlannerModule: true,
-            showKanbanModule: true,
-            defaultModule: "kanban",
-            kanbanPopoverProjectID: "proj-123",
-            kanbanSummaryInstructions: "Custom",
-            kanbanTemplates: nil,
-            kanbanWeightedLoadDefault: nil,
-            kanbanWipPolicyDefault: nil,
-            kanbanLoadMeasureDefault: nil,
-            kanbanOpenTaskTargetDefault: nil,
-            kanbanDueSoonThresholdDefault: nil,
-            kanbanSuggestDoneDefault: nil,
-            kanbanNotifyDueDates: nil,
-            kanbanNotifyDueMinutes: nil
-        )
-        #expect(dto.showPlannerModule == true)
-        #expect(dto.showKanbanModule == true)
-        #expect(dto.defaultModule == "kanban")
-        #expect(dto.kanbanPopoverProjectID == "proj-123")
+    @Test("The module and Kanban settings are captured from and applied to the defaults")
+    func settingsRoundTrip() throws {
+        let name = "KanbanSettings-\(UUID())"
+        let source = try #require(UserDefaults(suiteName: name)), target = try #require(UserDefaults(suiteName: name + "-t"))
+        defer { source.removePersistentDomain(forName: name); target.removePersistentDomain(forName: name + "-t") }
+        let values: [String: Any] = [
+            "showPlannerModule": false, "showKanbanModule": true, "defaultModule": "kanban",
+            "kanbanPopoverProjectID": "8A1F", "kanbanSummary.instructions": "Per person",
+            "kanban.weightedLoadDefault": true, "kanban.wipPolicyDefault": "block", "kanban.loadMeasureDefault": "hours",
+            "kanban.openTaskTargetDefault": 4.5, "kanban.dueSoonThresholdDefault": 5, "kanban.suggestDoneDefault": false,
+            "kanban.notifyDueDates": true, "kanban.notifyDueMinutes": 540,
+        ]
+        for (key, value) in values { source.set(value, forKey: key) }
+        let dto = AppSettingsDTO.capture(from: source)
+        let decoded = try BackupCoding.decoder().decode(AppSettingsDTO.self, from: BackupCoding.encoder().encode(dto))
+        decoded.apply(to: target)
+        for (key, value) in values {
+            #expect((target.object(forKey: key) as? NSObject) == (value as? NSObject), "\(key)")
+        }
     }
 
     // MARK: - (f) D11 semantics: absent kanban key keeps boards
@@ -632,36 +614,24 @@ struct KanbanBackupTests {
 
     // MARK: - (m) Old-reader simulation
 
-    @Test("Old-reader simulation: v0.1.17 reader can decode backup without Kanban")
-    func oldReaderDecodesBackupWithoutKanban() throws {
-        let fixture = makeRichKanbanFixture()
-        let fileData = try service.makeFile(store: fixture, passphrase: nil)
-        let decoded = try service.readFile(fileData, passphrase: nil)
-
-        // Simulate old reader: encode without kanban key, then decode into local struct
-        var storeWithoutKanban = decoded
-        storeWithoutKanban.kanban = nil
-
-        let encoder = BackupCoding.encoder()
-        let encoded = try encoder.encode(storeWithoutKanban)
-
-        // Now decode into a struct that mirrors v0.1.17 (without kanban)
-        let decoder = BackupCoding.decoder()
-        let oldBackupStore = try decoder.decode(BackupStoreDTO.self, from: encoded)
-
-        #expect(oldBackupStore.schemaVersion == 2)
-        #expect(oldBackupStore.kanban == nil)
-        #expect(!oldBackupStore.data.taskItems.isEmpty)
+    /// v0.1.17's `BackupStoreDTO` shape (`git show v0.1.17:Sources/TickyTask/Backup/BackupModel.swift`).
+    private struct V0117Store: Decodable {
+        var schemaVersion: Int
+        var appVersion: String
+        var exportedAt: Date
+        var data: BackupDataDTO
+        var settings: AppSettingsDTO?
     }
 
-    // MARK: - (n) Validator: dependency cycle handled
-
-    @Test("Validator handles dependency cycles by dropping edges")
-    func validatorHandlesCycles() throws {
-        let emptyKanban = KanbanBackupDTO()
-        let report = try KanbanBackupValidator.validate(emptyKanban)
-        #expect(report.droppedDependencyEdges == 0)
-        #expect(report.droppedPlannerLinks == 0)
+    @Test("A v0.1.17-shaped reader decodes a Kanban-era file, ignoring the board section")
+    func oldReaderIgnoresKanbanSection() throws {
+        let fixture = makeRichKanbanFixture()
+        #expect(fixture.kanban?.tasks.isEmpty == false)
+        let json = try BackupCoding.encoder().encode(fixture)
+        #expect(String(decoding: json, as: UTF8.self).contains("\"kanban\""))
+        let old = try BackupCoding.decoder().decode(V0117Store.self, from: json)
+        #expect(old.schemaVersion == 2, "the version a v0.1.17 reader accepts")
+        #expect(old.data == fixture.data, "the planner part is intact")
     }
 
     // MARK: - (o) Fail-closed: persistence fault
@@ -678,8 +648,8 @@ struct KanbanBackupTests {
         try BackupStore.restore(initialFixture, context: context1)
         try context1.save()
 
-        let peopleBeforeFault = try context1.fetch(FetchDescriptor<KanbanPerson>()).count
-        #expect(peopleBeforeFault > 0)
+        let before = try BackupStore.makeSnapshot(context: try makeContext(at: tempDir))
+        #expect(before.kanban?.people.isEmpty == false)
 
         // Attempt restore with fault injection
         var testHookFired = false
@@ -696,9 +666,9 @@ struct KanbanBackupTests {
         #expect(testHookFired, "Test hook should have been called on relaunch discard")
 
         // Verify disk is unchanged by reopening
-        let context2 = try makeContext(at: tempDir)
-        let peopleAfterFault = try context2.fetch(FetchDescriptor<KanbanPerson>()).count
-        #expect(peopleAfterFault == peopleBeforeFault, "Disk should be unchanged after failed restore")
+        let after = try BackupStore.makeSnapshot(context: try makeContext(at: tempDir))
+        #expect(after.data == before.data && after.kanban?.deterministicallySorted() == before.kanban?.deterministicallySorted(),
+                "the whole store on disk is unchanged after the failed restore")
         DiscardedContexts.keep(context1)
     }
 }

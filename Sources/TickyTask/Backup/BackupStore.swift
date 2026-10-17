@@ -359,6 +359,8 @@ enum BackupStore {
             project.collapsedRowKeys = dto.collapsedRowKeys
             project.boardState = dto.boardState
             project.nextActivitySeq = dto.nextActivitySeq
+            // Rows are rebuilt from the backup, so earlier entries can't be reverted.
+            project.historyBoundarySeq = dto.nextActivitySeq - 1
             context.insert(project)
             projectMap[dto.id] = project
         }

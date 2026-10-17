@@ -74,7 +74,9 @@ nonisolated enum KanbanMoves {
 
     // MARK: Cards
 
-    private static func planCards(_ ids: [UUID], to target: MoveTarget, in s: BoardSnapshot, now: Date) -> MovePlan {
+    private static func planCards(_ requested: [UUID], to target: MoveTarget, in s: BoardSnapshot, now: Date) -> MovePlan {
+        var seen: Set<UUID> = []
+        let ids = requested.filter { seen.insert($0).inserted }
         let live = s.cards.filter { !$0.archived }
         let byID = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let columnIndex = Dictionary(s.columns.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })

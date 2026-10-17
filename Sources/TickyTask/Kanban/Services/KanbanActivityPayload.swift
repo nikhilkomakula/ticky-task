@@ -70,7 +70,11 @@ struct KanbanActivityPayload: Codable, Equatable, Sendable {
     var dayKey: String?
 
     func encoded() throws -> Data { try JSONEncoder.kanbanPayload.encode(self) }
-    static func decode(_ data: Data) throws -> KanbanActivityPayload { try JSONDecoder.kanbanPayload.decode(Self.self, from: data) }
+    static func decode(_ data: Data) throws -> KanbanActivityPayload {
+        let payload = try JSONDecoder.kanbanPayload.decode(Self.self, from: data)
+        guard payload.version <= currentVersion else { throw KanbanServiceError.conflict("That entry was written by a newer version.") }
+        return payload
+    }
 }
 
 // Payload dates use the default (seconds as a Double), which round-trips exactly:
