@@ -253,8 +253,9 @@ struct KanbanTaskDTO: Codable, Equatable, Sendable {
         self.projectId = model.project?.id
         self.columnId = model.column?.id
         self.resourceId = model.resource?.id
-        self.labelIds = model.labels.map(\.id)
-        self.dependsOnIds = model.dependsOn.map(\.id)
+        // To-many relationships have no stored order; sort so exports are deterministic.
+        self.labelIds = model.labels.map(\.id).sorted { $0.uuidString < $1.uuidString }
+        self.dependsOnIds = model.dependsOn.map(\.id).sorted { $0.uuidString < $1.uuidString }
     }
 }
 

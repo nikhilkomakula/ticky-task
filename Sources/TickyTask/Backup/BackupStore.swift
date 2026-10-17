@@ -131,7 +131,16 @@ enum BackupStore {
                 activities: EntityDiff(imported: Set(kanbanSection.activities.map(\.id)), existing: activities),
                 droppedDependencyEdges: report.droppedDependencyEdges
             )
-            droppedLinks = report.droppedPlannerLinks
+        }
+        // Links that the restore will clear: their target isn't in the file's planner
+        // rows, or is a series definition. A file without a board section keeps the
+        // existing boards, so their links are checked instead.
+        let linkable = linkablePlannerIDs(store.data.taskItems)
+        if let kanbanSection = store.kanban {
+            droppedLinks = kanbanSection.tasks.filter { $0.linkedPlannerTaskID.map { !linkable.contains($0) } ?? false }.count
+        } else {
+            droppedLinks = try context.fetch(FetchDescriptor<KanbanTask>())
+                .filter { $0.linkedPlannerTaskID.map { !linkable.contains($0) } ?? false }.count
         }
 
         return BackupDiff(
@@ -150,9 +159,8 @@ enum BackupStore {
     /// replace them (empty means no boards).
     static func restore(_ store: BackupStoreDTO, context: ModelContext) throws {
         try BackupValidator.validate(store)
-        if let kanban = store.kanban {
-            try KanbanBackupValidator.validate(kanban)
-        }
+        // The board section to insert, with cycle-closing dependency edges removed.
+        let kanbanSection = try store.kanban.map { try KanbanBackupValidator.sanitized($0).dto }
 
         // Commit unrelated pending edits first, outside the transaction, so a failure
         // here undoes nothing of theirs.
@@ -167,6 +175,10 @@ enum BackupStore {
             // Fetch existing Kanban data (deleted only if kanban section is present).
             let existingKanban: [any PersistentModel] = store.kanban != nil ?
                 try fetchAllKanban(context: context) : []
+            // Boards kept by a file without a board section (D11); their links are
+            // repaired against the restored planner rows below.
+            let retainedKanbanTasks: [KanbanTask] = store.kanban == nil ?
+                try context.fetch(FetchDescriptor<KanbanTask>()) : []
 
             // MARK: - Delete phase (only non-throwing work follows)
 
@@ -181,13 +193,15 @@ enum BackupStore {
             let insertedPlanner = insert(store.data, context: context)
             RecurrenceNormalizer.normalize(insertedPlanner, context: context)
 
-            var insertedKanban: KanbanInsertedGraph? = nil
-            if let kanbanData = store.kanban {
-                insertedKanban = insertKanban(kanbanData, context: context)
-                // Repair planner links in imported Kanban tasks: keep if they exist
-                // and aren't hidden definitions, clear and count otherwise.
-                let normalizedPlannerIds = Set(insertedPlanner.map(\.id))
-                repairKanbanPlannerLinks(insertedKanban, normalizedPlannerIds: normalizedPlannerIds)
+            var boardTasks = retainedKanbanTasks
+            if let kanbanSection {
+                boardTasks = insertKanban(kanbanSection, context: context).tasksByProject.values.flatMap { $0 }
+            }
+            // Repair every kept and imported planner link against the normalised rows:
+            // keep it only if its target exists and isn't a series definition.
+            let linkable = Set(insertedPlanner.filter(isLinkable).map(\.id))
+            for task in boardTasks {
+                if let link = task.linkedPlannerTaskID, !linkable.contains(link) { task.linkedPlannerTaskID = nil }
             }
 
             // MARK: - Commit
@@ -450,22 +464,16 @@ enum BackupStore {
         return KanbanInsertedGraph(tasksByProject: tasksByProject)
     }
 
-    /// Repair Kanban task links to planner: keep only links to existing planner tasks
-    /// that are not hidden definitions. Count the cleared links.
-    private static func repairKanbanPlannerLinks(_ graph: KanbanInsertedGraph?, normalizedPlannerIds: Set<UUID>) {
-        guard let graph = graph else { return }
+    /// A planner row a board card may link to: anything but a series definition
+    /// (a rule and no parent series), which is hidden from the planner.
+    private static func isLinkable(_ task: TaskItem) -> Bool {
+        task.recurrence == nil || task.templateID != nil
+    }
 
-        for (_, tasks) in graph.tasksByProject {
-            for task in tasks {
-                if let linkId = task.linkedPlannerTaskID {
-                    // Check if the link exists and isn't a hidden definition.
-                    let isValid = normalizedPlannerIds.contains(linkId)
-                    if !isValid {
-                        task.linkedPlannerTaskID = nil
-                    }
-                }
-            }
-        }
+    /// The ids a restore of `items` leaves linkable. A pre-v0.1.17 series row (a rule
+    /// on a dated row) becomes a definition when normalised, so it isn't linkable either.
+    private static func linkablePlannerIDs(_ items: [TaskItemDTO]) -> Set<UUID> {
+        Set(items.filter { $0.recurrence == nil || $0.templateId != nil }.map(\.id))
     }
 
     private static var appVersion: String {

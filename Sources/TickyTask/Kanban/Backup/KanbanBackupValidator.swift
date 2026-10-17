@@ -12,7 +12,15 @@ struct KanbanImportReport: Equatable, Sendable {
 /// Validates a decoded Kanban backup before restore or import, checking version,
 /// referential integrity, column invariants, and resolving dependency cycles.
 enum KanbanBackupValidator {
+    /// Validates `kanban` and returns the report. Use `sanitized` for the data to insert.
+    @discardableResult
     static func validate(_ kanban: KanbanBackupDTO) throws -> KanbanImportReport {
+        try sanitized(kanban).report
+    }
+
+    /// Validates `kanban` and returns it with self-edges and cycle-closing dependency
+    /// edges removed (counted in the report), ready to insert.
+    static func sanitized(_ kanban: KanbanBackupDTO) throws -> (dto: KanbanBackupDTO, report: KanbanImportReport) {
         guard kanban.version <= KanbanBackupDTO.currentVersion else {
             throw BackupError.validationFailed(reason: "Kanban version \(kanban.version) is not supported (max: \(KanbanBackupDTO.currentVersion))")
         }
@@ -197,104 +205,29 @@ enum KanbanBackupValidator {
             }
         }
 
-        // Detect and drop cycles in dependency edges.
-        let droppedEdges = dropCycles(in: &dependencyEdges, taskIds: taskIds)
-
-        return KanbanImportReport(droppedDependencyEdges: droppedEdges)
-    }
-
-    /// Detect cycles in the dependency graph and drop the edge whose source task id
-    /// (as uuidString) sorts last within each cycle. Returns the count of edges dropped.
-    private static func dropCycles(in edges: inout [(from: UUID, to: UUID)], taskIds: Set<UUID>) -> Int {
-        var dropped = 0
-        var visited: Set<UUID> = []
-        var recursionStack: Set<UUID> = []
-
-        func hasCycle(node: UUID) -> Bool {
-            if recursionStack.contains(node) {
-                return true
+        // Keep edges in ascending (source, target) id order and drop any that would close
+        // a cycle: the dropped edge is then always the cycle's highest-source edge.
+        var kept: [UUID: Set<UUID>] = [:]
+        func reaches(_ from: UUID, _ target: UUID) -> Bool {
+            var stack = [from], seen: Set<UUID> = []
+            while let node = stack.popLast() {
+                if node == target { return true }
+                guard seen.insert(node).inserted else { continue }
+                stack.append(contentsOf: kept[node] ?? [])
             }
-            if visited.contains(node) {
-                return false
-            }
-
-            visited.insert(node)
-            recursionStack.insert(node)
-
-            let neighbors = edges.filter { $0.from == node }.map(\.to)
-            for neighbor in neighbors {
-                if hasCycle(node: neighbor) {
-                    return true
-                }
-            }
-
-            recursionStack.remove(node)
             return false
         }
-
-        // Find all cycles and drop the last edge in each cycle by uuidString.
-        var allVisited: Set<UUID> = []
-        for startNode in taskIds {
-            guard !allVisited.contains(startNode) else { continue }
-
-            visited = []
-            recursionStack = []
-
-            if hasCycle(node: startNode) {
-                // A cycle exists involving startNode. Find the edge to drop.
-                // We'll drop the edge whose source sorts last within the cycle.
-                // For now, use a simpler approach: drop edges with self-references first,
-                // then iteratively drop the edge with the lexicographically largest source.
-
-                // First pass: self-edges.
-                let selfEdgeCount = edges.count
-                edges.removeAll { $0.from == $0.to }
-                dropped += selfEdgeCount - edges.count
-
-                // Then iteratively drop edges until no cycle remains.
-                while hasCycle(node: startNode) {
-                    visited = []
-                    recursionStack = []
-                    var cycleEdges: [(from: UUID, to: UUID)] = []
-
-                    // Find edges in the current cycle.
-                    func findCycleEdges(node: UUID, path: inout [(from: UUID, to: UUID)]) {
-                        if recursionStack.contains(node) {
-                            // Found cycle; extract it from path.
-                            if let idx = path.firstIndex(where: { $0.to == node }) {
-                                cycleEdges.append(contentsOf: path[(idx + 1)...])
-                            }
-                            return
-                        }
-                        if visited.contains(node) { return }
-
-                        visited.insert(node)
-                        recursionStack.insert(node)
-
-                        for edge in edges.filter({ $0.from == node }) {
-                            var newPath = path + [edge]
-                            findCycleEdges(node: edge.to, path: &newPath)
-                        }
-
-                        recursionStack.remove(node)
-                    }
-
-                    var path: [(from: UUID, to: UUID)] = []
-                    findCycleEdges(node: startNode, path: &path)
-
-                    // Drop the edge with the largest source uuidString.
-                    if let maxEdge = cycleEdges.max(by: { $0.from.uuidString < $1.from.uuidString }) {
-                        edges.removeAll { $0.from == maxEdge.from && $0.to == maxEdge.to }
-                        dropped += 1
-                    } else {
-                        break // Safety: avoid infinite loop.
-                    }
-                }
-            }
-
-            allVisited.formUnion(visited)
+        var dropped = 0
+        for edge in dependencyEdges.sorted(by: { ($0.from.uuidString, $0.to.uuidString) < ($1.from.uuidString, $1.to.uuidString) }) {
+            if edge.from == edge.to || reaches(edge.to, edge.from) { dropped += 1; continue }
+            kept[edge.from, default: []].insert(edge.to)
         }
-
-        return dropped
+        var cleaned = kanban
+        cleaned.tasks = kanban.tasks.map { task in
+            var task = task
+            task.dependsOnIds = task.dependsOnIds.filter { kept[task.id]?.contains($0) ?? false }
+            return task
+        }
+        return (cleaned, KanbanImportReport(droppedDependencyEdges: dropped))
     }
 }
