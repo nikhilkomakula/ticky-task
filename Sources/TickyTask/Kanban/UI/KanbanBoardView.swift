@@ -53,6 +53,9 @@ struct KanbanBoardView: View {
                     }
                 }
             }
+            // A two-axis scroll view centres a board smaller than the window, leaving a band
+            // above the headers and accessibility frames that don't match what's drawn.
+            .defaultScrollAnchor(.topLeading)
             .accessibilityIdentifier("kanban-board")
             .scrollPosition($position)
             .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
