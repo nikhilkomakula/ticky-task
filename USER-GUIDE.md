@@ -132,9 +132,9 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 - **Cumulative flow, 90 days**: card count over the past 90 days, showing new and completed work (no drill-down).
 - **Completed work (by latest completion)**: completed work by week; reopened work moves out of earlier weeks (no drill-down).
 - **Burn-up, 90 days**: scope (all cards added) and completed work over 90 days (no drill-down).
-- **Hygiene**: unassigned cards, dependencies, old work, and other issues. Some items (e.g., no due date, no Jira link) are clickable to filter the board; others are read-only warnings.
+- **Hygiene**: counts of open cards with no due date, open cards with no Jira link, cards whose steps are all done but that aren't in Done, Done cards with open steps, people with no open work, and people past their end date who still hold work. **No due date** and **No Jira link** are links that open the board filtered to those cards; the other rows are counts only.
 
-The **All projects** dashboard rolls up these metrics across all boards, plus a **People** summary showing each person's total load and allocation across all boards.
+**All projects** doesn't combine the dashboards. Its **Boards** tab shows a card per board: its load against capacity, open and done counts, and how many cards are overdue, people rolling off within 30 days, and people over capacity. Its **People** tab lists each person's allocation and load across all boards and flags anyone over 100 %.
 
 ---
 
