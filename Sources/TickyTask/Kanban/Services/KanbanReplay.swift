@@ -89,10 +89,16 @@ enum KanbanReplay {
         var synthesized: [(at: Date, id: UUID, column: UUID)] = []
         // And an archive at their archivedAt when the log has no archive entry for them.
         var archivedInLog = Set<UUID>()
-        for event in events {
-            for change in event.payload.changes where change.entity == .task && change.field == "archivedAt" { archivedInLog.insert(change.id) }
-        }
         var hidden: [(at: Date, id: UUID)] = []
+        for event in events {
+            for change in event.payload.changes where change.entity == .task && change.field == "archivedAt" {
+                // The first logged change of a legacy card that was already archived (a
+                // restore) says when: its old value.
+                if archivedInLog.insert(change.id).inserted, !created.contains(change.id), case let .date(at)? = change.old {
+                    hidden.append((at, change.id))
+                }
+            }
+        }
         let current = Set(s.cards.map(\.id))
         for card in s.cards where !created.contains(card.id) {
             synthesized.append((card.createdAt, card.id, firstFrom[card.id] ?? card.column))

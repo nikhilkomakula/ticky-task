@@ -145,7 +145,7 @@ private struct LoadChart: View {
     var body: some View {
         // The Unassigned row shows its load with no target.
         let rows = KanbanMetrics.loadVsCapacity(s).filter { $0.memberID != nil || $0.load > 0 }
-        let columns = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let columns = KanbanUI.uniqueNames(s.columns.map { ($0.id, $0.name) }, reserved: [])
         let bars = rows.flatMap { row in
             row.segments.filter { $0.load > 0 }.map { segment in
                 Bar(id: "\(row.memberID?.uuidString ?? "unassigned")-\(segment.column)", person: label(row),
@@ -267,7 +267,7 @@ private struct ColumnsChart: View {
 
     var body: some View {
         let hours = s.loadMeasure == .hours
-        let names = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let names = KanbanUI.uniqueNames(s.columns.map { ($0.id, $0.name) }, reserved: [])   // columns may share a name
         let bars = KanbanMetrics.tasksByColumn(s).map { Bar(id: $0.column, name: names[$0.column] ?? "", value: hours ? $0.load : Double($0.count)) }
         if bars.allSatisfy({ $0.value == 0 }) {
             Empty(text: "No cards yet.")
@@ -406,9 +406,12 @@ private struct LabelMixChart: View {
 
     var body: some View {
         let mix = KanbanMetrics.labelMix(s)
+        let columnNames = KanbanUI.uniqueNames(s.columns.map { ($0.id, $0.name) }, reserved: [])
+        let labelNames = KanbanUI.uniqueNames(labels.sorted { $0.value < $1.value }.map { ($0.key, $0.value) })
         let bars: [Bar] = s.columns.flatMap { column in
             (mix[column.id] ?? [:]).map { label, value in
-                Bar(id: "\(column.id)-\(label?.uuidString ?? "none")", column: column.name, label: label.flatMap { labels[$0] } ?? "No label", value: value)
+                Bar(id: "\(column.id)-\(label?.uuidString ?? "none")", column: columnNames[column.id] ?? column.name,
+                    label: label.flatMap { labelNames[$0] } ?? "No label", value: value)
             }
         }
         let used = Set(s.cards.filter { !$0.archived }.flatMap(\.labels))
@@ -512,9 +515,14 @@ private struct FlowChart: View {
         let labels = KanbanUI.uniqueNames(columns.map { ($0.id, $0.name) }, reserved: [])
         let domain = columns.map { labels[$0.id] ?? $0.name }
         let range = columns.enumerated().map { index, column in column.deleted ? Color.gray.opacity(0.5) : Self.palette[index % Self.palette.count] }
+        // Every column on every day (zero when it has no cards), so a band drops to zero
+        // instead of bridging the days it was empty.
         let points: [Point] = days.flatMap { day in
-            day.bands.map { Point(id: "\(day.day.timeIntervalSince1970)-\($0.columnID)", day: day.day,
-                                  band: labels[$0.columnID] ?? $0.name, value: hours ? $0.load : Double($0.count)) }
+            let values = Dictionary(day.bands.map { ($0.columnID, hours ? $0.load : Double($0.count)) }, uniquingKeysWith: +)
+            return columns.map { column in
+                Point(id: "\(day.day.timeIntervalSince1970)-\(column.id)", day: day.day, band: labels[column.id] ?? column.name,
+                      value: values[column.id] ?? 0)
+            }
         }
         return Group {
             if points.allSatisfy({ $0.value == 0 }) {

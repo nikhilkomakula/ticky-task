@@ -390,4 +390,24 @@ struct KanbanReplayTests {
         #expect(countsOn(day(days, F.date(10, 5)))["To Do"] == 0, "hidden from its archivedAt")
         #expect(countsOn(days.last)["To Do"] == 0)
     }
+
+    @Test func aLegacyCardArchivedBeforeTheLogThenRestoredIsHiddenUntilTheRestore() throws {
+        let b = try Board()
+        let a = try b.card("A", on: F.date(10, 1))
+        try b.service.archiveTask(a)
+        b.forget(a)                      // archived before the log existed
+        a.archivedAt = F.date(10, 4)
+        // The restore is logged with the old archive date.
+        let stamp = F.date(10, 4)
+        let payload = KanbanActivityPayload(changes: [KanbanFieldChange(entity: .task, id: a.id, field: "archivedAt", old: .date(stamp), new: nil)])
+        let entry = KanbanActivity(seq: b.project.nextActivitySeq, at: F.date(10, 7), kind: KanbanActivityKind.restored.rawValue,
+                                   taskIDs: [a.id], payload: try payload.encoded())
+        b.project.modelContext?.insert(entry)
+        entry.project = b.project
+        a.archivedAt = nil
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        #expect(countsOn(day(days, F.date(10, 3)))["To Do"] == 1)
+        #expect(countsOn(day(days, F.date(10, 5)))["To Do"] == 0, "archived from the 4th")
+        #expect(countsOn(day(days, F.date(10, 8)))["To Do"] == 1, "back after the restore on the 7th")
+    }
 }
