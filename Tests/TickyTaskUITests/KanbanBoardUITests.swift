@@ -130,6 +130,21 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-editor-title").waitForExistence(timeout: 5), "the editor opens")
     }
 
+    /// Opens one of the editor's optional sections. On a short screen (CI's is 768 pt) the lower
+    /// headers sit under the editor's buttons, so scroll the header up clear of them first.
+    private func expandSection(_ app: XCUIApplication, _ id: String) {
+        let header = element(app, "kanban-editor-\(id)-disclosure")
+        XCTAssertTrue(header.waitForExistence(timeout: 5), "the \(id) section exists")
+        let buttonsTop = element(app, "kanban-editor-done").frame.minY
+        var delta: CGFloat = -120
+        for _ in 0..<8 where header.frame.maxY > buttonsTop - 12 {
+            let before = header.frame.minY
+            header.scroll(byDeltaX: 0, deltaY: delta)
+            if header.frame.minY > before { delta = -delta }   // that scrolled the wrong way
+        }
+        header.click()
+    }
+
     func testEditACardsTitleAndAddAStep() {
         let app = launch()
         openPlatform(app)
@@ -138,7 +153,7 @@ final class KanbanBoardUITests: XCTestCase {
         title.click()
         title.typeKey("a", modifierFlags: .command)
         title.typeText("Triage support inbox")
-        element(app, "kanban-editor-subtasks-disclosure").click()   // optional sections start collapsed
+        expandSection(app, "subtasks")   // optional sections start collapsed
         let step = element(app, "kanban-editor-add-subtask")
         XCTAssertTrue(step.waitForExistence(timeout: 5))
         step.click()
@@ -154,7 +169,7 @@ final class KanbanBoardUITests: XCTestCase {
         let app = launch()
         openPlatform(app)
         openEditor(app, "Write docs")
-        element(app, "kanban-editor-links-disclosure").click()
+        expandSection(app, "links")
         let jira = element(app, "kanban-editor-jira")
         XCTAssertTrue(jira.waitForExistence(timeout: 5))
         jira.click()

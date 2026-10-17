@@ -90,8 +90,20 @@ final class RecurringSeriesUITests: XCTestCase {
     private func row(_ app: XCUIApplication, _ title: String, on dayKey: String) -> XCUIElement? {
         let column = columnFrame(app, dayKey)
         guard !column.isNull else { return nil }
-        return app.staticTexts.matching(identifier: "taskRow-\(title)").allElementsBoundByIndex
-            .first { column.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        let rows = app.staticTexts.matching(identifier: "taskRow-\(title)")
+        if let visible = rows.allElementsBoundByIndex.first(where: { column.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }) {
+            return visible
+        }
+        // On a short screen a busy day column scrolls: look for the row further down it too,
+        // then scroll the column back to the top.
+        let scroller = app.scrollViews.matching(identifier: "dayColumn-\(dayKey)").firstMatch
+        guard scroller.exists else { return nil }
+        var found: XCUIElement?
+        for delta: CGFloat in [-400, 800, -400] where found == nil {
+            scroller.scroll(byDeltaX: 0, deltaY: delta)
+            found = rows.allElementsBoundByIndex.first { column.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+        }
+        return found
     }
 
     @discardableResult

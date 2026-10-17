@@ -122,9 +122,10 @@ struct TaskRowView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         // Edit/Delete float over the trailing metadata on hover, so the row never
-        // reflows and the title keeps its full width when not hovering. Real
-        // Buttons consume the click, so the row's tap-to-edit never double-fires.
-        .overlay(alignment: .trailing) {
+        // reflows and the title keeps its full width when not hovering. Pinned to the
+        // first line, so a title wrapped in a narrow column stays clickable below them.
+        // Real Buttons consume the click, so the row's tap-to-edit never double-fires.
+        .overlay(alignment: .topTrailing) {
             if isHovering {
                 HStack(spacing: 2) {
                     Button { onEdit?() } label: { Image(systemName: "pencil") }
@@ -140,6 +141,7 @@ struct TaskRowView: View {
                 .padding(.vertical, 4)
                 .background(.regularMaterial, in: Capsule())
                 .padding(.trailing, 6)
+                .padding(.top, compactView ? 1 : 3)
             }
         }
         .onHover { isHovering = $0 }
