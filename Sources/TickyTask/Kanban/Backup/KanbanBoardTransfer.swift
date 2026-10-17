@@ -27,7 +27,7 @@ enum KanbanBoardTransfer {
             case .newerVersion: "That board file was made by a newer version of TickyTask."
             case let .missingPerson(name): "The file refers to a person it doesn't include (on “\(name)”)."
             case .noSuchBoard: "The board to merge into no longer exists."
-            case let .rowPositions(name): "“\(name)” has damaged row positions, so nothing was imported into it."
+            case let .rowPositions(name): "“\(name)” has damaged row or card positions, so nothing was imported into it."
             }
         }
     }
@@ -170,8 +170,9 @@ enum KanbanBoardTransfer {
         for board in plan.boards {
             guard let id = board.mergeInto else { continue }
             guard let target = existingProjects[id] else { throw TransferError.noSuchBoard }
-            // New rows go after the last one; past 2^52 (or non-finite) whole steps stop being exact.
-            if target.resources.contains(where: { !$0.sortIndex.isFinite || abs($0.sortIndex) >= 0x1p52 }) {
+            // New rows and cards go after the last ones; past 2^52 (or non-finite) whole steps stop being exact.
+            func unusable(_ position: Double) -> Bool { !position.isFinite || abs(position) >= 0x1p52 }
+            if target.resources.contains(where: { unusable($0.sortIndex) }) || target.tasks.contains(where: { unusable($0.sortIndex) }) {
                 throw TransferError.rowPositions(target.name)
             }
         }

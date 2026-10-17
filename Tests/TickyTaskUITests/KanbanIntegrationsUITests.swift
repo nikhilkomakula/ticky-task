@@ -75,7 +75,8 @@ final class KanbanIntegrationsUITests: XCTestCase {
         let confirm = element(app, "kanban-editor-schedule-confirm")
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "the day picker opens")
         confirm.click()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'On the planner for'")).firstMatch
+        // A SwiftUI Text's string is its accessibility value on macOS, not its label.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "value BEGINSWITH 'On the planner for'")).firstMatch
             .waitForExistence(timeout: 5), "the editor confirms the day")
         element(app, "kanban-editor-done").click()
         XCTAssertFalse(element(app, "kanban-editor-title").waitForExistence(timeout: 2), "the editor closed")

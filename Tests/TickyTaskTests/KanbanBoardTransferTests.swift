@@ -290,6 +290,20 @@ struct KanbanBoardTransferTests {
         #expect(try to.fetchCount(FetchDescriptor<KanbanPerson>()) == people && target.resources.count == 1)
     }
 
+    @Test("Card positions that can't be extended refuse the merge too")
+    func exhaustedCardPositions() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let s = KanbanService(to)
+        let target = try s.createProject(name: "Edge", key: "EDGE")
+        try s.createTask(in: target, title: "Far").sortIndex = 0x1p53
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = target.id
+        #expect(throws: T.TransferError.rowPositions("Edge")) { try T.apply(plan, fileName: "f", context: to) }
+        #expect(try to.fetchCount(FetchDescriptor<KanbanTask>()) == 1)
+    }
+
     @Test("Formulas behind leading whitespace or control characters are neutralised too")
     func csvControlPrefixes() {
         for field in ["\t=1+1", "\r=1+1", " =1+1", "\u{0B}@SUM(A1)", "\t"] {
