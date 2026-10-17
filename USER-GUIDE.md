@@ -24,7 +24,7 @@ Or load a saved template.
 
 **People** are stored globally so you can add the same person to multiple boards. When you add someone to a board, you create a **membership** that defines how much of their time that board gets.
 
-**Create a person.** Click the **Add person** button below the board's rows to open the sheet. Create a new person or add an existing one. A person has a name, initials, employment type (FTE or contractor), and optional skills.
+**Create a person.** Click the **Add person** button below the board's rows to open the sheet. Choose **New person**, or **Existing person** to add someone already in TickyTask (for example from another board); the choice only appears when there's someone to pick. A person has a name, initials, employment type (FTE or contractor), and optional skills.
 
 **Set membership details on a board.** Right-click a row header and choose **Edit membership…** to set:
 - **Allocation %**: what portion of their time they spend on this board (e.g., 50 % for a half-time contractor).

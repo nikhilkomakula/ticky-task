@@ -272,6 +272,24 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(eventually { abs(element(app, "kanban-colhdr-To Do").frame.width - original) < 2 }, "double-click resets it")
     }
 
+    /// Add person offers someone from another board (Ravi, on Platform) as an existing person.
+    func testAddSomeoneFromAnotherBoard() {
+        let app = launch()
+        let board = element(app, "kanban-sidebar-Data")
+        XCTAssertTrue(board.waitForExistence(timeout: 10))
+        board.click()
+        let add = element(app, "kanban-add-person")
+        XCTAssertTrue(add.waitForExistence(timeout: 10))
+        add.click()
+        let existing = app.radioButtons["Existing person"].firstMatch
+        XCTAssertTrue(existing.waitForExistence(timeout: 5), "there is someone to pick, so the choice shows")
+        existing.click()
+        XCTAssertTrue(element(app, "kanban-person-picker").waitForExistence(timeout: 5))
+        XCTAssertFalse(element(app, "kanban-person-name").exists, "no new-person fields for an existing person")
+        element(app, "kanban-person-add").click()
+        XCTAssertTrue(element(app, "kanban-rowhdr-Ravi Kumar").waitForExistence(timeout: 5), "Ravi joins the Data board")
+    }
+
     func testKeyboardMovesAFocusedCard() {
         let app = launch()
         openPlatform(app)
