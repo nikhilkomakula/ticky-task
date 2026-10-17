@@ -17,6 +17,7 @@ struct KanbanBoardView: View {
     @State private var isAddingPerson = false
     @State private var editingMembership: KanbanResource?
     @State private var archivingMembership: KanbanResource?
+    @State private var editingTask: KanbanTask?
 
     var body: some View {
         let snapshot = BoardSnapshot.make(project: project)
@@ -57,6 +58,7 @@ struct KanbanBoardView: View {
         .sheet(item: $columnToDelete) { KanbanDeleteColumnSheet(column: $0) }
         .sheet(isPresented: $isAddingPerson) { KanbanAddPersonSheet(project: project) }
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
+        .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {
@@ -93,19 +95,10 @@ struct KanbanBoardView: View {
                     .accessibilityIdentifier("kanban-collapsed-\(row.name)")
             } else {
                 ForEach(columns) { column in
-                    VStack(spacing: 6) {
-                        ForEach(snapshot.cards(in: column.id, row: row.key), id: \.id) { card in
-                            if let task = tasks[card.id] {
-                                KanbanCardView(task: task, project: project).id(task.id)
-                            }
-                        }
-                    }
-                    .padding(6)
-                    .frame(width: KanbanUI.columnWidth, alignment: .top)
-                    .frame(minHeight: 72, alignment: .top)
-                    .background((KanbanUI.color(column.colorHex) ?? .clear).opacity(0.06))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("kanban-cell-\(column.name)-\(row.name)")
+                    KanbanCell(project: project, column: column, row: row,
+                               tasks: snapshot.cards(in: column.id, row: row.key).compactMap { tasks[$0.id] },
+                               onOpen: { editingTask = $0 },
+                               onAdd: { addCard(in: column, row: row.key) })
                 }
             }
         }
@@ -131,6 +124,12 @@ struct KanbanBoardView: View {
         .padding(10)
         .stickyX(scroll)
         .accessibilityIdentifier("kanban-add-person")
+    }
+
+    private func addCard(in column: KanbanColumn, row: KanbanRowKey) {
+        prompt = .init(title: "New card in \(column.name)", placeholder: "Title") { title in
+            _ = try app.kanbanService(context).createTask(in: project, title: title, column: column, row: row)
+        }
     }
 
     private func toggle(_ key: KanbanRowKey, collapsed: Bool) {
@@ -212,6 +211,44 @@ struct KanbanBoardView: View {
             .disabled(index == count - 1)
         Divider()
         Button("Delete…", role: .destructive) { columnToDelete = column }
+    }
+}
+
+/// One cell: its cards in order, and a "+" on hover that adds a card here.
+private struct KanbanCell: View {
+    let project: KanbanProject
+    let column: KanbanColumn
+    let row: KanbanRowSnapshot
+    let tasks: [KanbanTask]
+    var onOpen: (KanbanTask) -> Void
+    var onAdd: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(tasks) { task in
+                KanbanCardView(task: task, project: project, onOpen: { onOpen(task) }).id(task.id)
+            }
+            Button(action: onAdd) {
+                Image(systemName: "plus")
+                    .frame(maxWidth: .infinity, minHeight: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .opacity(isHovering ? 1 : 0)
+            .help("Add a card here")
+            .accessibilityLabel("Add a card to \(column.name), \(row.name)")
+            .accessibilityIdentifier("kanban-add-card-\(column.name)-\(row.name)")
+        }
+        .padding(6)
+        .frame(width: KanbanUI.columnWidth, alignment: .top)
+        .frame(minHeight: 72, alignment: .top)
+        .background((KanbanUI.color(column.colorHex) ?? .clear).opacity(0.06))
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kanban-cell-\(column.name)-\(row.name)")
     }
 }
 

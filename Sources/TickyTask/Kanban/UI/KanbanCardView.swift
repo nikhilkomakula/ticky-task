@@ -7,6 +7,7 @@ import AppKit
 struct KanbanCardView: View {
     let task: KanbanTask
     let project: KanbanProject
+    var onOpen: () -> Void = {}
     @Environment(AppState.self) private var app
     @AppStorage("compactView") private var compact = false
 
@@ -36,7 +37,11 @@ struct KanbanCardView: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: highlighted ? 2 : 1))
         .animation(.easeInOut(duration: 0.2), value: highlighted)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onOpen)
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Edit", onOpen)
         .accessibilityIdentifier("kanban-card-\(task.title)")
     }
 

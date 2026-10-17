@@ -107,4 +107,72 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertEqual(header.frame.minX, headerX, accuracy: 4, "the row header stayed put")
         XCTAssertTrue(element(app, "kanban-colhdr-Stage 1").exists)
     }
+
+    // MARK: - Increment 4: editor and quick add
+
+    private func openEditor(_ app: XCUIApplication, _ title: String) {
+        let card = element(app, "kanban-card-\(title)")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // Click near the leading edge, away from the trailing metadata.
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).click()
+        XCTAssertTrue(element(app, "kanban-editor-title").waitForExistence(timeout: 5), "the editor opens")
+    }
+
+    func testEditACardsTitleAndAddAStep() {
+        let app = launch()
+        openPlatform(app)
+        openEditor(app, "Triage inbox")
+        let title = element(app, "kanban-editor-title")
+        title.click()
+        title.typeKey("a", modifierFlags: .command)
+        title.typeText("Triage support inbox")
+        let step = element(app, "kanban-editor-add-subtask")
+        step.click()
+        step.typeText("Read new mail\r")
+        element(app, "kanban-editor-done").click()
+        XCTAssertTrue(element(app, "kanban-card-Triage support inbox").waitForExistence(timeout: 5), "the card is renamed")
+        XCTAssertFalse(element(app, "kanban-editor-title").exists, "the editor closed")
+        openEditor(app, "Triage support inbox")
+        XCTAssertTrue(element(app, "kanban-step-toggle-Read new mail").waitForExistence(timeout: 5), "the step was saved")
+    }
+
+    func testAnInvalidJiraLinkIsRefused() {
+        let app = launch()
+        openPlatform(app)
+        openEditor(app, "Write docs")
+        let jira = element(app, "kanban-editor-jira")
+        jira.click()
+        jira.typeText("PLAT-9")
+        XCTAssertTrue(element(app, "kanban-editor-jira-error").waitForExistence(timeout: 5), "the field explains the problem")
+        element(app, "kanban-editor-done").click()
+        XCTAssertTrue(app.sheets.buttons["OK"].firstMatch.waitForExistence(timeout: 5) || app.buttons["OK"].firstMatch.exists,
+                      "Done is refused with a message")
+    }
+
+    func testNewCardWithCommandN() {
+        let app = launch()
+        openPlatform(app)
+        app.typeKey("n", modifierFlags: .command)
+        let field = element(app, "kanban-prompt-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText("Plan sprint\r")
+        XCTAssertTrue(element(app, "kanban-card-Plan sprint").waitForExistence(timeout: 5), "the card lands in the backlog")
+    }
+
+    func testQuickAddInACell() {
+        let app = launch()
+        openPlatform(app)
+        let cell = element(app, "kanban-cell-In Progress-Mia Chen")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        cell.hover()
+        element(app, "kanban-add-card-In Progress-Mia Chen").click()
+        let field = element(app, "kanban-prompt-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText("Review PR\r")
+        let card = element(app, "kanban-card-Review PR")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(cell.frame.contains(CGPoint(x: card.frame.midX, y: card.frame.midY)), "the card is in that cell")
+    }
 }
