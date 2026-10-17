@@ -132,7 +132,8 @@ struct BoardSnapshot: Equatable, Sendable {
                 CardSnapshot(
                     id: task.id,
                     columnID: task.column?.id ?? UUID(),
-                    row: task.resource.map { .resource($0.id) } ?? .unassigned,
+                    // A card whose membership isn't a row here (archived) shows as Unassigned.
+                    row: task.resource.flatMap { r in rows.contains { $0.key == .resource(r.id) } ? .resource(r.id) : nil } ?? .unassigned,
                     sortIndex: task.sortIndex,
                     completedAt: task.completedAt,
                     archived: task.archivedAt != nil,

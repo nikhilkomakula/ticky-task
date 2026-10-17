@@ -184,7 +184,7 @@ struct KanbanBackupIntegrityTests {
     enum Corruption: String, CaseIterable {
         case danglingPerson, missingPerson, crossProjectColumn, crossProjectResource, crossProjectLabel,
              crossProjectDependency, crossProjectAssignee, twoBacklogColumns, noDoneColumn,
-             duplicateActiveMembership, futureVersion
+             duplicateActiveMembership, futureVersion, duplicateColumnID, duplicateTaskID, unknownColumnKind
     }
 
     private func corrupt(_ k: KanbanBackupDTO, _ corruption: Corruption) -> KanbanBackupDTO {
@@ -226,6 +226,18 @@ struct KanbanBackupIntegrityTests {
             twin.id = UUID()
             k.resources.append(twin)
         case .futureVersion: k.version = KanbanBackupDTO.currentVersion + 1
+        case .duplicateColumnID:
+            // Another board's column reusing an id this board's cards point at.
+            let shared = k.tasks.first { $0.projectId == platform }!.columnId!
+            let i = k.columns.firstIndex { $0.projectId == other }!
+            k.columns[i].id = shared
+        case .duplicateTaskID:
+            var twin = k.tasks[0]
+            twin.title = "twin"
+            k.tasks.append(twin)
+        case .unknownColumnKind:
+            let i = k.columns.firstIndex { $0.kindRaw == "active" }!
+            k.columns[i].kindRaw = "someday"
         }
         return k
     }
@@ -285,5 +297,34 @@ struct KanbanBackupIntegrityTests {
             #expect(!reachable(task, task.id, &seen), "\(task.title) is not on a cycle")
         }
         #expect(edges == 3, "3 of the 4 edges are kept")
+    }
+
+    // MARK: - Repairs
+
+    @Test("A live card on an archived membership is restored as Unassigned (counted), and moving it is safe")
+    func liveCardOnArchivedMembershipIsRepaired() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let context = try open(dir)
+        let planner = try buildPlanner(context)
+        try buildBoard(context, plannerOneOff: planner.oneOff, plannerDefinition: planner.definition)
+        var snapshot = try BackupStore.makeSnapshot(context: context)
+        var section = try #require(snapshot.kanban)
+        let archived = try #require(section.resources.first { $0.archivedAt != nil })
+        let live = try #require(section.tasks.firstIndex { $0.archivedAt == nil })
+        section.tasks[live].resourceId = archived.id
+        snapshot.kanban = section
+        #expect(try KanbanBackupValidator.sanitized(section).report.unassignedFromArchivedMemberships == 1)
+
+        try BackupStore.restore(snapshot, context: context)
+        let reopened = try open(dir)
+        let card = try #require(try reopened.fetch(FetchDescriptor<KanbanTask>()).first { $0.id == section.tasks[live].id })
+        #expect(card.resource == nil)
+        // Even if such a card existed, the snapshot shows it as Unassigned and planning never traps.
+        card.resource = try reopened.fetch(FetchDescriptor<KanbanResource>()).first { $0.id == archived.id }
+        let project = try #require(card.project)
+        let board = BoardSnapshot.make(project: project)
+        #expect(board.cards.first { $0.id == card.id }?.row == .unassigned)
+        _ = KanbanMoves.plan(.cards([card.id], to: .rowHeader(.unassigned)), in: board, now: Date())
     }
 }

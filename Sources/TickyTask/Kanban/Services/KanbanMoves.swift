@@ -110,7 +110,7 @@ nonisolated enum KanbanMoves {
         }
         let affected = Set(selection.map { Cell(column: $0.columnID, row: $0.row) } + destinations.values)
         var incoming: [Cell: [CardSnapshot]] = [:]
-        for card in selection { incoming[destinations[card.id]!, default: []].append(card) }
+        for card in selection { if let cell = destinations[card.id] { incoming[cell, default: []].append(card) } }
         for (cell, cards) in incoming {
             var list = cells[cell] ?? []
             var index = list.count
@@ -121,7 +121,7 @@ nonisolated enum KanbanMoves {
 
         // Dense re-derivation of every affected cell, with completion transitions for movers.
         var changes: [CardChange] = []
-        for cell in affected.sorted(by: { (columnIndex[$0.column]!, rowIndex[$0.row]!) < (columnIndex[$1.column]!, rowIndex[$1.row]!) }) {
+        for cell in affected.sorted(by: { (columnIndex[$0.column] ?? .max, rowIndex[$0.row] ?? .max) < (columnIndex[$1.column] ?? .max, rowIndex[$1.row] ?? .max) }) {
             for (position, card) in (cells[cell] ?? []).enumerated() {
                 let completedAt: Date?
                 if moving.contains(card.id) {
@@ -142,7 +142,7 @@ nonisolated enum KanbanMoves {
             let gains = selection.contains { $0.columnID != column.id && destinations[$0.id]?.column == column.id }
             guard gains else { continue }
             let count = cells.filter { $0.key.column == column.id }.reduce(0) { $0 + $1.value.count }
-            if count > column.wipLimit! { over.append(column.id) }
+            if let limit = column.wipLimit, count > limit { over.append(column.id) }
         }
         if !over.isEmpty, s.wipPolicy == .block {
             return MovePlan(cardChanges: [], columnOrder: nil, rowOrder: nil, wip: .blocked(over), isNoOp: true)

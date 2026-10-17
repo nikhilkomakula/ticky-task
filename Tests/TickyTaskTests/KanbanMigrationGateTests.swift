@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import SwiftData
+import SQLite3
 @testable import TickyTask
 
 /// D1 verification gate: eight-model Kanban graph migration. Automatic lightweight
@@ -93,7 +94,18 @@ struct KanbanMigrationGateTests {
         var revertedByActivityID: UUID?
         var projectID: UUID?
     }
+    struct ProjectRow: Equatable {
+        var name: String, key: String, details: String, colorHex: String, symbolName: String
+        var sortIndex: Double, isPinned: Bool, createdAt: Int64, updatedAt: Int64, archivedAt: Int64?
+        var workWeekDays: [Int], hoursPerDay: Double, defaultCapacityHoursPerWeek: Double
+        var wipPolicyRaw: String, loadMeasureRaw: String, openTaskTarget: Double, defaultEstimateHours: Double
+        var weightedLoad: Bool, dueSoonThresholdDays: Int, suggestDone: Bool, collapsedRowKeys: [String]
+        var boardState: Data?, nextActivitySeq: Int
+    }
     struct Graph: Equatable {
+        var projects: [UUID: ProjectRow] = [:]
+        /// Every relationship, keyed "owner.relationship:ownerID" — both directions of each.
+        var relations: [String: Set<UUID>] = [:]
         var people: [UUID: PersonRow] = [:]
         var resources: [UUID: ResourceRow] = [:]
         var columns: [UUID: ColumnRow] = [:]
@@ -111,6 +123,41 @@ struct KanbanMigrationGateTests {
     private func graph(_ context: ModelContext) throws -> Graph {
         var g = Graph()
 
+        func relate(_ name: String, _ owner: UUID, _ ids: [UUID?]) { g.relations["\(name):\(owner)"] = Set(ids.compactMap { $0 }) }
+        for p in try context.fetch(FetchDescriptor<KanbanProject>()) {
+            g.projects[p.id] = ProjectRow(
+                name: p.name, key: p.key, details: p.details, colorHex: p.colorHex, symbolName: p.symbolName,
+                sortIndex: p.sortIndex, isPinned: p.isPinned, createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
+                archivedAt: p.archivedAt.map(ms), workWeekDays: p.workWeekDays, hoursPerDay: p.hoursPerDay,
+                defaultCapacityHoursPerWeek: p.defaultCapacityHoursPerWeek, wipPolicyRaw: p.wipPolicyRaw,
+                loadMeasureRaw: p.loadMeasureRaw, openTaskTarget: p.openTaskTarget, defaultEstimateHours: p.defaultEstimateHours,
+                weightedLoad: p.weightedLoad, dueSoonThresholdDays: p.dueSoonThresholdDays,
+                suggestDone: p.suggestDoneWhenSubtasksComplete, collapsedRowKeys: p.collapsedRowKeys,
+                boardState: p.boardState, nextActivitySeq: p.nextActivitySeq)
+            relate("project.columns", p.id, p.columns.map(\.id))
+            relate("project.resources", p.id, p.resources.map(\.id))
+            relate("project.labels", p.id, p.labels.map(\.id))
+            relate("project.tasks", p.id, p.tasks.map(\.id))
+            relate("project.activities", p.id, p.activities.map(\.id))
+        }
+        for c in try context.fetch(FetchDescriptor<KanbanColumn>()) {
+            relate("column.project", c.id, [c.project?.id])
+            relate("column.tasks", c.id, c.tasks.map(\.id))
+        }
+        for r in try context.fetch(FetchDescriptor<KanbanResource>()) {
+            relate("resource.project", r.id, [r.project?.id])
+            relate("resource.tasks", r.id, r.tasks.map(\.id))
+            relate("resource.subtaskAssignments", r.id, r.subtaskAssignments.map(\.id))
+        }
+        for l in try context.fetch(FetchDescriptor<KanbanLabel>()) {
+            relate("label.tasks", l.id, l.tasks.map(\.id))
+        }
+        for t in try context.fetch(FetchDescriptor<KanbanTask>()) {
+            relate("task.subtasks", t.id, t.subtasks.map(\.id))
+        }
+        for person in try context.fetch(FetchDescriptor<KanbanPerson>()) {
+            relate("person.memberships", person.id, person.memberships.map(\.id))
+        }
         for p in try context.fetch(FetchDescriptor<KanbanPerson>()) {
             g.people[p.id] = PersonRow(
                 name: p.name, initials: p.initials, colorHex: p.colorHex,
@@ -181,6 +228,55 @@ struct KanbanMigrationGateTests {
         return g
     }
 
+    /// Planner rows as stored: per table, the ids; per task, its core fields. Read straight
+    /// from SQLite, so it doesn't depend on SwiftData's migration.
+    struct RawPlanner: Equatable {
+        var tasks: [UUID: String] = [:]   // id → title|notes|dayKey|isDone|priority
+        var counts: [String: Int] = [:]
+    }
+
+    private func rawPlanner(_ fixture: URL) throws -> RawPlanner {
+        // A private copy: a WAL-mode file can't be read in place without creating sidecars.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("KanbanRaw-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("TickyTask.store")
+        try FileManager.default.copyItem(at: fixture, to: url)
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { throw CocoaError(.fileReadUnknown) }
+        defer { sqlite3_close(db) }
+        var out = RawPlanner()
+        var stmt: OpaquePointer?
+        let sql = "SELECT ZID, ZTITLE, ZNOTES, ZDAYKEY, ZISDONE, ZPRIORITY FROM ZTASKITEM"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw CocoaError(.fileReadCorruptFile) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let blob = sqlite3_column_blob(stmt, 0), sqlite3_column_bytes(stmt, 0) == 16 else { continue }
+            let id = UUID(uuid: Data(bytes: blob, count: 16).withUnsafeBytes { $0.load(as: uuid_t.self) })
+            func text(_ i: Int32) -> String { sqlite3_column_text(stmt, i).map { String(cString: $0) } ?? "∅" }
+            let notes = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            out.tasks[id] = [text(1), notes, text(3), "\(sqlite3_column_int(stmt, 4) != 0)", "\(sqlite3_column_int(stmt, 5))"].joined(separator: "|")
+        }
+        sqlite3_finalize(stmt)
+        for table in ["ZSUBTASK", "ZCUSTOMLIST", "ZTASKTAG", "ZTASKOCCURRENCE"] {
+            guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM \(table)", -1, &stmt, nil) == SQLITE_OK else { continue }
+            if sqlite3_step(stmt) == SQLITE_ROW { out.counts[table] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+        return out
+    }
+
+    private func rawPlannerFromModels(_ context: ModelContext) throws -> RawPlanner {
+        var out = RawPlanner()
+        for t in try context.fetch(FetchDescriptor<TaskItem>()) {
+            out.tasks[t.id] = [t.title, t.notes, t.dayKey ?? "∅", "\(t.isDone)", "\(t.priority)"].joined(separator: "|")
+        }
+        out.counts = ["ZSUBTASK": try context.fetchCount(FetchDescriptor<Subtask>()),
+                      "ZCUSTOMLIST": try context.fetchCount(FetchDescriptor<CustomList>()),
+                      "ZTASKTAG": try context.fetchCount(FetchDescriptor<TaskTag>()),
+                      "ZTASKOCCURRENCE": try context.fetchCount(FetchDescriptor<TaskOccurrence>())]
+        return out
+    }
+
     private func workingCopy(of tag: String) throws -> (store: URL, cleanup: () -> Void) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("TickyTaskKanban-\(tag)-\(UUID())")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -211,6 +307,15 @@ struct KanbanMigrationGateTests {
             // covers every planner model and field).
             let plannerBefore = try context.fetch(FetchDescriptor<TaskItem>()).count
             plannerOriginal = try BackupStore.makeSnapshot(context: context).data
+            // The migrated rows must match the untouched fixture file itself, read raw.
+            let pristine = try rawPlanner(Self.fixtures.appendingPathComponent("\(tag)/TickyTask.store"))
+            let migrated = try rawPlannerFromModels(context)
+            #expect(migrated.counts == pristine.counts, "\(tag): planner row counts")
+            #expect(Set(migrated.tasks.keys) == Set(pristine.tasks.keys), "\(tag): the same task ids")
+            for (id, row) in pristine.tasks where migrated.tasks[id] != row {
+                Issue.record("\(tag) \(id): stored \(row) ≠ migrated \(migrated.tasks[id] ?? "missing")")
+                break
+            }
 
             // Build a full Kanban graph with comprehensive coverage
             let kanbanBefore = try context.fetch(FetchDescriptor<KanbanProject>()).count
@@ -232,18 +337,22 @@ struct KanbanMigrationGateTests {
             proj1.colorHex = "#1E40AF"
             proj1.symbolName = "iphone"
             proj1.details = "Mobile app"
-            proj1.workWeekDays = [2, 3, 4, 5, 6]
-            proj1.hoursPerDay = 8
-            proj1.defaultCapacityHoursPerWeek = 40
-            proj1.wipPolicyRaw = KanbanWIPPolicy.warn.rawValue
-            proj1.loadMeasureRaw = KanbanLoadMeasure.taskCount.rawValue
-            proj1.openTaskTarget = 5
-            proj1.defaultEstimateHours = 4
-            proj1.weightedLoad = false
-            proj1.dueSoonThresholdDays = 3
-            proj1.suggestDoneWhenSubtasksComplete = true
+            proj1.workWeekDays = [2, 3, 4]
+            proj1.hoursPerDay = 7.5
+            proj1.defaultCapacityHoursPerWeek = 32
+            proj1.wipPolicyRaw = KanbanWIPPolicy.block.rawValue
+            proj1.loadMeasureRaw = KanbanLoadMeasure.hours.rawValue
+            proj1.openTaskTarget = 4
+            proj1.defaultEstimateHours = 3
+            proj1.weightedLoad = true
+            proj1.dueSoonThresholdDays = 5
+            proj1.suggestDoneWhenSubtasksComplete = false
             proj1.collapsedRowKeys = ["unassigned"]
-            proj1.nextActivitySeq = 1
+            proj1.nextActivitySeq = 7
+            proj1.isPinned = true
+            proj1.sortIndex = 3
+            proj1.boardState = Data([4, 2])
+            proj1.archivedAt = Date(timeIntervalSinceReferenceDate: 812_345_678.5)
             context.insert(proj1)
 
             // Project 2: all optionals nil/default
@@ -431,6 +540,9 @@ struct KanbanMigrationGateTests {
             #expect(try BackupStore.makeSnapshot(context: context).data == plannerOriginal,
                     "\(tag): the planner data is exactly unchanged after adding a board and reopening")
 
+            #expect(reopened.projects == original.projects, "\(tag): projects round-trip exactly")
+            #expect(reopened.relations == original.relations, "\(tag): every relationship round-trips in both directions")
+            #expect(original.projects.count == 2 && original.relations.count > 20, "\(tag): the snapshot covers projects and relations")
             #expect(reopened.people == original.people, "people round-trip exactly")
             #expect(reopened.resources == original.resources, "resources round-trip exactly")
             #expect(reopened.columns == original.columns, "columns round-trip exactly")

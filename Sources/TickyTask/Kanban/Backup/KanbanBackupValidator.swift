@@ -7,6 +7,8 @@ struct KanbanImportReport: Equatable, Sendable {
     /// Links to planner tasks that were cleared during restore because the target
     /// was missing or a hidden definition.
     var droppedPlannerLinks: Int = 0
+    /// Live cards on an archived membership, sent to Unassigned.
+    var unassignedFromArchivedMemberships: Int = 0
 }
 
 /// Validates a decoded Kanban backup before restore or import, checking version,
@@ -34,9 +36,23 @@ enum KanbanBackupValidator {
         let taskIds = Set(kanban.tasks.map(\.id))
         let subtaskIds = Set(kanban.subtasks.map(\.id))
 
-        // Validate people: archived or not.
-        for person in kanban.people {
-            // A person's id is uniquely referenced; no other checks needed here.
+        // Ids must be unique per entity: SwiftData has no uniqueness constraint, and a
+        // duplicate would let a reference resolve to a row on another board.
+        func requireUnique(_ ids: [UUID], _ entity: String) throws {
+            guard Set(ids).count == ids.count else {
+                throw BackupError.validationFailed(reason: "The backup repeats a \(entity) id")
+            }
+        }
+        try requireUnique(kanban.people.map(\.id), "person")
+        try requireUnique(kanban.projects.map(\.id), "board")
+        try requireUnique(kanban.columns.map(\.id), "column")
+        try requireUnique(kanban.resources.map(\.id), "membership")
+        try requireUnique(kanban.labels.map(\.id), "label")
+        try requireUnique(kanban.tasks.map(\.id), "card")
+        try requireUnique(kanban.subtasks.map(\.id), "step")
+        try requireUnique(kanban.activities.map(\.id), "change-log entry")
+        for column in kanban.columns where KanbanColumnKind(rawValue: column.kindRaw) == nil {
+            throw BackupError.validationFailed(reason: "Column \(column.id) has an unknown kind")
         }
 
         // Validate projects: must have exactly one backlog and at least one done column.
@@ -222,12 +238,20 @@ enum KanbanBackupValidator {
             if edge.from == edge.to || reaches(edge.to, edge.from) { dropped += 1; continue }
             kept[edge.from, default: []].insert(edge.to)
         }
+        // A live card can't sit on an archived membership (archiving unassigns its cards);
+        // repair rather than reject, sending it to Unassigned and counting it.
+        let archivedResources = Set(kanban.resources.filter { $0.archivedAt != nil }.map(\.id))
+        var unassigned = 0
         var cleaned = kanban
         cleaned.tasks = kanban.tasks.map { task in
             var task = task
             task.dependsOnIds = task.dependsOnIds.filter { kept[task.id]?.contains($0) ?? false }
+            if task.archivedAt == nil, let resource = task.resourceId, archivedResources.contains(resource) {
+                task.resourceId = nil
+                unassigned += 1
+            }
             return task
         }
-        return (cleaned, KanbanImportReport(droppedDependencyEdges: dropped))
+        return (cleaned, KanbanImportReport(droppedDependencyEdges: dropped, unassignedFromArchivedMemberships: unassigned))
     }
 }
