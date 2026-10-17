@@ -45,6 +45,7 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | I6-d | Round 4 | **CHANGES REQUESTED** — round-3 fixes confirmed; the position invariant refuses no correct undo/revert when live positions start unique (pre-existing duplicates among placed cards are ignored, so a legacy collision can block only an inverse that recreates it). 3 should-fix around Show Archived: a mixed archived/live selection didn't drag; archived memberships' rows became move targets; archived cards inflated WIP counts | Fixed: the drag payload is live cards only; Show Archived adds archived cards but not archived rows (their cards show as Unassigned); headers count live cards |
 | I6-e | Round 5 | **CHANGES REQUESTED** — round-4 fixes confirmed; 1 should-fix: under manual sort with a filter hiding part of a cell, ⌥⌘↑ anchored on a hidden card, so nothing moved on screen | Fixed: an active filter takes the on-screen `arrange` path too (manual sort stays manual) |
 | I6-f | Round 6 | **CHANGES REQUESTED** — the round-5 fix confirmed; 1 should-fix: a selection with a card the filter hides dragged it along under a sort (the arrangement then left it behind) | Fixed: the drag payload is the selection's live cards that are on screen |
+| I6-g | Round 7 | **INCREMENT-6: APPROVED** — nit: a priority and a label with the same name could share a filter chip's identity (unverified at runtime) | PR after increment 5 merges (no tag) |
 
 ### R2 issues and how they were resolved
 
