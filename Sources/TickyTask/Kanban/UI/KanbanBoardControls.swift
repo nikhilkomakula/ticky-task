@@ -24,6 +24,8 @@ struct KanbanViewControls: View {
             Picker("View", selection: Binding(get: { state.view }, set: { view in app.updateBoardState(project, context: context) { $0.view = view } })) {
                 Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
                 Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
+                Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
             }
             .pickerStyle(.segmented)
             .labelsHidden()

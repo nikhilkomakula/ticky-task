@@ -231,4 +231,43 @@ struct KanbanReplayTests {
         let elapsed = ContinuousClock().measure { _ = R.cfd(s, activities: activities, days: 90) }
         #expect(elapsed < .milliseconds(300), "\(elapsed)")
     }
+
+    @Test func referenceFixtureBudget() {
+        // 500 cards and 5,000 moves over 90 days, as in the design's budget (02 §5).
+        let columns = (0..<10).map { i in MetricsSnapshot.Column(id: UUID(), name: "C\(i)", kind: i == 0 ? .backlog : i == 9 ? .done : .active) }
+        let cards = (0..<500).map { i in F.card(columns[i % 10].id, created: F.date(7, 1 + i % 28)) }
+        var s = F.board([], cards)
+        s.columns = columns
+        func record(_ c: MetricsSnapshot.Column) -> KanbanPlacementRecord {
+            KanbanPlacementRecord(columnID: c.id, columnName: c.name, columnKind: c.kind.rawValue, resourceID: nil, sortIndex: 0, completedAt: nil)
+        }
+        let activities = (0..<5000).map { i -> MetricsActivity in
+            let card = cards[i % 500], from = columns[i % 10], to = columns[(i + 1) % 10]
+            let payload = KanbanActivityPayload(transitions: [KanbanTransition(taskID: card.id, from: record(from), to: record(to))])
+            return MetricsActivity(seq: i + 1, at: F.date(7, 20).addingTimeInterval(Double(i) * 1500), kind: .moved, payload: payload)
+        }
+        let elapsed = ContinuousClock().measure {
+            _ = R.cfd(s, activities: activities, days: 90)
+            _ = R.throughput(s, activities: activities, weeks: 12)
+            _ = R.agingWIP(s, activities: activities)
+            _ = R.burnUp(s, activities: activities, days: 90)
+        }
+        #if DEBUG
+        #expect(elapsed < .milliseconds(600), "Debug canary: \(elapsed)")
+        #else
+        #expect(elapsed < .milliseconds(100), "\(elapsed)")
+        #endif
+    }
+
+    @Test func theChangeLogCacheRefreshesWithTheStore() throws {
+        let b = try Board()
+        let cache = KanbanMetricsCache()
+        let key = KanbanMetricsCache.Key(generation: 1, clock: "20261014|Europe/London", weekStartsMonday: true)
+        let before = cache.activities(of: b.project, key: key).count
+        _ = try b.card("A", on: F.date(10, 1))
+        #expect(cache.activities(of: b.project, key: key).count == before, "same key: cached")
+        var next = key
+        next.generation = 2
+        #expect(cache.activities(of: b.project, key: next).count == before + 1)
+    }
 }

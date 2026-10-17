@@ -306,4 +306,28 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-card-Load warehouse").waitForExistence(timeout: 5), "the Data board opens on the card")
         XCTAssertTrue(element(app, "kanban-breadcrumb").label.contains("Data") || (element(app, "kanban-breadcrumb").value as? String ?? "").contains("Data"))
     }
+
+    // MARK: - Increment 7: dashboard, timeline
+
+    func testDashboardShowsChartsAndOpensAFilteredBoard() {
+        let app = launch()
+        openPlatform(app)
+        app.radioButtons["Dashboard"].firstMatch.click()
+        for id in ["kanban-dash-load", "kanban-dash-heatmap", "kanban-dash-columns", "kanban-dash-due", "kanban-dash-cfd", "kanban-dash-hygiene"] {
+            XCTAssertTrue(element(app, id).waitForExistence(timeout: 5), "\(id) should be on the dashboard")
+        }
+        element(app, "kanban-dash-open-due").click()
+        XCTAssertTrue(element(app, "kanban-chip-Overdue").waitForExistence(timeout: 5), "the board opens filtered to overdue")
+        XCTAssertTrue(element(app, "kanban-card-Build API").exists, "the overdue card is shown")
+        XCTAssertFalse(element(app, "kanban-card-Triage inbox").exists)
+    }
+
+    func testTimelineShowsDatedCards() {
+        let app = launch()
+        openPlatform(app)
+        app.radioButtons["Timeline"].firstMatch.click()
+        XCTAssertTrue(element(app, "kanban-timeline").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'without dates'")).firstMatch.waitForExistence(timeout: 5),
+                      "undated cards are counted")
+    }
 }

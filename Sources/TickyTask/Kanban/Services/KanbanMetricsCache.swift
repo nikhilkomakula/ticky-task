@@ -15,6 +15,16 @@ final class KanbanMetricsCache {
     private var key: Key?
     private var snapshots: [UUID: MetricsSnapshot] = [:]
     private var rollup: (projects: [UUID], rows: [UUID: KanbanMetrics.PersonRow])?
+    private var logs: [UUID: [MetricsActivity]] = [:]
+
+    /// A board's decoded change log, for the history charts.
+    func activities(of project: KanbanProject, key: Key) -> [MetricsActivity] {
+        reset(for: key)
+        if let log = logs[project.id] { return log }
+        let log = MetricsActivity.records(of: project)
+        logs[project.id] = log
+        return log
+    }
 
     func snapshot(of project: KanbanProject, key: Key, calendar: Calendar) -> MetricsSnapshot {
         reset(for: key)
@@ -40,6 +50,7 @@ final class KanbanMetricsCache {
         self.key = key
         snapshots = [:]
         rollup = nil
+        logs = [:]
     }
 }
 

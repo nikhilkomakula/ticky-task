@@ -4,7 +4,7 @@ import Foundation
 /// Stored as JSON in `KanbanProject.boardState`; every key is optional, so older or newer
 /// states decode to what they have.
 struct KanbanBoardState: Codable, Equatable, Sendable {
-    enum ViewKind: String, Codable, CaseIterable, Sendable { case board, list }
+    enum ViewKind: String, Codable, CaseIterable, Sendable { case board, list, timeline, dashboard }
     enum Sort: String, Codable, CaseIterable, Sendable {
         case manual, priority, dueDate, title
         var label: String {

@@ -24,11 +24,13 @@ struct KanbanModuleView: View {
                 case let .project(id):
                     if let project = projects.first(where: { $0.id == id }) {
                         VStack(spacing: 0) {
-                            KanbanFilterChips(project: project)
-                            if KanbanBoardState.decode(project.boardState).view == .list {
-                                KanbanListView(project: project)
-                            } else {
-                                KanbanBoardView(project: project, allProjects: projects)
+                            // The dashboard shows the whole board, so no filter chips there.
+                            if KanbanBoardState.decode(project.boardState).view != .dashboard { KanbanFilterChips(project: project) }
+                            switch KanbanBoardState.decode(project.boardState).view {
+                            case .board: KanbanBoardView(project: project, allProjects: projects)
+                            case .list: KanbanListView(project: project)
+                            case .timeline: KanbanTimelineView(project: project)
+                            case .dashboard: KanbanDashboardView(project: project)
                             }
                         }
                         .modifier(KanbanProjectScope(project: project))

@@ -161,7 +161,11 @@ struct KanbanAttentionView: View {
             List {
                 ForEach(groups, id: \.0.id) { project, items in
                     Section(project.name) {
-                        ForEach(items) { item in
+                        // Grouped by person within each board (design 01 §5).
+                        let byPerson = Dictionary(grouping: items) { $0.task.resource?.displayName ?? "Unassigned" }
+                        ForEach(byPerson.keys.sorted(), id: \.self) { person in
+                            Text(person).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(byPerson[person] ?? []) { item in
                             Button { app.revealKanban(taskID: item.task.id, projectID: project.id) } label: {
                                 HStack {
                                     Text(item.task.title)
@@ -175,6 +179,7 @@ struct KanbanAttentionView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("kanban-attention-\(item.task.title)")
+                            }
                         }
                     }
                 }
