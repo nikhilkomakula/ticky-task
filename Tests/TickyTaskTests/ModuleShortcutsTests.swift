@@ -78,6 +78,15 @@ struct ModuleShortcutsTests {
         #expect(shortcuts.conflict(duplicate, for: .planner, menu: menu)?.contains("duplicate a card") == true, "the board's own keys are refused")
         let reorder = ModuleShortcut(keyCode: 126, key: "upArrow", modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
         #expect(shortcuts.conflict(reorder, for: .kanban, menu: menu) != nil)
+        // The board ignores ⌃ and ⇧ when it reads these keys, so their variants are reserved too.
+        for flags: NSEvent.ModifierFlags in [[.command, .control], [.command, .shift], [.command, .control, .shift]] {
+            let arrow = ModuleShortcut(keyCode: 124, key: "rightArrow", modifiers: flags.rawValue)
+            #expect(shortcuts.conflict(arrow, for: .planner, menu: menu) != nil, "\(arrow.description)")
+        }
+        let shiftD = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue)
+        #expect(shortcuts.conflict(shiftD, for: .planner, menu: menu) != nil)
+        let optionD = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
+        #expect(shortcuts.conflict(optionD, for: .planner, menu: menu) == nil, "⌥⌘D isn't the board's")
         let free = ModuleShortcut(keyCode: 40, key: "k", modifiers: NSEvent.ModifierFlags([.command, .control]).rawValue)
         #expect(shortcuts.conflict(free, for: .kanban, menu: menu) == nil)
     }

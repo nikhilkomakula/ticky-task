@@ -154,9 +154,7 @@ final class ModuleShortcuts {
         if candidate == shortcut(for: module) { return nil }
         let other: AppModule = module == .planner ? .kanban : .planner
         if candidate == shortcut(for: other) { return "\(other.label) already uses \(candidate.description). Clear it there first." }
-        if let command = Self.boardCommands.first(where: { $0.keyCode == candidate.keyCode && $0.flags == candidate.flags }) {
-            return "The board uses \(candidate.description) to \(command.action)."
-        }
+        if let action = Self.boardAction(candidate) { return "The board uses \(candidate.description) to \(action)." }
         let globals: [KeyboardShortcuts.Name] = [.openApp, .newTaskToday, .toggleMenuBar]
         if globals.contains(where: { name in
             KeyboardShortcuts.getShortcut(for: name).map { $0.carbonKeyCode == candidate.keyCode && $0.modifiers.intersection([.command, .option, .control, .shift]) == candidate.flags } ?? false
@@ -169,16 +167,16 @@ final class ModuleShortcuts {
         return nil
     }
 
-    /// The board's own keys (handled on the board, not in a menu), so a module can't take them.
-    static let boardCommands: [(keyCode: Int, flags: NSEvent.ModifierFlags, action: String)] = {
-        var commands: [(Int, NSEvent.ModifierFlags, String)] = [(2, .command, "duplicate a card")]
-        for arrow in [123, 124, 125, 126] {
-            commands.append((arrow, .command, "move a card"))
-            commands.append((arrow, [.command, .option], "reorder"))
-        }
-        for arrow in [125, 126] { commands.append((arrow, [.command, .control], "collapse or expand rows")) }
-        return commands.map { (keyCode: $0.0, flags: $0.1, action: $0.2) }
-    }()
+    /// What the board itself does with `shortcut`, matched as loosely as the board reads keys
+    /// (it looks for ⌘, and ⌥ for reordering, and ignores ⌃ and ⇧), so a module can't take them.
+    static func boardAction(_ shortcut: ModuleShortcut) -> String? {
+        let flags = shortcut.flags
+        guard flags.contains(.command) else { return nil }
+        if shortcut.keyCode == 2, !flags.contains(.option) { return "duplicate a card" }
+        guard [123, 124, 125, 126].contains(shortcut.keyCode) else { return nil }
+        if flags.contains(.option) { return "reorder" }
+        return flags.contains(.control) ? "collapse rows or move a card" : "move a card"
+    }
 
     /// A main-menu item using `shortcut`, other than View › Planner / Kanban themselves.
     private static func menuItem(matching shortcut: ModuleShortcut, in menu: NSMenu) -> NSMenuItem? {
