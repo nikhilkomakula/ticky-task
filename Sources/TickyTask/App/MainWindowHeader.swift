@@ -20,8 +20,8 @@ struct MainWindowHeader: View {
 
         VStack(spacing: 0) {
             // Row 1: Centered module switcher + Settings
-            HStack(spacing: 12) {
-                Spacer()
+            ZStack(alignment: .center) {
+                // Center the module switcher or module name
                 if policy.showsSwitcher {
                     Picker("Modules", selection: $app.module) {
                         ForEach(policy.visible) { m in
@@ -37,21 +37,24 @@ struct MainWindowHeader: View {
                     Text(module.label)
                         .font(.headline.weight(.semibold))
                 }
-                Spacer()
-                Button {
-                    NSApp.activate(ignoringOtherApps: true)
-                    openSettings()
-                } label: {
-                    Image(systemName: "gearshape")
+                // Overlay Settings on the trailing edge
+                HStack {
+                    Spacer()
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.borderless)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                    .help("Settings")
+                    .accessibilityIdentifier("toolbar-settings")
                 }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-                .help("Settings")
-                .accessibilityIdentifier("toolbar-settings")
+                .padding(.horizontal, 12)
             }
             .frame(height: 44)
-            .padding(.horizontal, 12)
 
             Divider()
 
@@ -284,7 +287,7 @@ private struct KanbanRow2View: View {
                 .buttonStyle(.borderless)
                 .frame(height: 28)
                 .help("New card")
-                .accessibilityIdentifier("toolbar-new-card")
+                .accessibilityIdentifier("kanban-new-card")
             }
         } else {
             Spacer()

@@ -122,18 +122,7 @@ struct ContentView: View {
             app.refreshKanbanClock()
             carryForwardIfDayChanged()
         }
-        .sheet(isPresented: $app.isSearchPresented) { SearchView() }
-        .sheet(isPresented: $app.isWeeklySummaryPresented) {
-            WeeklySummarySheet(weekAnchor: app.weekAnchor)
-        }
-        .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
-        .sheet(isPresented: $app.isPlannerNewTaskPresented) {
-            TaskEditorView(newTaskWithDayKey: app.selectedDayKey)
-        }
-        .sheet(isPresented: $app.isKanbanNewCardPresented) {
-            NewCardSheetContent()
-                .environment(app)
-        }
+        .modifier(ContentViewSheetModifier())
     }
 
     /// Keep the drag controller's persistence context + sort config current.
@@ -312,6 +301,84 @@ private struct PlannerModuleView: View {
         case .calendar:
             CalendarMonthView()
         }
+    }
+}
+
+/// Container for label manager sheet.
+private struct KanbanLabelManagerContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanLabelManagerSheet(project: project)
+        }
+    }
+}
+
+/// Container for change log sheet.
+private struct KanbanChangeLogContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanChangeLogView(project: project)
+        }
+    }
+}
+
+/// Container for summary sheet.
+private struct KanbanSummaryContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanSummaryPresenter(project: project)
+        }
+    }
+}
+
+// Make UUID Identifiable so it can be used with .sheet(item:)
+extension UUID: @retroactive Identifiable {
+    public var id: UUID { self }
+}
+
+/// Sheet modifiers for ContentView to reduce type-checking complexity.
+private struct ContentViewSheetModifier: ViewModifier {
+    @Environment(AppState.self) private var app
+
+    func body(content: Content) -> some View {
+        @Bindable var app = app
+        return content
+            .sheet(isPresented: $app.isSearchPresented) { SearchView() }
+            .sheet(isPresented: $app.isWeeklySummaryPresented) {
+                WeeklySummarySheet(weekAnchor: app.weekAnchor)
+            }
+            .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
+            .sheet(isPresented: $app.isPlannerNewTaskPresented) {
+                TaskEditorView(newTaskWithDayKey: app.selectedDayKey)
+            }
+            .sheet(isPresented: $app.isKanbanNewCardPresented) {
+                NewCardSheetContent()
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanLabelManagerProjectID) { projectID in
+                KanbanLabelManagerContainer(projectID: projectID)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanChangeLogProjectID) { projectID in
+                KanbanChangeLogContainer(projectID: projectID)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanSummaryProjectID) { projectID in
+                KanbanSummaryContainer(projectID: projectID)
+                    .environment(app as AppState)
+            }
     }
 }
 

@@ -21,16 +21,34 @@ struct KanbanViewControls: View {
     var body: some View {
         let state = KanbanBoardState.decode(project.boardState)
         HStack(spacing: 6) {
-            Picker("View", selection: Binding(get: { state.view }, set: { view in app.updateBoardState(project, context: context) { $0.view = view } })) {
-                Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
-                Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
-                Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
-                Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
+            ViewThatFits(in: .horizontal) {
+                Picker("View", selection: Binding(get: { state.view }, set: { view in app.updateBoardState(project, context: context) { $0.view = view } })) {
+                    Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
+                    Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
+                    Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                    Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("kanban-view-picker")
+
+                Menu {
+                    Picker("View", selection: Binding(get: { state.view }, set: { view in app.updateBoardState(project, context: context) { $0.view = view } })) {
+                        Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
+                        Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
+                        Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                        Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Image(systemName: "square.grid.3x2")
+                }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .help("Board view")
+                .accessibilityIdentifier("kanban-view-picker")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityIdentifier("kanban-view-picker")
 
             Button { showFilter.toggle() } label: {
                 Image(systemName: state.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -115,9 +133,11 @@ struct KanbanFilterPopover: View {
                     ForEach(project.labels.sorted { $0.sortIndex < $1.sortIndex }) { label in
                         Toggle(label.name, isOn: setBinding(\.labelIDs, label.id, filter))
                     }
-                    Button(action: { /* P4: open label manager */ }) {
-                        Label("Edit labels…", systemImage: "tag")
+                    Button("Edit labels…") {
+                        app.kanbanLabelManagerProjectID = project.id
                     }
+                    .buttonStyle(.plain)
+                    .help("Edit labels")
                     .accessibilityIdentifier("kanban-filter-edit-labels")
                 }
             }

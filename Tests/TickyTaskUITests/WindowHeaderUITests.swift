@@ -8,6 +8,7 @@ final class WindowHeaderUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = [
             "-uitest",
+            "-uitestKanbanSeed",
             "-calendarColumns", "5",
             "-weekStartsMonday", "YES",
             "-showWeekends", "NO",
@@ -16,7 +17,9 @@ final class WindowHeaderUITests: XCTestCase {
             "-defaultModule", "planner"
         ]
         app.launchWithMainWindow()
-        XCTAssertTrue(app.staticTexts["Alpha"].waitForExistence(timeout: 20), "the planner opens first")
+        // Wait for the header to appear (works for both Planner and Kanban)
+        let settingsButton = app.descendants(matching: .any)["toolbar-settings"].firstMatch
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 20), "header appears")
         return app
     }
 
@@ -117,17 +120,13 @@ final class WindowHeaderUITests: XCTestCase {
         // Switch to Kanban
         app.typeKey("2", modifierFlags: .command)
 
-        // Navigate to Attention (if the sidebar is visible)
-        let sidebar = app.descendants(matching: .any)["kanban-sidebar"]
-        if sidebar.exists {
-            let attention = app.descendants(matching: .any)["kanban-sidebar-Attention"].firstMatch
-            if attention.exists {
-                attention.click()
+        // Navigate to Attention
+        let attention = element(app, "kanban-sidebar-attention")
+        XCTAssertTrue(attention.waitForExistence(timeout: 5), "Attention button exists")
+        attention.click()
 
-                let boardActions = element(app, "kanban-board-actions")
-                XCTAssertFalse(boardActions.exists, "Board actions menu is hidden in Attention view")
-            }
-        }
+        let boardActions = element(app, "kanban-board-actions")
+        XCTAssertFalse(boardActions.exists, "Board actions menu is hidden in Attention view")
     }
 
     // MARK: - Kanban New Card Button
@@ -141,7 +140,7 @@ final class WindowHeaderUITests: XCTestCase {
         XCTAssertTrue(board.waitForExistence(timeout: 10))
         board.click()
 
-        let newCardButton = element(app, "toolbar-new-card")
+        let newCardButton = element(app, "kanban-new-card")
         XCTAssertTrue(newCardButton.waitForExistence(timeout: 5), "New card button exists on open board")
     }
 
@@ -151,7 +150,7 @@ final class WindowHeaderUITests: XCTestCase {
         // Switch to Kanban (stays on All projects)
         app.typeKey("2", modifierFlags: .command)
 
-        let newCardButton = element(app, "toolbar-new-card")
+        let newCardButton = element(app, "kanban-new-card")
         XCTAssertFalse(newCardButton.exists, "New card button is hidden when no board is selected")
     }
 
