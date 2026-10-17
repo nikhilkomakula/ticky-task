@@ -229,8 +229,9 @@ struct KanbanBoardView: View {
             guard let task = tasks[id], let card = snapshot.cards.first(where: { $0.id == id }),
                   let columnIndex = columns.firstIndex(where: { $0.id == card.columnID }),
                   let rowIndex = snapshot.rows.firstIndex(where: { $0.key == card.row }) else { return .ignored }
-            // Moves use the stored order; focus follows what's on screen.
-            let siblings = snapshot.cards(in: card.columnID, row: card.row).map(\.id)
+            // Moves use the stored order of live cards (archived ones aren't anchors); focus
+            // follows what's on screen.
+            let siblings = snapshot.cards(in: card.columnID, row: card.row).filter { !$0.archived }.map(\.id)
             let shown = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).map(\.id)
             let position = siblings.firstIndex(of: id) ?? 0
             // Under another sort, a keyboard reorder works on the order on screen (as a drop does).

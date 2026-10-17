@@ -114,4 +114,15 @@ struct KanbanBulkTests {
         try s.undo(in: project)
         #expect(cards[0].archivedAt != nil && cards[1].archivedAt != nil)
     }
+
+    @Test("Reverting an old reorder that would put a card on a reused position is refused")
+    func revertReorderCollision() throws {
+        let (s, project, cards) = try board()   // A=0, B=1, C=2
+        try s.setArchived([cards[0]], true)
+        try s.arrange([cards[2], cards[1]])       // C=0, B=1
+        let arrange = try #require(project.activities.max { $0.seq < $1.seq })
+        let d = try s.createTask(in: project, title: "D")   // D=2
+        #expect(throws: KanbanServiceError.self, "C back to 2 would share D's position") { try s.revert(arrange) }
+        #expect(cards[2].sortIndex == 0 && d.sortIndex == 2)
+    }
 }

@@ -143,16 +143,19 @@ final class BoardDragController {
         projected = [:]
         guard case let .cards(ids)? = source, let project, target != nil else { return }
         let dragged = project.tasks.filter { ids.contains($0.id) }
-        guard let first = dragged.first else { return }
-        let (columnID, resource) = destination(of: first)
+        guard !dragged.isEmpty else { return }
 
-        // As `KanbanMoves` decides: only a column that gains cards can go over its limit.
-        if let columnID, let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit,
-           dragged.contains(where: { $0.column?.id != columnID }) {
+        // As `KanbanMoves` decides: each card lands in its own column (a row header keeps
+        // it), and only a column that gains cards can go over its limit.
+        let landing = Dictionary(grouping: dragged) { destination(of: $0).column ?? $0.column?.id }
+        for (columnID, arriving) in landing {
+            guard let columnID, arriving.contains(where: { $0.column?.id != columnID }),
+                  let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit else { continue }
             let staying = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == columnID && !ids.contains($0.id) }.count
-            let count = staying + dragged.count
+            let count = staying + arriving.count
             if count > limit {
                 wipNote = WIPNote(columnID: columnID, text: "\(count)/\(limit) — over limit", blocks: project.wipPolicy == .block)
+                break
             }
         }
 

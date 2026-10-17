@@ -78,6 +78,7 @@ struct KanbanListView: View {
     }
 
     var body: some View {
+        let _ = app.kanbanClock   // due filters roll over at midnight
         let state = KanbanBoardState.decode(project.boardState)
         let columns = project.orderedColumns
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
