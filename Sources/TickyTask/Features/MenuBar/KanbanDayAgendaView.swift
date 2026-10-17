@@ -160,6 +160,14 @@ private struct KanbanPopoverRow: View {
                 .frame(width: 8, height: 8)
                 .help(task.project?.name ?? "")
                 .accessibilityHidden(true)   // the hint names the board
+            if let column = task.column {
+                let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                Image(systemName: style.symbol)
+                    .font(.system(size: 10))
+                    .foregroundStyle(style.effectiveAccent)
+                    .help(style.tooltip)
+                    .accessibilityHidden(true)
+            }
             Text(task.title)
                 .lineLimit(1)
                 .strikethrough(done)
@@ -180,6 +188,6 @@ private struct KanbanPopoverRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens \(task.project?.name ?? "the board") with the card highlighted")
+        .accessibilityHint("Opens \(task.project?.name ?? "the board") with the card highlighted in \(task.column?.name ?? "unknown column")")
     }
 }

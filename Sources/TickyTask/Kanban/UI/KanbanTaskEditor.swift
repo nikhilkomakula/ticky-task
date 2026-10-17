@@ -111,8 +111,18 @@ struct KanbanTaskEditor: View {
     private var placementSection: some View {
         Section("On the board") {
             Picker("Column", selection: $columnID) {
-                ForEach(project?.orderedColumns ?? []) { Text($0.name).tag(Optional($0.id)) }
+                ForEach(project?.orderedColumns ?? []) { column in
+                    let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                    HStack(spacing: 4) {
+                        Image(systemName: style.symbol)
+                            .font(.system(size: 11))
+                            .foregroundStyle(style.effectiveAccent)
+                        Text(column.name)
+                    }
+                    .tag(Optional(column.id))
+                }
             }
+            .help(project?.orderedColumns.first.map { "Column: \(KanbanColumnStyle(kind: $0.kind, customColorHex: $0.colorHex).kindName)" } ?? "")
             .accessibilityIdentifier("kanban-editor-column")
             Picker("Assignee", selection: $row) {
                 Text("Unassigned").tag(KanbanRowKey.unassigned)

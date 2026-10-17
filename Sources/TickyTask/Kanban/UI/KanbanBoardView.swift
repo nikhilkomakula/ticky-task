@@ -475,7 +475,7 @@ private struct KanbanCell: View {
         .frame(width: KanbanUI.columnWidth, alignment: .top)
         // The full row height, so the blank space under short cells is a drop target too.
         .frame(minHeight: 72, maxHeight: .infinity, alignment: .top)
-        .background((KanbanUI.color(column.colorHex) ?? .clear).opacity(0.06))
+        .background(KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent.opacity(0.06))
         .publishBoardFrame { BoardFrames(cells: [.init(columnID: column.id, row: row.key, frame: $0)]) }
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }

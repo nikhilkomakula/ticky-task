@@ -107,7 +107,19 @@ struct KanbanListView: View {
                     .foregroundStyle(row.archived ? Color.secondary : Color.primary)
                     .accessibilityIdentifier("kanban-list-row-\(row.title)")
             }
-            TableColumn("Column", value: \Row.columnIndex) { (row: Row) in Text(row.column) }
+            TableColumn("Column", value: \Row.columnIndex) { (row: Row) in
+                if let column = row.task.column {
+                    let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                    HStack(spacing: 3) {
+                        Image(systemName: style.symbol)
+                            .font(.system(size: 11))
+                            .foregroundStyle(style.effectiveAccent)
+                        Text(row.column).lineLimit(1)
+                    }
+                } else {
+                    Text(row.column)
+                }
+            }
             TableColumn("Assignee", value: \Row.assignee) { (row: Row) in Text(row.assignee) }
             TableColumn("Priority", value: \Row.priority) { (row: Row) in Text(row.priorityLabel) }
             TableColumn("Due", value: \Row.due) { (row: Row) in Text(row.dueText) }

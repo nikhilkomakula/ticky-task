@@ -29,9 +29,11 @@ struct KanbanSidebar: View {
                 Section {
                     Label("Attention", systemImage: "exclamationmark.circle")
                         .tag(KanbanSidebarItem.attention)
+                        .help("Attention")
                         .accessibilityIdentifier("kanban-sidebar-attention")
                     Label("All projects", systemImage: "square.grid.2x2")
                         .tag(KanbanSidebarItem.allProjects)
+                        .help("All projects")
                         .accessibilityIdentifier("kanban-sidebar-all")
                 }
                 if !pinned.isEmpty {

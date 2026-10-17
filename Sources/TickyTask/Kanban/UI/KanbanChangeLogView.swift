@@ -25,7 +25,11 @@ struct KanbanChangeLogView: View {
             Divider()
             List(entries) { entry in
                 HStack(alignment: .firstTextBaseline) {
-                    Image(systemName: symbol(entry)).foregroundStyle(.secondary).frame(width: 18)
+                    Image(systemName: symbol(entry))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18)
+                        .help(activityLabel(entry))
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.summary)
                         Text(entry.at.formatted(date: .abbreviated, time: .shortened))
@@ -68,6 +72,22 @@ struct KanbanChangeLogView: View {
         case .memberArchived: "person.crop.circle.badge.minus"
         case .scheduled: "calendar.badge.plus"
         case nil: "circle"
+        }
+    }
+
+    private func activityLabel(_ entry: KanbanActivity) -> String {
+        switch KanbanActivityKind(rawValue: entry.kindRaw) {
+        case .created: "Created"
+        case .moved: "Moved"
+        case .edited: "Edited"
+        case .archived: "Archived"
+        case .restored: "Restored"
+        case .restoredGraph: "Restored"
+        case .deleted: "Deleted"
+        case .structure: "Structure"
+        case .memberArchived: "Member archived"
+        case .scheduled: "Scheduled"
+        case nil: "Activity"
         }
     }
 }

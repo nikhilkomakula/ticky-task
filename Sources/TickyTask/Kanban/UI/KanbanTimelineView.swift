@@ -51,7 +51,14 @@ struct KanbanTimelineView: View {
                             .foregroundStyle(by: .value("Column", bar.column))
                             .opacity(bar.overdue ? 1 : 0.85)
                             .annotation(position: .overlay, alignment: .leading) {
-                                Text(bar.title).font(.caption2).lineLimit(1).foregroundStyle(.white)
+                                Text(bar.title)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.2))
+                                    .cornerRadius(2)
                             }
                             .accessibilityLabel(bar.title)
                             .accessibilityValue("\(bar.person), \(bar.start.formatted(date: .abbreviated, time: .omitted)) to \(bar.end.formatted(date: .abbreviated, time: .omitted))")

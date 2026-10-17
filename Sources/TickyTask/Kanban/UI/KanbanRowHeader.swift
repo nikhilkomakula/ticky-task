@@ -25,7 +25,7 @@ struct KanbanRowHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .help(collapsed ? "Expand (⌥-click: all rows)" : "Collapse (⌥-click: all rows)")
+            .help(collapsed ? "Expand row" : "Collapse row")
             .accessibilityLabel(collapsed ? "Expand \(row.name)" : "Collapse \(row.name)")
             .accessibilityIdentifier("kanban-row-toggle-\(row.name)")
 
@@ -75,8 +75,10 @@ struct KanbanRowHeader: View {
         let allocation = resource.allocationPercent < 100 ? ", \(resource.allocationPercent)%" : ""
         return HStack(spacing: 3) {
             Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark")
+                .help(employment)
                 .accessibilityHidden(true)
             Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
+                .help("Allocation")
                 .accessibilityHidden(true)
             if resource.allocationPercent < 100 {
                 Text("\(resource.allocationPercent)%").monospacedDigit()

@@ -479,6 +479,7 @@ private struct HygieneList: View {
             HStack {
                 Image(systemName: check.count == 0 ? "checkmark.circle.fill" : "exclamationmark.circle")
                     .foregroundStyle(check.count == 0 ? Color.green : Color.orange)
+                    .help(check.count == 0 ? "Passed" : "Warning")
                     .accessibilityLabel(check.count == 0 ? "Passed" : "Warning")
                 if let filter = check.filter, check.count > 0 {
                     Button(check.id) { open(filter) }.buttonStyle(.link)

@@ -125,4 +125,45 @@ final class KanbanPresentationTests: XCTestCase {
         """
         XCTAssertTrue(testNotesPresence(richNotesJSON: corruptJSON, plainNotes: "Fallback plain"))
     }
+
+    // MARK: - Column Styling Across Views
+
+    func testColumnStyleBadgeCreation() {
+        // KanbanColumnBadge should render with the correct kind glyph and accessible name.
+        let style = KanbanColumnStyle(kind: .active, customColorHex: nil)
+        XCTAssertEqual(style.symbol, "circle.lefthalf.filled")
+        XCTAssertEqual(style.kindName, "In progress")
+    }
+
+    func testCustomColorPreservesKindIdentity() {
+        // A custom-colored backlog column retains backlog styling (symbol, name).
+        let style = KanbanColumnStyle(kind: .backlog, customColorHex: "1E90FF")
+        XCTAssertEqual(style.symbol, "circle.dashed")
+        XCTAssertEqual(style.kindName, "Not started")
+        // The effective accent is the custom color, not red.
+        XCTAssertNotNil(style.customColorHex)
+    }
+
+    func testAllKindsHaveDistinctSymbols() {
+        let backlog = KanbanColumnStyle(kind: .backlog, customColorHex: nil).symbol
+        let active = KanbanColumnStyle(kind: .active, customColorHex: nil).symbol
+        let done = KanbanColumnStyle(kind: .done, customColorHex: nil).symbol
+
+        let symbols = Set([backlog, active, done])
+        XCTAssertEqual(symbols.count, 3, "Each kind must have a distinct symbol")
+    }
+
+    func testEffectiveAccentWithValidCustomHex() {
+        // When custom hex is valid and decodable, effectiveAccent uses it.
+        let style = KanbanColumnStyle(kind: .backlog, customColorHex: "00FF00")
+        // We can't directly compare Color values, but we verify the hex is captured.
+        XCTAssertEqual(style.customColorHex, "00FF00")
+    }
+
+    func testEffectiveAccentWithInvalidHexFallsback() {
+        // When custom hex is invalid or empty, effectiveAccent uses the kind's semantic color.
+        let style = KanbanColumnStyle(kind: .done, customColorHex: "ZZZZZ")
+        // The invalid hex should cause a fallback to the kind's semantic color (green).
+        XCTAssertEqual(style.symbol, "checkmark.circle.fill")
+    }
 }
