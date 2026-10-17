@@ -95,6 +95,12 @@ struct KanbanProjectTests {
         #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.name: .string("Core"), .hoursPerDay: .int(6)]) }
         #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.loadMeasureRaw: .string("points")]) }
         #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.wipPolicyRaw: .string("never")]) }
+        #expect(throws: KanbanServiceError.self) {
+            try s.editProject(project, [.name: .string("Core"), .defaultEstimateHours: .double(-4)])
+        }
+        #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.openTaskTarget: .double(.nan)]) }
+        #expect(throws: KanbanServiceError.self) { try s.editProject(project, [.dueSoonThresholdDays: .int(-1)]) }
+        #expect(project.defaultEstimateHours == 4 && project.openTaskTarget == 5 && project.dueSoonThresholdDays == 3)
         #expect(project.name == "Platform" && project.hoursPerDay == 8 && project.loadMeasure == .taskCount)
         #expect(project.activities.count == entries && !history.canUndo(project.id))
     }

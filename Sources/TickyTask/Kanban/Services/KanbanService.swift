@@ -102,6 +102,14 @@ struct KanbanService {
         if case let .ints(days)? = values[.workWeekDays], days.contains(where: { !(1...7).contains($0) }) {
             throw KanbanServiceError.invariant("Work days are weekday numbers 1–7.")
         }
+        for field in [ProjectField.hoursPerDay, .defaultCapacityHoursPerWeek, .openTaskTarget, .defaultEstimateHours] {
+            if case let .double(v)? = values[field], !(v.isFinite && v >= 0) {
+                throw KanbanServiceError.invariant("\(field.rawValue) can't be negative.")
+            }
+        }
+        if case let .int(days)? = values[.dueSoonThresholdDays], days < 0 {
+            throw KanbanServiceError.invariant("The due-soon threshold can't be negative.")
+        }
         if case let .string(raw)? = values[.wipPolicyRaw], KanbanWIPPolicy(rawValue: raw) == nil {
             throw KanbanServiceError.invariant("Unknown WIP policy \(raw).")
         }

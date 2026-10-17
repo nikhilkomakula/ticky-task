@@ -590,7 +590,13 @@ enum KanbanMetrics {
             utilisation: utilisation(load: load, target: target),
             openCards: s.cards.filter(s.isOpen).count, doneCards: s.cards.filter(s.isDone).count,
             overdue: dueBuckets(s).overdue.count, rollingOffWithin30Days: composition(s).rollOff[30]?.count ?? 0,
-            membersOverCapacity: rows.filter { $0.utilisation?.band == .red }.count)
+            membersOverCapacity: rows.filter { row in
+                switch row.utilisation {
+                case .ratio(_, .red)?: true
+                case let .noCapacity(load)?: load > 0
+                default: false
+                }
+            }.count)
     }
 }
 

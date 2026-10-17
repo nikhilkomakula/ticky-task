@@ -690,6 +690,11 @@ struct KanbanMetricsTests {
         #expect(summary.rollingOffWithin30Days == 1 && summary.membersOverCapacity == 1)
     }
 
+    @Test func zeroCapacityMemberWithWorkIsOverCapacity() {
+        let loaded = F.member("Loaded", allocation: 0), empty = F.member("Empty", allocation: 0)
+        #expect(M.summary(F.board([loaded, empty], [F.card(F.doing, loaded)])).membersOverCapacity == 1)
+    }
+
     @Test func snapshotFromABoard() throws {
         let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let service = KanbanService(context, history: KanbanHistory())
