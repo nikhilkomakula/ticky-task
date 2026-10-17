@@ -44,36 +44,120 @@ struct KanbanService {
 
     // MARK: - Projects
 
-    enum Template { case standard, software }
-
-    static let defaultLabels: [(String, String)] = [
-        ("Feature", "#34C759"), ("Bug", "#FF3B30"), ("Enhancement", "#007AFF"), ("Tech Debt", "#AF52DE"),
-        ("Spike", "#FF9500"), ("Documentation", "#5AC8FA"), ("Chore", "#8E8E93"),
-    ]
-
-    /// A new board with the template's columns and the default labels. Not undoable
-    /// (archive it instead); its first change-log entry records the creation.
+    /// A new board with `template`'s columns and labels. Not undoable (archive it instead);
+    /// its first change-log entry records the creation.
     @discardableResult
-    func createProject(name: String, key: String, template: Template = .standard) throws -> KanbanProject {
+    func createProject(name: String, key: String, template: KanbanTemplate = .standard) throws -> KanbanProject {
         try RecurrenceMaterializer.checkpoint(context)
+        if let problem = template.problem { throw KanbanServiceError.invariant(problem) }
         let existing = try context.fetch(FetchDescriptor<KanbanProject>())
         let project = KanbanProject(name: name, key: key, sortIndex: (existing.map(\.sortIndex).max() ?? -1) + 1)
-        let columns: [(String, KanbanColumnKind)] = template == .standard
-            ? [("To Do", .backlog), ("In Progress", .active), ("Done", .done)]
-            : [("Backlog", .backlog), ("To Do", .active), ("In Progress", .active), ("In Review", .active), ("Done", .done)]
         context.insert(project)
-        for (index, column) in columns.enumerated() {
-            let model = KanbanColumn(name: column.0, kind: column.1, sortIndex: Double(index))
+        for (index, column) in template.columns.enumerated() {
+            let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
+            model.colorHex = column.colorHex
+            model.wipLimit = column.wipLimit
             context.insert(model)
             model.project = project
         }
-        for (index, label) in Self.defaultLabels.enumerated() {
-            let model = KanbanLabel(name: label.0, colorHex: label.1, sortIndex: Double(index))
+        for (index, label) in template.labels.enumerated() {
+            let model = KanbanLabel(name: label.name, colorHex: label.colorHex, sortIndex: Double(index))
+            model.symbolName = label.symbolName
             context.insert(model)
             model.project = project
         }
         try save(project, kind: .structure, taskIDs: [], summary: "Created \(name)", payload: KanbanActivityPayload(), undoable: false)
         return project
+    }
+
+    /// A new board with `project`'s columns and labels, and no cards or people.
+    @discardableResult
+    func duplicateStructure(of project: KanbanProject, name: String, key: String) throws -> KanbanProject {
+        try createProject(name: name, key: key, template: KanbanTemplate(from: project, name: name))
+    }
+
+    /// Saves `project`'s structure as a user template.
+    @discardableResult
+    func saveAsTemplate(_ project: KanbanProject, name: String, defaults: UserDefaults = .standard) throws -> KanbanTemplate {
+        let template = KanbanTemplate(from: project, name: name)
+        try KanbanTemplateStore.save(template, defaults)
+        return template
+    }
+
+    /// The board-level settings and appearance that can be edited (and undone).
+    enum ProjectField: String, CaseIterable {
+        case name, key, details, colorHex, symbolName, isPinned, workWeekDays, hoursPerDay, defaultCapacityHoursPerWeek
+        case wipPolicyRaw, loadMeasureRaw, openTaskTarget, defaultEstimateHours, weightedLoad, dueSoonThresholdDays
+        case suggestDoneWhenSubtasksComplete
+    }
+
+    /// Edits a board's name, appearance or settings; only changed fields are recorded.
+    func editProject(_ project: KanbanProject, _ values: [ProjectField: KanbanValue]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        if case let .ints(days)? = values[.workWeekDays], days.contains(where: { !(1...7).contains($0) }) {
+            throw KanbanServiceError.invariant("Work days are weekday numbers 1–7.")
+        }
+        let changes = values.compactMap { field, value -> KanbanFieldChange? in
+            let old = projectValue(project, field.rawValue)
+            return old == value ? nil : KanbanFieldChange(entity: .project, id: project.id, field: field.rawValue, old: old, new: value)
+        }.sorted { $0.field < $1.field }
+        guard !changes.isEmpty else { return }
+        let data = try KanbanActivityPayload(changes: changes).encoded()
+        changes.forEach { setProject($0, in: project) }
+        try save(project, kind: .structure, taskIDs: [], summary: "Edited \(project.name)", encodedPayload: data)
+    }
+
+    /// Archives or restores a board (reversible, recorded on the board).
+    func setProjectArchived(_ project: KanbanProject, _ archived: Bool) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard (project.archivedAt == nil) == archived else { return }
+        let stamp = archived ? now() : nil
+        let change = KanbanFieldChange(entity: .project, id: project.id, field: "archivedAt",
+                                       old: project.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date))
+        let data = try KanbanActivityPayload(changes: [change]).encoded()
+        project.archivedAt = stamp
+        try save(project, kind: .structure, taskIDs: [], summary: "\(archived ? "Archived" : "Restored") \(project.name)", encodedPayload: data)
+    }
+
+    /// Sidebar order. Not a board change, so it isn't in any change log.
+    func reorderProjects(_ ordered: [KanbanProject]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        for (index, project) in ordered.enumerated() { project.sortIndex = Double(index) }
+        try saveOrUndo()
+    }
+
+    /// Permanently deletes a board with all its cards, rows and history. Irreversible: the
+    /// UI confirms first. People stay in the directory.
+    func deleteProject(_ project: KanbanProject) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        context.delete(project)   // cascades; the only step after the checkpoint, then one save
+        try saveOrUndo()
+    }
+
+    /// Remembers a row as collapsed or expanded (view state, not in the change log).
+    func setRowCollapsed(_ project: KanbanProject, _ row: KanbanRowKey, _ collapsed: Bool) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        var keys = Set(project.collapsedRowKeys)
+        if collapsed { keys.insert(row.storageKey) } else { keys.remove(row.storageKey) }
+        project.collapsedRowKeys = keys.sorted()
+        try saveOrUndo()
+    }
+
+    /// Collapses or expands every row at once (⌃⌘↑ / ⌃⌘↓).
+    func setAllRowsCollapsed(_ project: KanbanProject, _ collapsed: Bool) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        project.collapsedRowKeys = collapsed
+            ? ([KanbanRowKey.unassigned.storageKey] + project.resources.filter { $0.archivedAt == nil }.map(\.id.uuidString)).sorted()
+            : []
+        try saveOrUndo()
+    }
+
+    /// Stores the encoded board view state (last view, filters, sort, density, show-archived).
+    func setBoardState(_ project: KanbanProject, _ state: Data?) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard project.boardState != state else { return }
+        project.boardState = state
+        try saveOrUndo()
     }
 
     // MARK: - People and memberships
@@ -888,13 +972,63 @@ struct KanbanService {
         }
     }
 
+    private func projectValue(_ project: KanbanProject, _ field: String) -> KanbanValue? {
+        switch field {
+        case "name": return .string(project.name)
+        case "key": return .string(project.key)
+        case "details": return .string(project.details)
+        case "colorHex": return .string(project.colorHex)
+        case "symbolName": return .string(project.symbolName)
+        case "isPinned": return .bool(project.isPinned)
+        case "archivedAt": return project.archivedAt.map(KanbanValue.date)
+        case "workWeekDays": return .ints(project.workWeekDays)
+        case "hoursPerDay": return .double(project.hoursPerDay)
+        case "defaultCapacityHoursPerWeek": return .double(project.defaultCapacityHoursPerWeek)
+        case "wipPolicyRaw": return .string(project.wipPolicyRaw)
+        case "loadMeasureRaw": return .string(project.loadMeasureRaw)
+        case "openTaskTarget": return .double(project.openTaskTarget)
+        case "defaultEstimateHours": return .double(project.defaultEstimateHours)
+        case "weightedLoad": return .bool(project.weightedLoad)
+        case "dueSoonThresholdDays": return .int(project.dueSoonThresholdDays)
+        case "suggestDoneWhenSubtasksComplete": return .bool(project.suggestDoneWhenSubtasksComplete)
+        default: return nil
+        }
+    }
+
+    private func setProject(_ change: KanbanFieldChange, in project: KanbanProject) {
+        guard change.id == project.id else { return }
+        switch (change.field, change.new) {
+        case let ("name", .string(v)?): project.name = v
+        case let ("key", .string(v)?): project.key = v
+        case let ("details", .string(v)?): project.details = v
+        case let ("colorHex", .string(v)?): project.colorHex = v
+        case let ("symbolName", .string(v)?): project.symbolName = v
+        case let ("isPinned", .bool(v)?): project.isPinned = v
+        case let ("archivedAt", .date(v)?): project.archivedAt = v
+        case ("archivedAt", nil): project.archivedAt = nil
+        case let ("workWeekDays", .ints(v)?): project.workWeekDays = v
+        case let ("hoursPerDay", .double(v)?): project.hoursPerDay = v
+        case let ("defaultCapacityHoursPerWeek", .double(v)?): project.defaultCapacityHoursPerWeek = v
+        case let ("wipPolicyRaw", .string(v)?): project.wipPolicyRaw = v
+        case let ("loadMeasureRaw", .string(v)?): project.loadMeasureRaw = v
+        case let ("openTaskTarget", .double(v)?): project.openTaskTarget = v
+        case let ("defaultEstimateHours", .double(v)?): project.defaultEstimateHours = v
+        case let ("weightedLoad", .bool(v)?): project.weightedLoad = v
+        case let ("dueSoonThresholdDays", .int(v)?): project.dueSoonThresholdDays = v
+        case let ("suggestDoneWhenSubtasksComplete", .bool(v)?): project.suggestDoneWhenSubtasksComplete = v
+        default: break
+        }
+        project.updatedAt = now()
+    }
+
     private func currentValue(_ change: KanbanFieldChange, in project: KanbanProject) -> KanbanValue?? {
         switch change.entity {
         case .task: return task(change.id, in: project).map { taskValue($0, change.field) }
         case .column: return project.columns.first { $0.id == change.id }.map { columnValue($0, change.field) }
         case .resource: return project.resources.first { $0.id == change.id }.map { resourceValue($0, change.field) }
         case .subtask: return project.tasks.lazy.flatMap(\.subtasks).first { $0.id == change.id }.map { subtaskValue($0, change.field) }
-        case .label, .project: return nil
+        case .project: return change.id == project.id ? .some(projectValue(project, change.field)) : nil
+        case .label: return nil
         }
     }
 
@@ -904,7 +1038,8 @@ struct KanbanService {
         case .column: setColumn(change, in: project)
         case .resource: setResource(change, in: project)
         case .subtask: setSubtask(change, in: project)
-        case .label, .project: break
+        case .project: setProject(change, in: project)
+        case .label: break
         }
     }
 
