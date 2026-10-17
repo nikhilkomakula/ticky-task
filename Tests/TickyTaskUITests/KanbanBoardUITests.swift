@@ -179,7 +179,9 @@ final class KanbanBoardUITests: XCTestCase {
     // MARK: - Increment 5: drag and drop, keyboard
 
     private func drag(_ app: XCUIApplication, _ from: XCUIElement, to target: XCUIElement, at offset: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
-        let start = from.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        // Near the top, as the clicks do: a card's accessibility frame is its whole cell, so the
+        // middle of a one-line card's frame is below the card itself.
+        let start = from.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.3))
         start.press(forDuration: 0.35, thenDragTo: target.coordinate(withNormalizedOffset: offset))
     }
 
