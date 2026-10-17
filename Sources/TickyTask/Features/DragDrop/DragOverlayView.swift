@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// The lifted-drag look shared by the planner and the Kanban board, so both feel the same.
+enum DragChrome {
+    static let liftScale: CGFloat = 1.03
+    static let shadowOpacity = 0.28
+    static let shadowRadius: CGFloat = 12
+    static let shadowY: CGFloat = 6
+    static let lineThickness: CGFloat = 3
+    static let lineSpring = Animation.spring(response: 0.22, dampingFraction: 0.85)
+    static let dropSpring = Animation.spring(response: 0.28, dampingFraction: 0.86)
+}
+
 /// The window-level, non-interactive overlay that renders the lifted drag preview
 /// (following the cursor 1:1) and the accent insertion line. The controller works
 /// in **global** coordinates (matching the gesture + published frames), so this
@@ -26,7 +37,7 @@ struct DragOverlayView: View {
                 .fill(Color.accentColor)
                 .frame(width: line.width, height: line.height)
                 .position(x: line.midX - origin.x, y: line.midY - origin.y)
-                .animation(.spring(response: 0.22, dampingFraction: 0.85), value: controller.target)
+                .animation(DragChrome.lineSpring, value: controller.target)
         }
     }
 
@@ -37,8 +48,8 @@ struct DragOverlayView: View {
                 .padding(.vertical, 2)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1))
-                .scaleEffect(1.03)
-                .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
+                .scaleEffect(DragChrome.liftScale)
+                .shadow(color: .black.opacity(DragChrome.shadowOpacity), radius: DragChrome.shadowRadius, y: DragChrome.shadowY)
                 .position(x: controller.previewOrigin.x + controller.previewSize.width / 2 - origin.x,
                           y: controller.previewOrigin.y + controller.previewSize.height / 2 - origin.y)
         } else if let list = controller.previewList {
@@ -51,8 +62,8 @@ struct DragOverlayView: View {
                 .frame(width: width, height: height, alignment: .leading)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1))
-                .scaleEffect(1.03)
-                .shadow(color: .black.opacity(0.28), radius: 12, y: 6)
+                .scaleEffect(DragChrome.liftScale)
+                .shadow(color: .black.opacity(DragChrome.shadowOpacity), radius: DragChrome.shadowRadius, y: DragChrome.shadowY)
                 .position(x: controller.previewOrigin.x + width / 2 - origin.x,
                           y: controller.previewOrigin.y + height / 2 - origin.y)
         }

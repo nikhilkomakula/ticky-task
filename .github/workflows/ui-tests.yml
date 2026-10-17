@@ -8,6 +8,11 @@ on:
   push:
     branches: [ 'feature/**' ]
   workflow_dispatch:
+    inputs:
+      tests:
+        description: "Space-separated test identifiers to run (e.g. TickyTaskUITests/KanbanBoardUITests); empty runs them all"
+        required: false
+        default: ""
 
 jobs:
   ui-tests:
@@ -25,13 +30,17 @@ jobs:
         run: xcodegen generate
 
       - name: UI tests
+        env:
+          TESTS: ${{ inputs.tests }}
         run: |
+          only=()
+          for test in ${TESTS:-TickyTaskUITests}; do only+=("-only-testing:$test"); done
           xcodebuild test \
             -project TickyTask.xcodeproj \
             -scheme TickyTask \
             -configuration Debug \
             -destination 'platform=macOS' \
-            -only-testing:TickyTaskUITests \
+            "${only[@]}" \
             -resultBundlePath UITests.xcresult
 
       - name: Upload results
