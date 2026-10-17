@@ -13,6 +13,7 @@ struct KanbanCardView: View {
     private var priority: TaskPriority { TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low }
 
     var body: some View {
+        let _ = app.kanbanClock   // due-date colours follow the day
         let highlighted = app.highlightedKanbanTaskID == task.id
         VStack(alignment: .leading, spacing: compact ? 3 : 5) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {

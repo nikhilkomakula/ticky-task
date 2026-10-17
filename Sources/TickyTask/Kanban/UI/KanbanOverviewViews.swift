@@ -151,6 +151,7 @@ struct KanbanAttentionView: View {
     }
 
     var body: some View {
+        let _ = app.kanbanClock   // recompute at midnight and on a time-zone change
         let groups = projects.map { ($0, Self.items($0)) }.filter { !$0.1.isEmpty }
         if groups.isEmpty {
             ContentUnavailableView("Nothing needs attention", systemImage: "checkmark.circle",

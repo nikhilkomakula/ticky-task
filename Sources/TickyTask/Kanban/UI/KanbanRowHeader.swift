@@ -12,8 +12,10 @@ struct KanbanRowHeader: View {
     var onToggle: () -> Void
     var onEdit: () -> Void
     var onRemove: () -> Void
+    @Environment(AppState.self) private var app
 
     var body: some View {
+        let _ = app.kanbanClock   // the roll-off badge counts days from today
         HStack(alignment: .top, spacing: 8) {
             Button(action: onToggle) {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
