@@ -97,6 +97,9 @@ struct KanbanImportSheet: View {
                         if let linked = person.linkTo.flatMap({ id in people.first { $0.id == id } }), linked.archivedAt != nil {
                             Text("\(linked.name) is archived here: their memberships arrive archived and their cards Unassigned.")
                                 .font(.caption).foregroundStyle(.orange)
+                        } else if person.linkTo == nil, request.plan.kanban.people.first(where: { $0.id == person.id })?.archivedAt != nil {
+                            Text("\(person.name) is archived in the file: they arrive archived, with their cards Unassigned.")
+                                .font(.caption).foregroundStyle(.orange)
                         }
                     }
                 }

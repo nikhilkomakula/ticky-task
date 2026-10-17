@@ -19,7 +19,7 @@ enum KanbanBoardTransfer {
     }
 
     enum TransferError: LocalizedError, Equatable {
-        case notABoardFile, newerVersion, missingPerson(String), noSuchBoard
+        case notABoardFile, newerVersion, missingPerson(String), noSuchBoard, rowPositions(String)
 
         var errorDescription: String? {
             switch self {
@@ -27,6 +27,7 @@ enum KanbanBoardTransfer {
             case .newerVersion: "That board file was made by a newer version of TickyTask."
             case let .missingPerson(name): "The file refers to a person it doesn't include (on “\(name)”)."
             case .noSuchBoard: "The board to merge into no longer exists."
+            case let .rowPositions(name): "“\(name)” has damaged row positions, so nothing was imported into it."
             }
         }
     }
@@ -167,7 +168,12 @@ enum KanbanBoardTransfer {
         let existingProjects = Dictionary(try context.fetch(FetchDescriptor<KanbanProject>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let existingPeople = Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for board in plan.boards {
-            if let target = board.mergeInto, existingProjects[target] == nil { throw TransferError.noSuchBoard }
+            guard let id = board.mergeInto else { continue }
+            guard let target = existingProjects[id] else { throw TransferError.noSuchBoard }
+            // New rows go after the last one; past 2^52 (or non-finite) whole steps stop being exact.
+            if target.resources.contains(where: { !$0.sortIndex.isFinite || abs($0.sortIndex) >= 0x1p52 }) {
+                throw TransferError.rowPositions(target.name)
+            }
         }
         for person in plan.people { if let id = person.linkTo, existingPeople[id] == nil { throw TransferError.missingPerson(person.name) } }
         let note = try KanbanActivityPayload().encoded()   // the informational "Imported from" entries

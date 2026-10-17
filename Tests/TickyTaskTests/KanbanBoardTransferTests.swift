@@ -259,20 +259,35 @@ struct KanbanBoardTransferTests {
         #expect(copies.count == 2 && copies.contains { $0.resource == nil }, "the imported card isn't left on someone archived")
     }
 
-    @Test("A huge stored row position doesn't stop an import, and new rows still differ")
+    @Test("A large stored row position doesn't stop an import, and new rows still differ")
     func hugeRowPosition() throws {
         let (from, project) = try source()
         let data = try T.export([project], context: from)
         let to = fresh()
         let s = KanbanService(to)
         let target = try s.createProject(name: "Far", key: "FAR")
-        try s.addMembership(try s.createPerson(name: "Ana", initials: "AN"), to: target).sortIndex = 1e20
+        try s.addMembership(try s.createPerson(name: "Ana", initials: "AN"), to: target).sortIndex = 1e15
         var plan = try T.plan(data, context: to)
         plan.boards[0].mergeInto = target.id
         try T.apply(plan, fileName: "f", context: to)
         let id = target.id
         let rows = try to.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
         #expect(rows.count == 3 && Set(rows.map(\.sortIndex)).count == 3)
+    }
+
+    @Test("Row positions that can't be extended refuse the merge before anything is written")
+    func exhaustedRowPositions() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let s = KanbanService(to)
+        let target = try s.createProject(name: "Edge", key: "EDGE")
+        try s.addMembership(try s.createPerson(name: "Ana", initials: "AN"), to: target).sortIndex = .greatestFiniteMagnitude
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = target.id
+        let people = try to.fetchCount(FetchDescriptor<KanbanPerson>())
+        #expect(throws: T.TransferError.rowPositions("Edge")) { try T.apply(plan, fileName: "f", context: to) }
+        #expect(try to.fetchCount(FetchDescriptor<KanbanPerson>()) == people && target.resources.count == 1)
     }
 
     @Test("Formulas behind leading whitespace or control characters are neutralised too")
