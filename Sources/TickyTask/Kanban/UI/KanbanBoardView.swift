@@ -46,6 +46,11 @@ struct KanbanBoardView: View {
         // Each cell's cards after the board's filter, in its sort order.
         let cells = Dictionary(grouping: snapshot.cards.compactMap { card in tasks[card.id].map { (CellKey(column: card.columnID, row: card.row), $0) } }
             .filter { state.filter.matches($0.1, calendar: calendar) }, by: \.0).mapValues { state.sorted($0.map(\.1)) }
+        // Compute drag IDs once: only what's on screen travels (archived/filtered cards stay selected but don't drag).
+        let dragIDs = selected.count > 1
+            ? KanbanBulkMenu.ordered(project.tasks.filter { selected.contains($0.id) }, in: project)
+                .filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) }.map(\.id)
+            : []
         let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort, cells: cells)
 
         ScrollViewReader { proxy in
@@ -56,7 +61,7 @@ struct KanbanBoardView: View {
                             let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
                             boardRow(row, resource: resource, columns: columns, cells: cells,
                                      load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
-                                     collapsed: collapsed.contains(row.key.storageKey))
+                                     collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs)
                             Divider()
                         }
                         addPersonButton
@@ -106,7 +111,7 @@ struct KanbanBoardView: View {
 
     private func boardRow(_ row: KanbanRowSnapshot, resource: KanbanResource?, columns: [KanbanColumn], cells: [CellKey: [KanbanTask]],
                           load: KanbanMetrics.LoadRow?, person: KanbanMetrics.PersonRow?,
-                          collapsed: Bool) -> some View {
+                          collapsed: Bool, dragIDs: [UUID]) -> some View {
         HStack(alignment: .top, spacing: 0) {
             KanbanRowHeader(project: project, row: row, resource: resource, load: load, person: person, collapsed: collapsed, drag: drag,
                             onToggle: { toggle(row.key, collapsed: collapsed) },
@@ -137,7 +142,8 @@ struct KanbanBoardView: View {
                     KanbanCell(project: project, column: column, row: row,
                                tasks: cells[CellKey(column: column.id, row: row.key)] ?? [],
                                drag: drag, focus: $focus, quickLook: $quickLook, selected: selected,
-                               dragSource: { dragSource(for: $0) },
+                               dragIDs: dragIDs,
+                               dragSource: { dragSource(for: $0, dragIDs: dragIDs) },
                                menuTasks: { menuTasks(for: $0) },
                                onOpen: { open($0) },
                                onAdd: { addCard(in: column, row: row.key) })
@@ -315,14 +321,10 @@ struct KanbanBoardView: View {
         KanbanBulkMenu.ordered(project.tasks.filter { selected.contains($0.id) }, in: project)
     }
 
-    /// Dragging a selected card carries the whole selection, in board order.
-    private func dragSource(for task: KanbanTask) -> BoardDragSource {
-        // Only what's on screen travels: archived cards stay selected (for Restore) and cards
-        // a filter hides stay put, so the drop does exactly what the drag shows.
+    /// Dragging a selected card carries the whole selection, in board order (pre-computed dragIDs).
+    private func dragSource(for task: KanbanTask, dragIDs: [UUID]) -> BoardDragSource {
         guard selected.contains(task.id), selected.count > 1 else { return .cards([task.id]) }
-        let state = KanbanBoardState.decode(project.boardState)
-        let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
-        return .cards(selection().filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) }.map(\.id))
+        return .cards(dragIDs)
     }
 
     private func menuTasks(for task: KanbanTask) -> [KanbanTask] {
@@ -436,6 +438,7 @@ private struct KanbanCell: View {
     var focus: FocusState<KanbanBoardFocus?>.Binding
     @Binding var quickLook: UUID?
     var selected: Set<UUID>
+    let dragIDs: [UUID]
     var dragSource: (KanbanTask) -> BoardDragSource
     var menuTasks: (KanbanTask) -> [KanbanTask]
     var onOpen: (KanbanTask) -> Void
@@ -449,7 +452,7 @@ private struct KanbanCell: View {
                     .id(task.id)
                     .opacity(drag.isDragging(card: task.id) ? 0.001 : task.archivedAt != nil ? 0.5 : 1)
                     .contextMenu { KanbanBulkMenu(project: project, tasks: menuTasks(task), onOpen: onOpen) }
-                    .modifier(CardDrag(task: task, column: column, row: row, drag: drag, source: dragSource))
+                    .modifier(CardDrag(task: task, column: column, row: row, drag: drag, dragIDs: dragIDs, source: dragSource))
                     .focusable()
                     .focused(focus, equals: .card(task.id))
                     .popover(isPresented: Binding(get: { quickLook == task.id }, set: { if !$0 { quickLook = nil } })) {
@@ -488,13 +491,16 @@ private struct CardDrag: ViewModifier {
     let column: KanbanColumn
     let row: KanbanRowSnapshot
     let drag: BoardDragController
+    let dragIDs: [UUID]
     let source: (KanbanTask) -> BoardDragSource
 
     func body(content: Content) -> some View {
         if task.archivedAt == nil {
+            let dragSource = dragIDs.isEmpty ? source(task) :
+                (dragIDs.contains(task.id) && dragIDs.count > 1 ? .cards(dragIDs) : .cards([task.id]))
             content
                 .publishBoardFrame { BoardFrames(cards: [.init(id: task.id, columnID: column.id, row: row.key, frame: $0)]) }
-                .boardDraggable(source(task), controller: drag, frame: { drag.frames.cards.first { $0.id == task.id }?.frame }, task: task)
+                .boardDraggable(dragSource, controller: drag, frame: { drag.frames.cards.first { $0.id == task.id }?.frame }, task: task)
         } else {
             content
         }

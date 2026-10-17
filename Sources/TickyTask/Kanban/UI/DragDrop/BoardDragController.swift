@@ -160,24 +160,56 @@ final class BoardDragController {
         }
 
         guard let metrics else { return }
-        // Each card lands somewhere of its own (a column header keeps each card's person, a
-        // row header each card's column), so group the cards by where they'd land.
-        let groups = Dictionary(grouping: dragged) { task -> [UUID?] in
-            let (column, row) = destination(of: task)
-            return [column ?? task.column?.id, row ?? task.resource?.id]
-        }
-        let affected = Set(dragged.compactMap { $0.resource?.id } + groups.keys.compactMap { $0[1] })
-        for member in metrics.members where affected.contains(member.id) {
-            let now = KanbanMetrics.projectedLoad(metrics, member: member, dragged: [], toColumn: UUID(), toResource: nil)
-            let delta = groups.reduce(0.0) { sum, group in
-                let moved = KanbanMetrics.projectedLoad(metrics, member: member, dragged: Set(group.value.map(\.id)),
-                                                        toColumn: group.key[0] ?? UUID(), toResource: group.key[1])
-                return sum + moved.load - now.load
+        let selectedIDs = Set(ids)
+        let columnKinds = Dictionary(uniqueKeysWithValues: metrics.columns.map { ($0.id, $0.kind) })
+        let days = MetricsDays(metrics)
+
+        // Map metrics card IDs to their destinations via dragged tasks.
+        let cardDestinations = Dictionary(uniqueKeysWithValues: dragged.map { task in
+            (task.id, destination(of: task))
+        })
+
+        // Compute baselines once: current load for each affected member.
+        var baseline: [UUID: Double] = [:]
+        var affected: Set<UUID> = []
+        for card in metrics.cards where !card.archived {
+            let value = KanbanMetrics.thisWeek(metrics, days, card)
+            if columnKinds[card.column] != .done, let owner = card.resource {
+                baseline[owner, default: 0] += value
+                affected.insert(owner)
             }
-            if delta != 0 {
-                let after = now.load + delta
-                projected[member.id] = Projection(before: now.load, after: after, target: now.target,
-                                                  utilisation: KanbanMetrics.utilisation(load: after, target: now.target))
+        }
+
+        // Accumulate deltas: for each selected card, update the destination owner's load.
+        var delta: [UUID: Double] = [:]
+        for card in metrics.cards where selectedIDs.contains(card.id) && !card.archived {
+            let value = KanbanMetrics.thisWeek(metrics, days, card)
+            // Subtract from the current owner if it's open.
+            if columnKinds[card.column] != .done, let owner = card.resource {
+                delta[owner, default: 0] -= value
+            }
+            // Add to the destination owner if it's open.
+            guard let dest = cardDestinations[card.id] else { continue }
+            let col = dest.column ?? card.column
+            if columnKinds[col] != .done {
+                // dest.resource is UUID?? - unwrap to UUID?
+                if let owner = dest.resource.flatMap({ $0 }) {
+                    delta[owner, default: 0] += value
+                    affected.insert(owner)
+                }
+            }
+        }
+
+        // Publish previews only for affected members.
+        let t = metrics.members.reduce(into: [UUID: Double]()) { targets, member in
+            targets[member.id] = KanbanMetrics.target(metrics, member)
+        }
+        for memberID in affected {
+            let before = baseline[memberID] ?? 0
+            let after = before + (delta[memberID] ?? 0)
+            if after != before {
+                projected[memberID] = Projection(before: before, after: after, target: t[memberID] ?? 0,
+                                                utilisation: KanbanMetrics.utilisation(load: after, target: t[memberID] ?? 0))
             }
         }
     }
