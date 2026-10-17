@@ -204,6 +204,9 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     /// Kanban notifications.
     var kanbanNotifyDueDates: Bool? = nil
     var kanbanNotifyDueMinutes: Int? = nil
+    /// Kanban auto-archive of finished cards (off by default).
+    var kanbanAutoArchiveEnabled: Bool? = nil
+    var kanbanAutoArchiveDays: Int? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -245,7 +248,9 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             kanbanDueSoonThresholdDefault: d.object(forKey: "kanban.dueSoonThresholdDefault") as? Int,
             kanbanSuggestDoneDefault: d.object(forKey: "kanban.suggestDoneDefault") as? Bool,
             kanbanNotifyDueDates: d.object(forKey: "kanban.notifyDueDates") as? Bool,
-            kanbanNotifyDueMinutes: d.object(forKey: "kanban.notifyDueMinutes") as? Int
+            kanbanNotifyDueMinutes: d.object(forKey: "kanban.notifyDueMinutes") as? Int,
+            kanbanAutoArchiveEnabled: d.object(forKey: "kanban.autoArchiveEnabled") as? Bool,
+            kanbanAutoArchiveDays: d.object(forKey: "kanban.autoArchiveDays") as? Int
         )
     }
 
@@ -262,7 +267,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "kanbanSummary.instructions", "kanban.templates",
         "kanban.weightedLoadDefault", "kanban.wipPolicyDefault", "kanban.loadMeasureDefault",
         "kanban.openTaskTargetDefault", "kanban.dueSoonThresholdDefault", "kanban.suggestDoneDefault",
-        "kanban.notifyDueDates", "kanban.notifyDueMinutes",
+        "kanban.notifyDueDates", "kanban.notifyDueMinutes", "kanban.autoArchiveEnabled", "kanban.autoArchiveDays",
     ] + SummaryPreferences.portableKeys
 
     /// Reproduce the backed-up settings: clear every portable key first (so a
@@ -298,6 +303,8 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = kanbanSuggestDoneDefault { d.set(v, forKey: "kanban.suggestDoneDefault") }
         if let v = kanbanNotifyDueDates { d.set(v, forKey: "kanban.notifyDueDates") }
         if let v = kanbanNotifyDueMinutes { d.set(v, forKey: "kanban.notifyDueMinutes") }
+        if let v = kanbanAutoArchiveEnabled { d.set(v, forKey: "kanban.autoArchiveEnabled") }
+        if let v = kanbanAutoArchiveDays { d.set(v, forKey: "kanban.autoArchiveDays") }
         // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
         // A credential-bearing endpoint URL is never restored (it would land in plain defaults).
         for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)

@@ -7,7 +7,12 @@ import Observation
 @MainActor @Observable
 final class KanbanStoreGeneration {
     private(set) var value = 0
-    func bump() { value += 1 }
+    /// App-wide follow-up to every bump (Kanban reminder sync), whichever window saved.
+    @ObservationIgnored var onBump: (() -> Void)?
+    func bump() {
+        value += 1
+        onBump?()
+    }
 }
 
 enum KanbanServiceError: Error, Equatable, LocalizedError {
@@ -47,11 +52,13 @@ struct KanbanService {
     /// A new board with `template`'s columns and labels. Not undoable (archive it instead);
     /// its first change-log entry records the creation.
     @discardableResult
-    func createProject(name: String, key: String, template: KanbanTemplate = .standard) throws -> KanbanProject {
+    func createProject(name: String, key: String, template: KanbanTemplate = .standard,
+                       defaults: KanbanBoardDefaults = KanbanBoardDefaults()) throws -> KanbanProject {
         try RecurrenceMaterializer.checkpoint(context)
         if let problem = template.problem { throw KanbanServiceError.invariant(problem) }
         let existing = try context.fetch(FetchDescriptor<KanbanProject>())
         let project = KanbanProject(name: name, key: key, sortIndex: (existing.map(\.sortIndex).max() ?? -1) + 1)
+        defaults.apply(to: project)
         context.insert(project)
         for (index, column) in template.columns.enumerated() {
             let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
@@ -82,6 +89,20 @@ struct KanbanService {
         let template = KanbanTemplate(from: project, name: name)
         try KanbanTemplateStore.save(template, defaults)
         return template
+    }
+
+    /// Archives finished cards whose completion is more than `days` days old, on every board
+    /// (one entry per board). Opt-in (Settings › Kanban); never deletes; skipped in a
+    /// recovery session, like the planner's auto-delete.
+    func autoArchive(olderThanDays days: Int, now: Date = Date()) throws {
+        guard days >= 1, !PersistenceRecovery.didRelaunch,
+              let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
+        for project in try context.fetch(FetchDescriptor<KanbanProject>()) where project.archivedAt == nil {
+            let stale = project.tasks.filter { task in
+                task.archivedAt == nil && task.column?.kind == .done && (task.completedAt.map { $0 < cutoff } ?? false)
+            }
+            if !stale.isEmpty { try setArchived(stale, archived: true) }
+        }
     }
 
     /// The board-level settings and appearance that can be edited (and undone).
@@ -510,7 +531,7 @@ struct KanbanService {
 
     @discardableResult
     func createTask(in project: KanbanProject, title: String, column: KanbanColumn? = nil,
-                    row: KanbanRowKey = .unassigned, before: UUID? = nil) throws -> KanbanTask {
+                    row: KanbanRowKey = .unassigned, before: UUID? = nil, dueDate: Date? = nil) throws -> KanbanTask {
         try RecurrenceMaterializer.checkpoint(context)
         guard let column = column ?? project.columns.first(where: { $0.kind == .backlog }), column.project?.id == project.id
         else { throw KanbanServiceError.invariant("Pick a column on this board.") }
@@ -522,6 +543,7 @@ struct KanbanService {
         let resource = try resource(for: row, in: project)
         let task = KanbanTask(title: title)
         task.createdAt = now(); task.updatedAt = now()
+        task.dueDate = dueDate
         if column.kind == .done { task.completedAt = now() }
         // Its cell after insertion (before `before`, or last), renumbered densely. The
         // siblings that shift are recorded, so undoing the creation shifts them back.
@@ -749,6 +771,44 @@ struct KanbanService {
         try save(project, kind: .created, taskIDs: [task.id], summary: "Added step to \(task.title)",
                  payload: KanbanActivityPayload(graph: KanbanRemovedGraph(subtasks: [KanbanSubtaskDTO(subtask)])))
         return subtask
+    }
+
+    /// Schedule to day… (design 01 §7): puts the card on a planner day. The first time it
+    /// creates a planner task (title, priority, Critical and notes copied once) and links it;
+    /// later it only moves the linked task to the new day, never overwriting planner edits.
+    /// Every lookup is done first, then one save; the entry is informational (not undoable).
+    @discardableResult
+    func schedule(_ task: KanbanTask, on dayKey: String) throws -> TaskItem {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let project = task.project else { throw KanbanServiceError.notFound }
+        guard WeekMath.date(fromDayKey: dayKey) != nil else { throw KanbanServiceError.invariant("That isn't a day.") }
+        // A link counts only if its planner task still exists and isn't a series definition.
+        let linked = try task.linkedPlannerTaskID.flatMap { id in
+            try context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.id == id })).first
+        }.flatMap { $0.recurrence == nil || $0.templateID != nil ? $0 : nil }
+        let key: String? = dayKey
+        let day = try context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.dayKey == key }))
+        let next = (day.filter { $0.id != linked?.id }.map(\.sortIndex).max() ?? -1) + 1
+        let label = WeekMath.date(fromDayKey: dayKey)?.formatted(date: .abbreviated, time: .omitted) ?? dayKey
+        let item = linked ?? TaskItem(title: task.title, dayKey: dayKey, priority: min(max(task.priority, 0), 2))
+        let data = try KanbanActivityPayload(plannerTaskID: item.id, dayKey: dayKey).encoded()
+
+        if let linked {
+            linked.markOccurrenceModified()   // moving an occurrence acts on it
+            linked.dayKey = dayKey
+            linked.customList = nil
+            linked.sortIndex = next
+            linked.updatedAt = now()
+        } else {
+            item.isCritical = task.isCritical
+            item.notes = task.notes
+            item.notesRich = task.notesRich
+            item.sortIndex = next
+            context.insert(item)
+        }
+        task.linkedPlannerTaskID = item.id
+        try save(project, kind: .scheduled, taskIDs: [task.id], summary: "Scheduled \(task.title) for \(label)", encodedPayload: data, undoable: false)
+        return item
     }
 
     /// Renames a step (recorded on the board).

@@ -80,4 +80,28 @@ struct KanbanEditorTests {
         #expect(project.tasks.count == count)
         _ = try s.createTask(in: project, title: "Backlog is fine")
     }
+
+    @Test("Schedule to day creates a linked planner task once, then only moves it")
+    func scheduleToDay() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let project = try s.createProject(name: "Platform", key: "PLAT")
+        let card = try s.createTask(in: project, title: "Ship it")
+        try s.edit(card, [.priority: .int(2), .isCritical: .bool(true), .notes: .string("details")])
+        let first = try s.schedule(card, on: "20261020")
+        #expect(first.dayKey == "20261020" && first.title == "Ship it" && first.priority == 2 && first.isCritical && first.notes == "details")
+        #expect(card.linkedPlannerTaskID == first.id)
+        first.title = "Ship it (planner wording)"   // a planner edit
+        let again = try s.schedule(card, on: "20261022")
+        #expect(again.id == first.id && again.dayKey == "20261022" && again.title == "Ship it (planner wording)", "moved, never overwritten")
+        #expect(try context.fetchCount(FetchDescriptor<TaskItem>()) == 1)
+        let entry = try #require(project.activities.max { $0.seq < $1.seq })
+        #expect(entry.kindRaw == KanbanActivityKind.scheduled.rawValue && !KanbanService.offersRevert(entry))
+        // A link to a task that's gone makes a new one.
+        context.delete(first)
+        try context.save()
+        let fresh = try s.schedule(card, on: "20261023")
+        #expect(fresh.id != first.id && card.linkedPlannerTaskID == fresh.id)
+        #expect(throws: KanbanServiceError.self) { try s.schedule(card, on: "nonsense") }
+    }
 }

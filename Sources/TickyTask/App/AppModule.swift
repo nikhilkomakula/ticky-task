@@ -38,6 +38,9 @@ struct ModulePolicy: Equatable, Sendable {
 
     /// Whether `module`'s toggle may be turned off: never the last visible one.
     func canHide(_ module: AppModule) -> Bool { isVisible(module) && visible.count > 1 }
+
+    /// Whether `module`'s toggle is locked: only the last visible one is; a hidden one can come back.
+    func isLocked(_ module: AppModule) -> Bool { isVisible(module) && !canHide(module) }
 }
 
 /// What the Kanban sidebar has selected.

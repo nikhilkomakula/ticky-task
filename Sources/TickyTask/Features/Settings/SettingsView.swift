@@ -22,10 +22,14 @@ struct SettingsView: View {
                 .tabItem { Label("Data", systemImage: "externaldrive") }
             AISettingsView()
                 .tabItem { Label("AI", systemImage: "sparkles") }
+            KanbanSettingsView()
+                .tabItem { Label("Kanban", systemImage: "square.grid.3x2") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 520, height: 460)
+        // Wide enough for all nine tabs: a narrower window hides the last ones (Kanban,
+        // About) behind the toolbar's overflow chevron.
+        .frame(width: 660, height: 460)
     }
 }
 

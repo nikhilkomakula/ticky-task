@@ -11,6 +11,7 @@ struct KanbanSidebar: View {
     @State private var isCreating = false
     @State private var prompt: KanbanTextPrompt?
     @State private var pendingDelete: KanbanProject?
+    @State private var importing: KanbanImportRequest?
 
     private var live: [KanbanProject] { projects.filter { $0.archivedAt == nil } }
     private var pinned: [KanbanProject] { live.filter(\.isPinned) }
@@ -54,16 +55,25 @@ struct KanbanSidebar: View {
             }
             .listStyle(.sidebar)
             Divider()
-            Button { isCreating = true } label: {
-                Label("New board", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            HStack {
+                Button { isCreating = true } label: {
+                    Label("New board", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("kanban-new-board")
+                Button { importing = KanbanTransferUI.pickImport(context: context, app: app) } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderless)
+                .help("Import a board…")
+                .accessibilityIdentifier("kanban-import-board")
             }
-            .buttonStyle(.borderless)
             .padding(10)
-            .accessibilityIdentifier("kanban-new-board")
         }
         .sheet(isPresented: $isCreating) { KanbanNewBoardSheet() }
+        .sheet(item: $importing) { KanbanImportSheet(request: $0) }
         .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
         .confirmationDialog("Delete “\(pendingDelete?.name ?? "")”?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("Delete Board", role: .destructive) {
@@ -128,6 +138,9 @@ struct KanbanSidebar: View {
                     _ = try service.saveAsTemplate(project, name: name)
                 }
             }
+            Divider()
+            Button("Export board…") { KanbanTransferUI.exportBoard(project, context: context, app: app) }
+            Button("Export as CSV…") { KanbanTransferUI.exportCSV(project, app: app) }
             Divider()
             Button("Archive") { app.runKanban { try service.setProjectArchived(project, true) } }
         } else {
@@ -244,7 +257,8 @@ struct KanbanNewBoardSheet: View {
         let template = templates.first { $0.id == templateID } ?? .standard
         do {
             let project = try app.kanbanService(context).createProject(
-                name: name.trimmingCharacters(in: .whitespaces), key: key.isEmpty ? Self.key(from: name) : key, template: template)
+                name: name.trimmingCharacters(in: .whitespaces), key: key.isEmpty ? Self.key(from: name) : key, template: template,
+                defaults: KanbanBoardDefaults(UserDefaults.standard))
             app.kanban.selection = .project(project.id)
             dismiss()
         } catch {

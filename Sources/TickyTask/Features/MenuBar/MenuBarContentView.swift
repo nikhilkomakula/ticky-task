@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AppKit
 
 /// The menu-bar popover: a compact header, a mini month calendar, and the
@@ -9,6 +10,11 @@ struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.modelContext) private var context
+    @Environment(AppState.self) private var app
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
+    @AppStorage("defaultModule") private var defaultModule = AppModule.planner.rawValue
+    @Query(filter: #Predicate<KanbanTask> { $0.dueDate != nil }) private var kanbanDueTasks: [KanbanTask]
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
 
@@ -43,8 +49,20 @@ struct MenuBarContentView: View {
     /// when it would exceed `agendaMaxHeight` — so a normal day shows every task
     /// with no scrolling and no blank space, while a very long day scrolls inside
     /// the cap instead of pushing the popover off-screen.
+    /// Planner or Kanban: the choice made here this session, else the Default view.
+    private var mode: AppModule {
+        let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
+        return policy.resolve(app.popoverModule ?? AppModule(rawValue: defaultModule) ?? .planner)
+    }
+
     @ViewBuilder private var menuBarAgenda: some View {
-        let agenda = DayAgendaView(dayKey: selectedDayKey, dragController: dragController, insets: 8, scrolls: false)
+        let agenda = Group {
+            if mode == .kanban {
+                KanbanDayAgendaView(dayKey: selectedDayKey, open: openCard, openKanban: openKanbanModule)
+            } else {
+                DayAgendaView(dayKey: selectedDayKey, dragController: dragController, insets: 8, scrolls: false)
+            }
+        }
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(key: AgendaHeightKey.self, value: geo.size.height)
@@ -88,9 +106,20 @@ struct MenuBarContentView: View {
                     .accessibilityIdentifier("menubar-quit")
                 }
 
-                MiniMonthCalendar(selectedDayKey: $selectedDayKey)
+                MiniMonthCalendar(selectedDayKey: $selectedDayKey,
+                                  markedDays: mode == .kanban ? KanbanPopover.dueDayKeys(kanbanDueTasks) : [],
+                                  acceptsDrops: mode == .planner)
                     .padding(8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                if ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).showsSwitcher {
+                    Picker("Show", selection: Binding(get: { mode }, set: { app.popoverModule = $0 })) {
+                        ForEach(AppModule.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityIdentifier("menubar-module")
+                }
 
                 menuBarAgenda
                     .onPreferenceChange(AgendaHeightKey.self) { agendaContentHeight = $0 }
@@ -116,6 +145,7 @@ struct MenuBarContentView: View {
             selectedDayKey = WeekMath.dayKey(for: Date())
             syncDragConfig()
         }
+        .onChange(of: mode) { _, _ in dragController.cancel() }
         .onChange(of: sortModeRaw) { _, _ in syncDragConfig() }
         .onChange(of: moveCompletedToBottom) { _, _ in syncDragConfig() }
     }
@@ -144,6 +174,20 @@ struct MenuBarContentView: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    /// The main window on the card's board, highlighted, after the panel closes.
+    private func openCard(_ task: KanbanTask) {
+        guard let projectID = task.project?.id else { return }
+        app.revealKanban(taskID: task.id, projectID: projectID)
+        openMainWindow()
+    }
+
+    /// The main window's Kanban module, where boards are created.
+    private func openKanbanModule() {
+        app.module = .kanban
+        app.kanban.selection = .allProjects
+        openMainWindow()
     }
 
     /// Collapse the popover, then open Settings and bring it frontmost. Activation

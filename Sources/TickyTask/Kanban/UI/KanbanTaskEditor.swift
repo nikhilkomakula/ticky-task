@@ -41,6 +41,8 @@ struct KanbanTaskEditor: View {
     @State private var error: String?
     @State private var suggestDone = false
     @State private var confirmDelete = false
+    @State private var schedulingDay: Date?
+    @State private var scheduledNote: String?
 
     private var project: KanbanProject? { task.project }
     private var trimmedJira: String { jiraURL.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -230,6 +232,20 @@ struct KanbanTaskEditor: View {
                 .accessibilityIdentifier("kanban-editor-archive")
             Button("Delete…", role: .destructive) { confirmDelete = true }
                 .accessibilityIdentifier("kanban-editor-delete")
+            Button("Schedule to day…") { schedulingDay = task.dueDate ?? Date() }
+                .help("Put this card on a day in the planner (once linked, rescheduling moves that task)")
+                .accessibilityIdentifier("kanban-editor-schedule")
+                .popover(isPresented: Binding(get: { schedulingDay != nil }, set: { if !$0 { schedulingDay = nil } })) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        DatePicker("Day", selection: Binding(get: { schedulingDay ?? Date() }, set: { schedulingDay = $0 }), displayedComponents: .date)
+                            .datePickerStyle(.graphical)
+                        Button("Schedule") { schedule() }
+                            .keyboardShortcut(.defaultAction)
+                            .accessibilityIdentifier("kanban-editor-schedule-confirm")
+                    }
+                    .padding(12)
+                }
+            if let scheduledNote { Text(scheduledNote).font(.caption).foregroundStyle(.secondary) }
             Spacer()
         }
         .padding(12)
@@ -384,6 +400,19 @@ struct KanbanTaskEditor: View {
             }
         }
         return ticked && !task.subtasks.isEmpty && task.subtasks.allSatisfy(\.isDone)
+    }
+
+    private func schedule() {
+        guard let day = schedulingDay else { return }
+        do {
+            try app.kanbanService(context).schedule(task, on: WeekMath.dayKey(for: day))
+            scheduledNote = "On the planner for \(day.formatted(date: .abbreviated, time: .omitted))."
+            schedulingDay = nil
+            // A linked task that moved keeps its alarm on the new day.
+            Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func moveToDone() {
