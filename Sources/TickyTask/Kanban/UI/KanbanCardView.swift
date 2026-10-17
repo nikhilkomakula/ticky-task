@@ -15,8 +15,6 @@ struct KanbanCardView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @AppStorage("compactView") private var compact = false
-    @State private var isHovering = false
-    @FocusState private var isFocused: Bool
 
     private var priority: TaskPriority { TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low }
 
@@ -24,19 +22,11 @@ struct KanbanCardView: View {
         let _ = app.kanbanClock   // due-date colours follow the day
         let highlighted = app.highlightedKanbanTaskID == task.id
 
-        ZStack(alignment: .topTrailing) {
-            // Main card content (the draggable part)
-            cardContent
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .animation(.easeInOut(duration: 0.2), value: highlighted)
-
-            // Hover actions overlay (OUTSIDE gesture subtree in KanbanBoardView)
-            if !isInDragPreview && (isHovering || isFocused) {
-                cardHoverActions
-            }
-        }
-        .onHover { isHovering = $0 }
-        .focused($isFocused)
+        // The Edit/Delete buttons are overlaid by the board's cell (KanbanCardSlot), outside
+        // the drag gesture; the reserved space in the title row keeps them off the text.
+        cardContent
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .animation(.easeInOut(duration: 0.2), value: highlighted)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Edit", onOpen)
@@ -75,35 +65,6 @@ struct KanbanCardView: View {
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
                                                                 lineWidth: highlighted || isSelected ? 2 : 1))
         .onTapGesture(perform: onOpen)
-    }
-
-    private var cardHoverActions: some View {
-        let blockedText = task.isBlocked ? (task.blockedReason.map { "Blocked: \($0)" } ?? "Blocked") : nil
-        let depsText = !task.dependsOn.isEmpty ? "Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))" : nil
-
-        return HStack(spacing: 4) {
-            Button(action: onOpen) {
-                Image(systemName: "pencil")
-                    .font(.system(size: 11))
-            }
-            .help("Edit card")
-            .accessibilityLabel("Edit card")
-            .accessibilityIdentifier("kanban-card-edit-\(task.id)")
-
-            if let onDelete {
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 11))
-                }
-                .help("Delete card")
-                .accessibilityLabel("Delete card")
-                .accessibilityIdentifier("kanban-card-delete-\(task.id)")
-            }
-        }
-        .buttonStyle(.borderless)
-        .padding(6)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
-        .frame(width: 52, height: 22)
     }
 
     private var labels: some View {
@@ -194,5 +155,30 @@ struct KanbanCardView: View {
         .help("Open Jira")
         .accessibilityLabel("Jira issue \(key)")
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Edit and Delete for a card, shown on hover or focus. The board overlays them on the card
+/// after its drag gesture, so pressing them never starts a drag.
+struct KanbanCardHoverActions: View {
+    let task: KanbanTask
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Button(action: onEdit) { Image(systemName: "pencil").font(.system(size: 11)) }
+                .help("Edit card")
+                .accessibilityLabel("Edit card")
+                .accessibilityIdentifier("kanban-card-edit-\(task.id)")
+            Button(action: onDelete) { Image(systemName: "trash").font(.system(size: 11)) }
+                .help("Delete card")
+                .accessibilityLabel("Delete card")
+                .accessibilityIdentifier("kanban-card-delete-\(task.id)")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 4)
+        .frame(height: 22)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
     }
 }

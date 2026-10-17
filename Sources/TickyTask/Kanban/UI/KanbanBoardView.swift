@@ -463,18 +463,26 @@ private struct KanbanCell: View {
     var body: some View {
         VStack(spacing: 6) {
             ForEach(tasks) { task in
-                KanbanCardView(task: task, project: project, isSelected: selected.contains(task.id),
-                              onOpen: { onOpen(task) },
-                              onDelete: { onDelete(task) })
-                    .id(task.id)
-                    .opacity(drag.isDragging(card: task.id) ? 0.001 : task.archivedAt != nil ? 0.5 : 1)
-                    .contextMenu { KanbanBulkMenu(project: project, tasks: menuTasks(task), onOpen: onOpen) }
-                    .modifier(CardDrag(task: task, column: column, row: row, drag: drag, dragIDs: dragIDs, source: dragSource))
-                    .focusable()
-                    .focused(focus, equals: .card(task.id))
-                    .popover(isPresented: Binding(get: { quickLook == task.id }, set: { if !$0 { quickLook = nil } })) {
-                        KanbanQuickLook(task: task)
-                    }
+                KanbanCardSlot(task: task, isFocused: focus.wrappedValue == .card(task.id), isDragging: drag.isDragging(card: task.id),
+                               onEdit: { onOpen(task) }, onDelete: { onDelete(task) }) {
+                    KanbanCardView(task: task, project: project, isSelected: selected.contains(task.id),
+                                  onOpen: { onOpen(task) },
+                                  onDelete: { onDelete(task) })
+                        .id(task.id)
+                        .opacity(drag.isDragging(card: task.id) ? 0.001 : task.archivedAt != nil ? 0.5 : 1)
+                        .contextMenu {
+                            Button("Edit…") { onOpen(task) }
+                            Button("Delete…", role: .destructive) { onDelete(task) }
+                            Divider()
+                            KanbanBulkMenu(project: project, tasks: menuTasks(task), onOpen: onOpen)
+                        }
+                        .modifier(CardDrag(task: task, column: column, row: row, drag: drag, dragIDs: dragIDs, source: dragSource))
+                        .focusable()
+                        .focused(focus, equals: .card(task.id))
+                        .popover(isPresented: Binding(get: { quickLook == task.id }, set: { if !$0 { quickLook = nil } })) {
+                            KanbanQuickLook(task: task)
+                        }
+                }
             }
             Button(action: onAdd) {
                 Image(systemName: "plus")
@@ -668,4 +676,29 @@ private struct NewCardCell: Identifiable {
     let id = UUID()
     let column: UUID
     let row: KanbanRowKey
+}
+
+/// A card with its Edit/Delete buttons overlaid after the drag gesture (so they never start a
+/// drag), shown while the pointer is over the card or the buttons, or the card has focus.
+private struct KanbanCardSlot<Card: View>: View {
+    let task: KanbanTask
+    let isFocused: Bool
+    let isDragging: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @ViewBuilder let card: () -> Card
+    @State private var overCard = false
+    @State private var overButtons = false
+
+    var body: some View {
+        card()
+            .onHover { overCard = $0 }
+            .overlay(alignment: .topTrailing) {
+                if !isDragging, task.archivedAt == nil, overCard || overButtons || isFocused {
+                    KanbanCardHoverActions(task: task, onEdit: onEdit, onDelete: onDelete)
+                        .onHover { overButtons = $0 }
+                        .padding(6)
+                }
+            }
+    }
 }
