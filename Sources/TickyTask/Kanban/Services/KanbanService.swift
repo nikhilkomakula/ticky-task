@@ -729,7 +729,9 @@ struct KanbanService {
             guard !clash else { throw KanbanServiceError.invariant("There's already a label called “\(entry.name)”.") }
         }
         let ordered = changes.orderIDs.filter { !deleted.contains($0) }
-        let order = ordered + surviving.map(\.id).filter { !ordered.contains($0) }   // listed first, the rest as they were
+        // Listed first (new labels included), then unlisted existing ones as they were, then unlisted new ones.
+        let order = ordered + surviving.map(\.id).filter { !ordered.contains($0) } + changes.adds.map(\.id).filter { !ordered.contains($0) }
+        let position = Dictionary(order.enumerated().map { ($1, Double($0)) }, uniquingKeysWith: { a, _ in a })
         let affected = project.tasks.filter { task in task.labels.contains { deleted.contains($0.id) } }
         var state = KanbanBoardState.decode(project.boardState)
         let prunesFilter = !state.filter.labelIDs.isDisjoint(with: deleted)
@@ -758,13 +760,9 @@ struct KanbanService {
             if let color = edit.colorHex { label.colorHex = color }
             if let symbol = edit.symbolName { label.symbolName = symbol } else if edit.clearsSymbol { label.symbolName = nil }
         }
-        for (index, id) in order.enumerated() {
-            if let label = byID[id] {
-                label.sortIndex = Double(index)
-            }
-        }
-        for (offset, add) in changes.adds.enumerated() {
-            let label = KanbanLabel(id: add.id, name: clean(add.name), colorHex: add.colorHex, sortIndex: Double(order.count + offset))
+        for (id, index) in position { byID[id]?.sortIndex = index }
+        for add in changes.adds {
+            let label = KanbanLabel(id: add.id, name: clean(add.name), colorHex: add.colorHex, sortIndex: position[add.id] ?? Double(order.count))
             label.symbolName = add.symbolName
             context.insert(label)
             label.project = project

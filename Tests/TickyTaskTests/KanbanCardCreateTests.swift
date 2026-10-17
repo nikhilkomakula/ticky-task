@@ -168,7 +168,7 @@ struct KanbanCardCreateTests {
 
         var draft = KanbanLabelCatalogDraft(from: labels)
         let newID = draft.add(name: "Security", colorHex: "#FF0000")
-        draft.moveUp(id: newID)  // Move new label to be second
+        for _ in 0..<(labels.count - 1) { draft.moveUp(id: newID) }   // from last to second
         let changes = draft.buildChanges()
 
         try s.applyLabelChanges(changes, to: project)
