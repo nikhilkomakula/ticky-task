@@ -14,7 +14,10 @@ import SwiftData
 /// `needsImmediateAttention`) — preserving all existing data.
 enum AppSchema {
     static let models: [any PersistentModel.Type] =
-        [TaskItem.self, Subtask.self, CustomList.self, TaskTag.self, TaskOccurrence.self]
+        [TaskItem.self, Subtask.self, CustomList.self, TaskTag.self, TaskOccurrence.self,
+         // Kanban (v0.2.0): additive types; existing stores gain empty tables.
+         KanbanProject.self, KanbanColumn.self, KanbanPerson.self, KanbanResource.self,
+         KanbanTask.self, KanbanSubtask.self, KanbanLabel.self, KanbanActivity.self]
 
     static let schema = Schema(models)
 }
