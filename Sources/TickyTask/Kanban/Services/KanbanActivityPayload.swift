@@ -7,7 +7,7 @@ enum KanbanActivityKind: String, Codable, Sendable {
 
 /// A scalar value of an edited field, so edits can be replayed, reverted and conflict-checked.
 enum KanbanValue: Codable, Equatable, Sendable {
-    case string(String), int(Int), double(Double), bool(Bool), date(Date), uuid(UUID), data(Data), uuids([UUID])
+    case string(String), int(Int), double(Double), bool(Bool), date(Date), uuid(UUID), data(Data), uuids([UUID]), ints([Int])
 }
 
 /// The kind of row an edit touched.

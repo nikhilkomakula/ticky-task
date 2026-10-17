@@ -26,6 +26,9 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | I1-f | Round 5 (final adversarial pass) | **CHANGES REQUIRED** — 2 blockers: reverting an archive could bring a card back live in a column that became Done, with no completion date; `restoreTask` could leave a live card on an archived membership | Fixed: a card coming back counts as placed in the simulation (completion and active membership are checked), and `restoreTask` fits the card to the board as it is now (completes it in Done; Unassigned if its membership was archived), recording the change so ⌘Z reverses it |
 | I1-g | Round 6 | **CHANGES REQUIRED** — 1 blocker: an edited backup could restore a live card in Done with no completion date | Fixed: the backup sanitiser repairs completion against the column (counted as `repairedCompletions`) |
 | I1-h | Round 7 | **INCREMENT-1: APPROVED** | Merged to main via PR (no tag) |
+| I2-a | Increment 2 (templates, board edits, metrics) | **CHANGES REQUESTED** — 1 blocker: count-mode load ignored cards dated after this week (§0 says `v₀ = v` in count mode); 5 should-fix: board edits accepted values of the wrong kind (unundoable), backlog groups counted cards in hours mode, view state saved without a change-log entry, an archived prerequisite hidden by other blockers, malformed Jira URLs passing hygiene | Fixed all but view state, which is exempt by design (I-D6) |
+| I2-b | Round 2 | **CHANGES REQUESTED** — fixes 1, 2, 3, 5, 6 confirmed; **I-D6 accepted**; 2 should-fix: negative or non-finite board defaults accepted (a −4 h default estimate cancels real work), a zero-capacity member with work not counted as over capacity | Fixed: numeric board settings must be finite and ≥ 0; `.noCapacity` with load counts as over capacity |
+| I2-c | Round 3 | **INCREMENT-2: APPROVED** — no findings | PR after increment 1 merges (no tag) |
 
 ### R2 issues and how they were resolved
 
@@ -120,4 +123,4 @@ Codex's non-blocking R1 points were also applied:
 | I-D3 | `KanbanProject.historyBoundarySeq` (additive, default 0) is set on restore; entries at or below it can't be reverted. | Restored rows are rebuilt from the backup, at millisecond precision (I1-b #10) | I1-b → *I1-c* |
 | I-D4 | The service reads column cards, step assignments and memberships through forward links (`task.column`, `step.assignee`, `resource.person`), never through the inverse arrays. | SwiftData's in-memory inverse arrays can lag after a change in the same context (seen in tests) | — |
 | I-D5 | Activity payload dates use the default JSON encoding (seconds as a Double), not the backup's ISO milliseconds. | Conflict checks compare them with live values exactly | — |
-
+| I-D6 | View state (row collapse, `boardState`, sidebar order) is saved through the service but isn't a board change: no change-log entry, no undo, no Revert. | Logging it would make ⌘Z re-expand a row instead of undoing the last real change, and fill the Change Log with clicks; filters and sort already live in `boardState` as view state (01 §5) | I2-a #4 → ✅ *I2-b* |
