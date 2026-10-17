@@ -25,7 +25,7 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | I1-e | Round 4 | **CHANGES REQUIRED** — 1 blocker: reverting a move into a column that later became Done would leave the card in Done with no completion date (per-field conflicts allowed it) | Fixed: the invariant simulation checks completion against the column kind for every card a revert places. Also fixed (not blocking): a person-archive undo is checked against the person's own memberships, and putting back a live card on an archived membership is modelled as Unassigned |
 | I1-f | Round 5 (final adversarial pass) | **CHANGES REQUIRED** — 2 blockers: reverting an archive could bring a card back live in a column that became Done, with no completion date; `restoreTask` could leave a live card on an archived membership | Fixed: a card coming back counts as placed in the simulation (completion and active membership are checked), and `restoreTask` fits the card to the board as it is now (completes it in Done; Unassigned if its membership was archived), recording the change so ⌘Z reverses it |
 | I1-g | Round 6 | **CHANGES REQUIRED** — 1 blocker: an edited backup could restore a live card in Done with no completion date | Fixed: the backup sanitiser repairs completion against the column (counted as `repairedCompletions`) |
-| I1-h | Round 7 | *pending* | — |
+| I1-h | Round 7 | **INCREMENT-1: APPROVED** | Merged to main via PR (no tag) |
 
 ### R2 issues and how they were resolved
 
