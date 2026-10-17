@@ -117,4 +117,43 @@ struct KanbanBoardTransferTests {
         #expect(lines.count == 5 && lines.last == "", "three cards and a trailing line end")
         #expect(T.quote("a,b") == "\"a,b\"" && T.quote("say \"hi\"") == "\"say \"\"hi\"\"\"" && T.quote("=SUM(A1)") == "'=SUM(A1)")
     }
+
+    @Test("Someone archived here keeps no active membership: it arrives archived, its cards Unassigned")
+    func archivedPersonImportsArchived() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let ravi = try #require(project.resources.first { $0.displayName == "Ravi" }?.person)
+        _ = try KanbanService(from).archivePerson(ravi)
+        let plan = try T.plan(data, context: from)
+        #expect(plan.people.first { $0.name == "Ravi" }?.linkTo == ravi.id, "still the same person, by id")
+        let boards = try T.apply(plan, fileName: "old", context: from)
+        let imported = try #require(try from.fetch(FetchDescriptor<KanbanProject>()).first { $0.id == boards.first })
+        let memberships = imported.resources.filter { $0.person?.id == ravi.id }
+        #expect(!memberships.isEmpty && memberships.allSatisfy { $0.archivedAt != nil })
+        let api = try #require(imported.tasks.first { $0.title == "Build API" })
+        #expect(api.resource == nil, "a live card isn't left on an archived membership")
+    }
+
+    @Test("The preview carries the validator's repairs and the memberships a merge reuses")
+    func previewRepairsAndReuse() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        var envelope = try BackupCoding.decoder().decode(T.Envelope.self, from: data)
+        let docs = try #require(envelope.kanban.tasks.first { $0.title == "Write docs" })
+        let api = try #require(envelope.kanban.tasks.firstIndex { $0.title == "Build API" })
+        envelope.kanban.tasks[api].dependsOnIds.append(docs.id)   // closes a loop with docs → api
+        let plan = try T.plan(try BackupCoding.encoder().encode(envelope), context: from)
+        #expect(plan.report.droppedDependencyEdges == 1)
+        let board = try #require(plan.boards.first)
+        #expect(plan.reusedMemberships(board, into: project) == ["Ravi"], "Mia's membership in the file is archived")
+        #expect(plan.reusedMemberships(board, into: try KanbanService(from).createProject(name: "Empty", key: "EMP")).isEmpty)
+    }
+
+    @Test("Formulas behind leading whitespace or control characters are neutralised too")
+    func csvControlPrefixes() {
+        for field in ["\t=1+1", "\r=1+1", " =1+1", "\u{0B}@SUM(A1)", "\t"] {
+            #expect(T.quote(field).hasPrefix("'") || T.quote(field).hasPrefix("\"'"), "\(field.debugDescription)")
+        }
+        #expect(T.quote("Plain title") == "Plain title" && T.quote("x = 1") == "x = 1")
+    }
 }

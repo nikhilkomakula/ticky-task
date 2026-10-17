@@ -5,9 +5,22 @@ import SwiftData
 /// module — people with different allocations, a contractor rolling off, cards in each
 /// column, one overdue and blocked, labels, steps and an estimate. Never created on first run.
 enum KanbanDemoSeed {
+    /// Builds the board in a scratch store, then imports it in one save: a failure leaves
+    /// nothing behind, a taken key is renamed, and people already here are linked by name.
     @MainActor
     @discardableResult
-    static func load(_ service: KanbanService, now: Date = Date(), calendar: Calendar = .current) throws -> KanbanProject {
+    static func load(into context: ModelContext, now: Date = Date(), calendar: Calendar = .current) throws -> KanbanProject {
+        let scratch = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let board = try build(KanbanService(scratch), now: now, calendar: calendar)
+        let plan = try KanbanBoardTransfer.plan(try KanbanBoardTransfer.export([board], context: scratch), context: context)
+        guard let id = try KanbanBoardTransfer.apply(plan, fileName: "the demo board", context: context, now: now).first,
+              let project = try context.fetch(FetchDescriptor<KanbanProject>(predicate: #Predicate { $0.id == id })).first
+        else { throw KanbanServiceError.notFound }
+        return project
+    }
+
+    @MainActor
+    private static func build(_ service: KanbanService, now: Date, calendar: Calendar) throws -> KanbanProject {
         let today = calendar.startOfDay(for: now)
         func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: today) ?? today }
         let project = try service.createProject(name: "Demo board", key: "DEMO", template: .software)

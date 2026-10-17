@@ -207,4 +207,36 @@ struct KanbanModuleTests {
         #expect(names[a] == "No label (2)" && names[b] == "Bug" && names[c] == "Bug (2)")
         #expect(KanbanUI.uniqueNames([(a, "Unassigned")])[a] == "Unassigned (2)")
     }
+
+    @Test("Only the last visible module's toggle is locked; a hidden module can come back")
+    func toggleLocks() {
+        let kanbanHidden = ModulePolicy(showPlanner: true, showKanban: false)
+        #expect(kanbanHidden.isLocked(.planner) && !kanbanHidden.isLocked(.kanban))
+        let plannerHidden = ModulePolicy(showPlanner: false, showKanban: true)
+        #expect(plannerHidden.isLocked(.kanban) && !plannerHidden.isLocked(.planner))
+        #expect(!ModulePolicy().isLocked(.planner) && !ModulePolicy().isLocked(.kanban))
+    }
+
+    @Test("The demo board loads in one save; loading it again adds a second board with the same people")
+    func demoBoard() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let first = try KanbanDemoSeed.load(into: context)
+        #expect(first.key == "DEMO" && first.tasks.count == 7 && first.resources.count == 3)
+        #expect(first.activities.map(\.summary) == ["Imported from the demo board"])
+        let second = try KanbanDemoSeed.load(into: context)
+        #expect(second.key == "DEMO2" && second.id != first.id)
+        #expect(try context.fetchCount(FetchDescriptor<KanbanPerson>()) == 3, "people are linked by name, not duplicated")
+        let fix = try #require(second.tasks.first { $0.title == "Fix login timeout" })
+        #expect(fix.isCritical && fix.isBlocked && fix.resource?.displayName == "Ana Lopez")
+    }
+
+    @Test("Every generation bump runs the app-wide follow-up")
+    func generationFollowUp() {
+        let generation = KanbanStoreGeneration()
+        var calls = 0
+        generation.onBump = { calls += 1 }
+        generation.bump()
+        generation.bump()
+        #expect(calls == 2 && generation.value == 2)
+    }
 }

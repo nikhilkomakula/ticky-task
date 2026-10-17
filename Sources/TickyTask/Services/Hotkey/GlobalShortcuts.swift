@@ -31,6 +31,8 @@ enum GlobalShortcutsInstaller {
         }
         KeyboardShortcuts.onKeyUp(for: .newTaskToday) {
             Task { @MainActor in
+                // Quick capture adds planner tasks, so it's off while the Planner is hidden.
+                guard ModulePolicy(UserDefaults.standard).showPlanner else { return }
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: "quickCapture")
             }

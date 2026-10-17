@@ -78,9 +78,21 @@ enum KanbanBoardTransfer {
         var kanban: KanbanBackupDTO
         var boards: [BoardChoice]
         var people: [PersonChoice]
+        /// What the validator repaired in the file (dropped cycles, cards sent to Unassigned).
+        var report = KanbanImportReport()
         var counts: (boards: Int, cards: Int, people: Int) { (boards.count, kanban.tasks.count, people.count) }
 
-        static func == (a: Plan, b: Plan) -> Bool { a.kanban == b.kanban && a.boards == b.boards && a.people == b.people }
+        static func == (a: Plan, b: Plan) -> Bool {
+            a.kanban == b.kanban && a.boards == b.boards && a.people == b.people && a.report == b.report
+        }
+
+        /// The file's people with an active membership on `board` whose linked person already
+        /// has one on `project`: merging reuses that membership instead of adding a row.
+        func reusedMemberships(_ board: BoardChoice, into project: KanbanProject) -> [String] {
+            let incoming = Set(kanban.resources.filter { $0.projectId == board.id && $0.archivedAt == nil }.compactMap(\.personId))
+            let here = Set(project.resources.filter { $0.archivedAt == nil }.compactMap { $0.person?.id })
+            return people.filter { incoming.contains($0.id) && $0.linkTo.map(here.contains) == true }.map(\.name)
+        }
     }
 
     @MainActor
@@ -94,7 +106,7 @@ enum KanbanBoardTransfer {
             let board = envelope.kanban.projects.first { $0.id == resource.projectId }?.name ?? ""
             throw TransferError.missingPerson(board)
         }
-        let kanban = try KanbanBackupValidator.sanitized(envelope.kanban).dto
+        let (kanban, report) = try KanbanBackupValidator.sanitized(envelope.kanban)
         let existingProjects = try context.fetch(FetchDescriptor<KanbanProject>())
         let existingPeople = try context.fetch(FetchDescriptor<KanbanPerson>())
         var takenKeys = Set(existingProjects.map { $0.key.uppercased() })
@@ -110,7 +122,7 @@ enum KanbanBoardTransfer {
             let sameName = existingPeople.first { normalized($0.name) == normalized(dto.name) && $0.archivedAt == nil }
             return PersonChoice(id: dto.id, name: dto.name, match: sameName == nil ? .none : .sameName, linkTo: sameName?.id)
         }
-        return Plan(kanban: kanban, boards: boards, people: choices)
+        return Plan(kanban: kanban, boards: boards, people: choices, report: report)
     }
 
     private static func normalized(_ name: String) -> String { name.trimmingCharacters(in: .whitespaces).lowercased() }
@@ -173,7 +185,7 @@ enum KanbanBoardTransfer {
                 context.insert(project)
                 merging = false
             }
-            insertBoard(dto.id, from: k, into: project, merging: merging, people: people, context: context)
+            insertBoard(dto.id, from: k, into: project, merging: merging, people: people, now: now, context: context)
             let entry = KanbanActivity(seq: project.nextActivitySeq, at: now, kind: KanbanActivityKind.structure.rawValue,
                                        summary: "Imported from \(fileName)", payload: note)
             context.insert(entry)
@@ -212,7 +224,7 @@ enum KanbanBoardTransfer {
     /// membership reused for the same person). Non-throwing.
     @MainActor
     private static func insertBoard(_ source: UUID, from k: KanbanBackupDTO, into project: KanbanProject, merging: Bool,
-                                    people: [UUID: KanbanPerson], context: ModelContext) {
+                                    people: [UUID: KanbanPerson], now: Date, context: ModelContext) {
         func mine(_ id: UUID?) -> Bool { id == source }
 
         var columns: [UUID: KanbanColumn] = [:]
@@ -276,7 +288,8 @@ enum KanbanBoardTransfer {
             resource.openTaskTargetOverride = dto.openTaskTargetOverride
             resource.startDate = dto.startDate
             resource.endDate = dto.endDate
-            resource.archivedAt = dto.archivedAt
+            // Linked to someone archived here: the membership arrives archived (its cards Unassigned).
+            resource.archivedAt = dto.archivedAt ?? person.archivedAt.map { _ in now }
             context.insert(resource)
             resource.project = project
             resources[dto.id] = resource
@@ -359,8 +372,11 @@ enum KanbanBoardTransfer {
     }
 
     static func quote(_ field: String) -> String {
-        // A leading =, +, - or @ would run as a formula in a spreadsheet.
-        let safe = field.first.map { "=+-@".contains($0) } == true ? "'" + field : field
+        // A leading =, +, - or @ would run as a formula in a spreadsheet, also behind a tab,
+        // return or other leading whitespace or control characters.
+        let start = field.unicodeScalars.first { !CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }
+        let risky = start.map { "=+-@".unicodeScalars.contains($0) } == true || field.first.map { "\t\r".contains($0) } == true
+        let safe = risky ? "'" + field : field
         guard safe.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) else { return safe }
         return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }

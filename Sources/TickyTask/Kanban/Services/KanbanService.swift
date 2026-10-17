@@ -7,7 +7,12 @@ import Observation
 @MainActor @Observable
 final class KanbanStoreGeneration {
     private(set) var value = 0
-    func bump() { value += 1 }
+    /// App-wide follow-up to every bump (Kanban reminder sync), whichever window saved.
+    @ObservationIgnored var onBump: (() -> Void)?
+    func bump() {
+        value += 1
+        onBump?()
+    }
 }
 
 enum KanbanServiceError: Error, Equatable, LocalizedError {

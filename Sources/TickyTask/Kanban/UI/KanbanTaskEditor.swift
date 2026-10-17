@@ -405,10 +405,11 @@ struct KanbanTaskEditor: View {
     private func schedule() {
         guard let day = schedulingDay else { return }
         do {
-            let item = try app.kanbanService(context).schedule(task, on: WeekMath.dayKey(for: day))
+            try app.kanbanService(context).schedule(task, on: WeekMath.dayKey(for: day))
             scheduledNote = "On the planner for \(day.formatted(date: .abbreviated, time: .omitted))."
-            _ = item
             schedulingDay = nil
+            // A linked task that moved keeps its alarm on the new day.
+            Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
         } catch {
             self.error = error.localizedDescription
         }

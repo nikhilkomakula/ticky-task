@@ -28,8 +28,8 @@ struct KanbanSettingsView: View {
         let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
         Form {
             Section("Modules") {
-                Toggle("Show the Planner", isOn: $showPlanner).disabled(!policy.canHide(.planner))
-                Toggle("Show Kanban", isOn: $showKanban).disabled(!policy.canHide(.kanban))
+                Toggle("Show the Planner", isOn: $showPlanner).disabled(policy.isLocked(.planner))
+                Toggle("Show Kanban", isOn: $showKanban).disabled(policy.isLocked(.kanban))
                     .accessibilityIdentifier("settings-show-kanban")
                 Picker("Open at launch", selection: $defaultModule) {
                     ForEach(policy.visible) { Text($0.label).tag($0.rawValue) }
@@ -65,9 +65,17 @@ struct KanbanSettingsView: View {
             }
             Section("Notifications") {
                 Toggle("Notify on Kanban due dates", isOn: $notifyDueDates)
+                    .onChange(of: notifyDueDates) { _, isOn in
+                        Task {
+                            // Turning it on asks for permission (once); the reminders follow either way.
+                            if isOn { _ = await NotificationService.requestAuthorization() }
+                            await NotificationService.syncKanbanReminders(context: context)
+                        }
+                    }
                 if notifyDueDates {
                     DatePicker("At", selection: Binding(get: { Self.time(notifyDueMinutes) }, set: { notifyDueMinutes = Self.minutes($0) }),
                                displayedComponents: .hourAndMinute)
+                    .onChange(of: notifyDueMinutes) { _, _ in Task { await NotificationService.syncKanbanReminders(context: context) } }
                 }
             }
             Section("Archive") {
@@ -100,7 +108,8 @@ struct KanbanSettingsView: View {
             Section("Demo") {
                 Button("Load demo board") {
                     do {
-                        let project = try KanbanDemoSeed.load(app.kanbanService(context))
+                        let project = try KanbanDemoSeed.load(into: context)
+                        app.kanbanGeneration.bump()
                         app.module = .kanban
                         app.kanban.selection = .project(project.id)
                         message = "Added “Demo board”."

@@ -57,6 +57,16 @@ struct KanbanImportSheet: View {
     @Query(sort: \KanbanPerson.name) private var people: [KanbanPerson]
     @State private var error: String?
 
+    private var repairs: [String] {
+        let r = request.plan.report
+        func plural(_ n: Int, _ one: String, _ many: String) -> String { "\(n) \(n == 1 ? one : many)" }
+        var lines: [String] = []
+        if r.droppedDependencyEdges > 0 { lines.append("\(plural(r.droppedDependencyEdges, "dependency", "dependencies")) that formed a loop won’t be imported.") }
+        if r.unassignedFromArchivedMemberships > 0 { lines.append("\(plural(r.unassignedFromArchivedMemberships, "card", "cards")) on archived memberships will be Unassigned.") }
+        if r.repairedCompletions > 0 { lines.append("\(plural(r.repairedCompletions, "card", "cards")) will have completion matched to their column.") }
+        return lines
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import “\(request.fileName)”").font(.headline)
@@ -71,6 +81,13 @@ struct KanbanImportSheet: View {
                             ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
                         }
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
+                        if let target = board.mergeInto.flatMap({ id in projects.first { $0.id == id } }) {
+                            let reused = request.plan.reusedMemberships(board, into: target)
+                            if !reused.isEmpty {
+                                Text("Already on \(target.name), so their membership is reused: \(reused.joined(separator: ", ")).")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 Section("People") {
@@ -79,6 +96,15 @@ struct KanbanImportSheet: View {
                             Text("Add as a new person").tag(UUID?.none)
                             ForEach(people.filter { $0.archivedAt == nil || $0.id == person.linkTo }) { Text("Same as \($0.name)").tag(Optional($0.id)) }
                         }
+                        if let linked = person.linkTo.flatMap({ id in people.first { $0.id == id } }), linked.archivedAt != nil {
+                            Text("\(linked.name) is archived here: their memberships arrive archived and their cards Unassigned.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                }
+                if !repairs.isEmpty {
+                    Section("Repairs") {
+                        ForEach(repairs, id: \.self) { Text($0).font(.callout) }
                     }
                 }
             }
@@ -94,6 +120,7 @@ struct KanbanImportSheet: View {
                 Button("Import") {
                     do {
                         let boards = try KanbanBoardTransfer.apply(request.plan, fileName: request.fileName, context: context)
+                        app.kanbanHistory.clear()   // undo doesn't reach past an import (design 01 §2.4)
                         app.kanbanGeneration.bump()
                         if let first = boards.first {
                             app.module = .kanban
