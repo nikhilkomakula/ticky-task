@@ -575,6 +575,9 @@ struct KanbanService {
     func createCard(_ draft: KanbanCardDraft, in project: KanbanProject) throws -> KanbanTask {
         try RecurrenceMaterializer.checkpoint(context)
 
+        // Refuse archived board
+        guard project.archivedAt == nil else { throw KanbanServiceError.invariant("That board is archived.") }
+
         // Validate title
         let trimmedTitle = draft.title.trimmingCharacters(in: .whitespaces)
         guard !trimmedTitle.isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
@@ -605,9 +608,6 @@ struct KanbanService {
             guard let dep = project.tasks.first(where: { $0.id == depID }) else {
                 throw KanbanServiceError.invariant("That dependency isn't on this board.")
             }
-            // Check for cycles: dep cannot already depend on a task that depends on us
-            // (for a new card this is always safe, but check anyway for safety)
-            if depID == UUID() { throw KanbanServiceError.invariant("A card can't depend on itself.") }
         }
 
         // Validate step titles

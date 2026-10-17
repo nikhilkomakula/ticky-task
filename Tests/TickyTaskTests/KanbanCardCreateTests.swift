@@ -70,6 +70,17 @@ struct KanbanCardCreateTests {
         #expect(!history.canUndo(project.id))
     }
 
+    @Test("Creating a card on an archived board is refused")
+    func archivedBoardRefused() throws {
+        let (s, history, project, context) = try board()
+        let before = (try entries(project, context).count, try context.fetchCount(FetchDescriptor<KanbanTask>()))
+        try s.setProjectArchived(project, true)
+        var draft = KanbanCardDraft(); draft.title = "Attempted card"
+        #expect(throws: (any Error).self) { try s.createCard(draft, in: project) }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanTask>()) == before.1, "no card written")
+        #expect(try entries(project, context).count == before.0 + 1, "only the archive entry")
+    }
+
     @Test("Label edits apply together: add, rename, recolour, reorder, delete (removed from cards, pruned from the filter)")
     func labelChanges() throws {
         let (s, _, project, context) = try board()

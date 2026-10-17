@@ -103,27 +103,28 @@ enum TaskCreateCommit {
             siblings = try context.fetch(FetchDescriptor<TaskItem>())
                 .filter { $0.dayKey == nil && $0.customList == nil }
         }
-        task.sortIndex = Double(siblings.count)
+        task.sortIndex = (siblings.map(\.sortIndex).max() ?? -1) + 1
 
-        // Insert task
-        context.insert(task)
-
-        // Create subtasks
-        for (index, stepDraft) in draft.steps.enumerated() {
-            let step = Subtask(id: UUID(), title: stepDraft.title.trimmingCharacters(in: .whitespaces),
-                               isDone: stepDraft.isDone, sortIndex: Double(index))
-            context.insert(step)
-            step.parent = task
-        }
-
-        // Handle repeat rule if present (caller-saves pattern)
-        if let rule = draft.repeatRule, let dayKey = draft.dayKey {
-            try RecurrenceMaterializer.startSeries(from: task, rule: rule, through: horizon,
-                                                   context: context, calendar: calendar)
-        }
-
-        // Single save
+        // Collect all mutations that can fail
         do {
+            // Insert task
+            context.insert(task)
+
+            // Create subtasks
+            for (index, stepDraft) in draft.steps.enumerated() {
+                let step = Subtask(id: UUID(), title: stepDraft.title.trimmingCharacters(in: .whitespaces),
+                                   isDone: stepDraft.isDone, sortIndex: Double(index))
+                context.insert(step)
+                step.parent = task
+            }
+
+            // Handle repeat rule if present — must complete before save, so any failure rolls back.
+            if let rule = draft.repeatRule, let dayKey = draft.dayKey {
+                try RecurrenceMaterializer.startSeries(from: task, rule: rule, through: horizon,
+                                                       context: context, calendar: calendar)
+            }
+
+            // Single save
             if let save { try save(context) } else { try context.saveTransaction() }
         } catch {
             context.undoFailedTransaction()
