@@ -85,10 +85,11 @@ struct KanbanSummaryTests {
             snapshot("Medium", column: "Active", priority: "Medium"),
             snapshot("High", column: "Active", priority: "High"),
         ])
-        let records = try cards(data)
-        #expect(records[0]["priority"] as? String == "Low")
-        #expect(records[1]["priority"] as? String == "Medium")
-        #expect(records[2]["priority"] as? String == "High")
+        // Records are ordered by person, column, then title, so look them up by title.
+        let byTitle = Dictionary(try cards(data).compactMap { r in (r["title"] as? String).map { ($0, r) } }, uniquingKeysWith: { a, _ in a })
+        #expect(byTitle["Low"]?["priority"] as? String == "Low")
+        #expect(byTitle["Medium"]?["priority"] as? String == "Medium")
+        #expect(byTitle["High"]?["priority"] as? String == "High")
     }
 
     @Test("Records ordered by resource then column then title")
@@ -126,12 +127,12 @@ struct KanbanSummaryTests {
             snapshot("Legacy", column: "Active", notes: .legacyMarkdown("- legacy text")),
             snapshot("Empty", column: "Active"),
         ])
-        let records = try cards(data)
-        let rich = try #require(records[0]["notes"] as? [String: Any])
+        let byTitle = Dictionary(try cards(data).compactMap { r in (r["title"] as? String).map { ($0, r) } }, uniquingKeysWith: { a, _ in a })
+        let rich = try #require(byTitle["Rich"]?["notes"] as? [String: Any])
         #expect(rich["format"] as? String == "rich_blocks")
-        let legacy = try #require(records[1]["notes"] as? [String: Any])
+        let legacy = try #require(byTitle["Legacy"]?["notes"] as? [String: Any])
         #expect(legacy["format"] as? String == "legacy_markdown")
-        #expect((records[2]["notes"] as? [String: Any])?["format"] as? String == "none")
+        #expect((byTitle["Empty"]?["notes"] as? [String: Any])?["format"] as? String == "none")
     }
 
     @Test("Oversized selections are rejected")

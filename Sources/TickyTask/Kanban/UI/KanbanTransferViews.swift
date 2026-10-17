@@ -1,0 +1,130 @@
+import SwiftUI
+import SwiftData
+import AppKit
+import UniformTypeIdentifiers
+
+/// Board export, CSV export and import (design 01 §7), with the import preview.
+@MainActor
+enum KanbanTransferUI {
+    static var boardType: UTType { UTType(filenameExtension: KanbanBoardTransfer.fileExtension) ?? .json }
+
+    static func exportBoard(_ project: KanbanProject, context: ModelContext, app: AppState) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [boardType]
+        panel.nameFieldStringValue = "\(project.name).\(KanbanBoardTransfer.fileExtension)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        app.runKanban { try KanbanBoardTransfer.export([project], context: context).write(to: url, options: .atomic) }
+    }
+
+    static func exportCSV(_ project: KanbanProject, app: AppState) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "\(project.name).csv"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        app.runKanban { try Data(KanbanBoardTransfer.csv(project).utf8).write(to: url, options: .atomic) }
+    }
+
+    /// Picks a file and returns its plan for the preview, or nil (cancelled or refused).
+    static func pickImport(context: ModelContext, app: AppState) -> KanbanImportRequest? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [boardType, .json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        do {
+            let plan = try KanbanBoardTransfer.plan(try Data(contentsOf: url), context: context)
+            return KanbanImportRequest(plan: plan, fileName: url.lastPathComponent)
+        } catch {
+            app.kanbanError = error.localizedDescription
+            return nil
+        }
+    }
+}
+
+struct KanbanImportRequest: Identifiable {
+    let id = UUID()
+    var plan: KanbanBoardTransfer.Plan
+    let fileName: String
+}
+
+/// What an import will do, with the choices: each board new or merged into an existing
+/// one, each person linked to someone here or created.
+struct KanbanImportSheet: View {
+    @State var request: KanbanImportRequest
+    @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Query(sort: \KanbanPerson.name) private var people: [KanbanPerson]
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Import “\(request.fileName)”").font(.headline)
+            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) people. Imported boards start a fresh history.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Form {
+                Section("Boards") {
+                    ForEach($request.plan.boards) { $board in
+                        Picker(board.name, selection: $board.mergeInto) {
+                            Text(board.keyWasTaken ? "New board (key \(board.key))" : "New board").tag(UUID?.none)
+                            ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
+                        }
+                        .accessibilityIdentifier("kanban-import-board-\(board.name)")
+                    }
+                }
+                Section("People") {
+                    ForEach($request.plan.people) { $person in
+                        Picker(person.name, selection: $person.linkTo) {
+                            Text("Add as a new person").tag(UUID?.none)
+                            ForEach(people.filter { $0.archivedAt == nil || $0.id == person.linkTo }) { Text("Same as \($0.name)").tag(Optional($0.id)) }
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .frame(width: 460, height: 320)
+            if let error {
+                Text(error).font(.callout).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Import") {
+                    do {
+                        let boards = try KanbanBoardTransfer.apply(request.plan, fileName: request.fileName, context: context)
+                        app.kanbanGeneration.bump()
+                        if let first = boards.first {
+                            app.module = .kanban
+                            app.kanban.selection = .project(first)
+                        }
+                        dismiss()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("kanban-import-confirm")
+            }
+        }
+        .padding(20)
+    }
+}
+
+/// The Kanban Summary sheet with a fresh session per opening; the same generator and
+/// model catalog as the Weekly Summary (stubs under `-uitest`).
+struct KanbanSummaryPresenter: View {
+    let project: KanbanProject
+    @State private var session: KanbanSummarySession
+
+    init(project: KanbanProject) {
+        self.project = project
+        let dependencies = WeeklySummaryDependencies.make()
+        _session = State(initialValue: KanbanSummarySession(generator: dependencies.generator, catalog: dependencies.catalog))
+    }
+
+    var body: some View {
+        KanbanSummarySheet(session: session, project: project)
+    }
+}

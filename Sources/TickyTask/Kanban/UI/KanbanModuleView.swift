@@ -197,10 +197,18 @@ struct KanbanToolbarTrailing: View {
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var prompt: KanbanTextPrompt?
     @State private var changeLog: KanbanProject?
+    @State private var summary: KanbanProject?
 
     var body: some View {
         if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
             KanbanViewControls(project: project)
+            Button { summary = project } label: { Image(systemName: "text.badge.star") }
+                .buttonStyle(.borderless)
+                .frame(width: 28, height: 28)
+                .help("Kanban Summary")
+                .accessibilityLabel("Kanban Summary")
+                .accessibilityIdentifier("kanban-summary")
+                .sheet(item: $summary) { KanbanSummaryPresenter(project: $0) }
             Button { changeLog = project } label: { Image(systemName: "clock.arrow.circlepath") }
                 .buttonStyle(.borderless)
                 .frame(width: 28, height: 28)

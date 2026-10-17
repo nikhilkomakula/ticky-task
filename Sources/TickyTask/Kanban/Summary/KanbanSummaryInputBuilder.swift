@@ -114,7 +114,7 @@ private struct PayloadRecord: Encodable {
         notes = PayloadNotes(snapshot.notes)
         column = snapshot.column
         resource = snapshot.resource
-        labels = snapshot.labels.joined(separator: ", ")
+        labels = snapshot.labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.joined(separator: ", ")
         priority = snapshot.priority
         critical = snapshot.isCritical
         jiraKey = snapshot.jiraKey

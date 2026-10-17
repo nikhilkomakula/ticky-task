@@ -767,6 +767,44 @@ struct KanbanService {
         return subtask
     }
 
+    /// Schedule to day… (design 01 §7): puts the card on a planner day. The first time it
+    /// creates a planner task (title, priority, Critical and notes copied once) and links it;
+    /// later it only moves the linked task to the new day, never overwriting planner edits.
+    /// Every lookup is done first, then one save; the entry is informational (not undoable).
+    @discardableResult
+    func schedule(_ task: KanbanTask, on dayKey: String) throws -> TaskItem {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let project = task.project else { throw KanbanServiceError.notFound }
+        guard WeekMath.date(fromDayKey: dayKey) != nil else { throw KanbanServiceError.invariant("That isn't a day.") }
+        // A link counts only if its planner task still exists and isn't a series definition.
+        let linked = try task.linkedPlannerTaskID.flatMap { id in
+            try context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.id == id })).first
+        }.flatMap { $0.recurrence == nil || $0.templateID != nil ? $0 : nil }
+        let key: String? = dayKey
+        let day = try context.fetch(FetchDescriptor<TaskItem>(predicate: #Predicate { $0.dayKey == key }))
+        let next = (day.filter { $0.id != linked?.id }.map(\.sortIndex).max() ?? -1) + 1
+        let label = WeekMath.date(fromDayKey: dayKey)?.formatted(date: .abbreviated, time: .omitted) ?? dayKey
+        let item = linked ?? TaskItem(title: task.title, dayKey: dayKey, priority: min(max(task.priority, 0), 2))
+        let data = try KanbanActivityPayload(plannerTaskID: item.id, dayKey: dayKey).encoded()
+
+        if let linked {
+            linked.markOccurrenceModified()   // moving an occurrence acts on it
+            linked.dayKey = dayKey
+            linked.customList = nil
+            linked.sortIndex = next
+            linked.updatedAt = now()
+        } else {
+            item.isCritical = task.isCritical
+            item.notes = task.notes
+            item.notesRich = task.notesRich
+            item.sortIndex = next
+            context.insert(item)
+        }
+        task.linkedPlannerTaskID = item.id
+        try save(project, kind: .scheduled, taskIDs: [task.id], summary: "Scheduled \(task.title) for \(label)", encodedPayload: data, undoable: false)
+        return item
+    }
+
     /// Renames a step (recorded on the board).
     func renameSubtask(_ subtask: KanbanSubtask, _ title: String) throws {
         try RecurrenceMaterializer.checkpoint(context)

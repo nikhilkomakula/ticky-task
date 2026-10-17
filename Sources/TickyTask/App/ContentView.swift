@@ -24,6 +24,8 @@ struct ContentView: View {
     @AppStorage("showWeekends") private var showWeekends = false
     @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
     @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
+    @AppStorage("kanban.notifyDueDates") private var kanbanNotifyDueDates = false
+    @AppStorage("kanban.notifyDueMinutes") private var kanbanNotifyDueMinutes = 9 * 60
 
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
@@ -99,8 +101,13 @@ struct ContentView: View {
         .onChange(of: app.weekAnchor) { _, _ in runMaterialize(through: navigationHorizon) }
         // A restore replaced the whole store: reset the session horizon and
         // regenerate, so restored recurring templates show occurrences at once.
+        // Kanban due-date reminders follow every board change and the settings.
+        .onChange(of: app.kanbanGeneration.value) { _, _ in Task { await NotificationService.syncKanbanReminders(context: context) } }
+        .onChange(of: kanbanNotifyDueDates) { _, _ in Task { await NotificationService.syncKanbanReminders(context: context) } }
+        .onChange(of: kanbanNotifyDueMinutes) { _, _ in Task { await NotificationService.syncKanbanReminders(context: context) } }
         .onReceive(NotificationCenter.default.publisher(for: .tickyTaskStoreRestored)) { _ in
             reconcileKanbanAfterRestore()
+            Task { await NotificationService.syncKanbanReminders(context: context) }
             materializedThroughKey = ""
             runMaterialize(through: defaultHorizon)
             runCarryForward()
@@ -161,6 +168,7 @@ struct ContentView: View {
         runKanbanAutoArchive()
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
+        await NotificationService.syncKanbanReminders(context: context)
         await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes)
         await maybeCheckForUpdates()
     }
