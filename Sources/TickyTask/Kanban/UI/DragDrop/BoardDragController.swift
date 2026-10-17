@@ -143,28 +143,41 @@ final class BoardDragController {
         projected = [:]
         guard case let .cards(ids)? = source, let project, target != nil else { return }
         let dragged = project.tasks.filter { ids.contains($0.id) }
-        guard let first = dragged.first else { return }
-        let (columnID, resource) = destination(of: first)
+        guard !dragged.isEmpty else { return }
 
-        // As `KanbanMoves` decides: only a column that gains cards can go over its limit.
-        if let columnID, let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit,
-           dragged.contains(where: { $0.column?.id != columnID }) {
+        // As `KanbanMoves` decides: each card lands in its own column (a row header keeps
+        // it), and only a column that gains cards can go over its limit.
+        let landing = Dictionary(grouping: dragged) { destination(of: $0).column ?? $0.column?.id }
+        for (columnID, arriving) in landing {
+            guard let columnID, arriving.contains(where: { $0.column?.id != columnID }),
+                  let column = project.columns.first(where: { $0.id == columnID }), let limit = column.wipLimit else { continue }
             let staying = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == columnID && !ids.contains($0.id) }.count
-            let count = staying + dragged.count
+            let count = staying + arriving.count
             if count > limit {
                 wipNote = WIPNote(columnID: columnID, text: "\(count)/\(limit) — over limit", blocks: project.wipPolicy == .block)
+                break
             }
         }
 
         guard let metrics else { return }
-        let affected = Set(dragged.compactMap { $0.resource?.id } + [resource ?? nil].compactMap { $0 })
+        // Each card lands somewhere of its own (a column header keeps each card's person, a
+        // row header each card's column), so group the cards by where they'd land.
+        let groups = Dictionary(grouping: dragged) { task -> [UUID?] in
+            let (column, row) = destination(of: task)
+            return [column ?? task.column?.id, row ?? task.resource?.id]
+        }
+        let affected = Set(dragged.compactMap { $0.resource?.id } + groups.keys.compactMap { $0[1] })
         for member in metrics.members where affected.contains(member.id) {
-            let now = KanbanMetrics.projectedLoad(metrics, member: member, dragged: [], toColumn: columnID ?? UUID(), toResource: nil)
-            let toColumn = columnID ?? first.column?.id ?? UUID()
-            let toResource = resource ?? first.resource?.id
-            let after = KanbanMetrics.projectedLoad(metrics, member: member, dragged: Set(ids), toColumn: toColumn, toResource: toResource)
-            if after.load != now.load {
-                projected[member.id] = Projection(before: now.load, after: after.load, target: after.target, utilisation: after.utilisation)
+            let now = KanbanMetrics.projectedLoad(metrics, member: member, dragged: [], toColumn: UUID(), toResource: nil)
+            let delta = groups.reduce(0.0) { sum, group in
+                let moved = KanbanMetrics.projectedLoad(metrics, member: member, dragged: Set(group.value.map(\.id)),
+                                                        toColumn: group.key[0] ?? UUID(), toResource: group.key[1])
+                return sum + moved.load - now.load
+            }
+            if delta != 0 {
+                let after = now.load + delta
+                projected[member.id] = Projection(before: now.load, after: after, target: now.target,
+                                                  utilisation: KanbanMetrics.utilisation(load: after, target: now.target))
             }
         }
     }

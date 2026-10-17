@@ -8,6 +8,8 @@ struct SearchView: View {
     @Environment(AppState.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Query private var allTasks: [TaskItem]
+    @Query private var kanbanTasks: [KanbanTask]
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
     @State private var query = ""
     @FocusState private var focused: Bool
 
@@ -15,6 +17,15 @@ struct SearchView: View {
     // there's nowhere to navigate to — exclude them from results.
     private var results: [TaskItem] {
         TaskSearch.rank(allTasks.filter { $0.dayKey != nil || $0.customList != nil }, query: query)
+    }
+
+    /// Live cards on live boards whose title or notes match, when Kanban is visible.
+    private var kanbanResults: [KanbanTask] {
+        guard showKanban, !TaskSearch.normalize(query).isEmpty else { return [] }
+        return kanbanTasks.filter { task in
+            task.archivedAt == nil && task.project?.archivedAt == nil && TaskSearch.matches(title: task.title, notes: task.notes, query: query)
+        }
+        .sorted { ($0.project?.name ?? "", $0.title) < ($1.project?.name ?? "", $1.title) }
     }
 
     var body: some View {
@@ -50,13 +61,40 @@ struct SearchView: View {
     @ViewBuilder private var content: some View {
         if TaskSearch.normalize(query).isEmpty {
             hint("Type to search across every task by title or notes.")
-        } else if results.isEmpty {
+        } else if results.isEmpty && kanbanResults.isEmpty {
             hint("No tasks match “\(query)”.")
-        } else {
+        } else if kanbanResults.isEmpty {
             List(results) { task in
                 SearchResultRow(task: task, query: query)
                     .contentShape(Rectangle())
                     .onTapGesture { open(task) }
+            }
+            .listStyle(.inset)
+        } else {
+            List {
+                if !results.isEmpty {
+                    Section("Planner") {
+                        ForEach(results) { task in
+                            SearchResultRow(task: task, query: query)
+                                .contentShape(Rectangle())
+                                .onTapGesture { open(task) }
+                        }
+                    }
+                }
+                Section("Kanban") {
+                    ForEach(kanbanResults) { task in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(task.title)
+                            Text([task.project?.name, task.column?.name, task.resource?.displayName].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { open(task) }
+                        .accessibilityIdentifier("search-kanban-\(task.title)")
+                    }
+                }
             }
             .listStyle(.inset)
         }
@@ -75,7 +113,14 @@ struct SearchView: View {
     }
 
     private func openFirst() {
-        if let first = results.first { open(first) }
+        if let first = results.first { open(first) } else if let card = kanbanResults.first { open(card) }
+    }
+
+    /// Opens the card's board in the Kanban module and highlights it.
+    private func open(_ card: KanbanTask) {
+        guard let project = card.project else { return }
+        app.revealKanban(taskID: card.id, projectID: project.id)
+        dismiss()
     }
 
     /// Jump to the task in place: reveal it (week view, select + flash its day/

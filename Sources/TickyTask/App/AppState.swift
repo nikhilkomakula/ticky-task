@@ -65,6 +65,8 @@ final class AppState {
     /// Bumped by a restore: the Kanban module is rebuilt, dropping sheets that hold replaced rows.
     var kanbanRestoreToken = 0
     @ObservationIgnored let kanbanMetrics = KanbanMetricsCache()
+    /// ⌘Z / ⇧⌘Z for the board on screen, if any.
+    @ObservationIgnored var kanbanBoardActions: KanbanBoardActions?
 
     private let calendar: Calendar
 

@@ -643,8 +643,87 @@ struct KanbanService {
         try setRelation(task, field: "dependsOn", ids: prerequisites.map(\.id))
     }
 
-    func archiveTask(_ task: KanbanTask) throws { try setArchived(task, archived: true) }
-    func restoreTask(_ task: KanbanTask) throws { try setArchived(task, archived: false) }
+    func archiveTask(_ task: KanbanTask) throws { try setArchived([task], archived: true) }
+    func restoreTask(_ task: KanbanTask) throws { try setArchived([task], archived: false) }
+
+    // MARK: - Bulk (one grouped entry each, design 01 §2.2)
+
+    /// Archives or restores several cards in one entry.
+    func setArchived(_ tasks: [KanbanTask], _ archived: Bool) throws { try setArchived(tasks, archived: archived) }
+
+    /// The same field values on several cards, in one entry.
+    func editMany(_ tasks: [KanbanTask], _ values: [TaskField: KanbanValue?]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        let project = try sameProject(tasks)
+        try Self.checkEdit(values)
+        let changes = tasks.flatMap { task in
+            values.compactMap { field, value -> KanbanFieldChange? in
+                let old = taskValue(task, field.rawValue)
+                return old == value ? nil : KanbanFieldChange(entity: .task, id: task.id, field: field.rawValue, old: old, new: value)
+            }
+        }.sorted { ($0.id.uuidString, $0.field) < ($1.id.uuidString, $1.field) }
+        guard !changes.isEmpty else { return }
+        let data = try KanbanActivityPayload(changes: changes).encoded()
+        changes.forEach { setTask($0, in: project) }
+        let stamp = now()
+        let changed = Set(changes.map(\.id))
+        tasks.filter { changed.contains($0.id) }.forEach { $0.updatedAt = stamp }
+        try save(project, kind: .edited, taskIDs: tasks.map(\.id).filter(changed.contains),
+                 summary: "Edited \(changed.count) cards", encodedPayload: data)
+    }
+
+    /// Adds `label` to (or removes it from) several cards, in one entry.
+    func setLabel(_ label: KanbanLabel, on tasks: [KanbanTask], _ present: Bool) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        let project = try sameProject(tasks)
+        guard label.project?.id == project.id else { throw KanbanServiceError.invariant("Labels stay within a board.") }
+        let changes = tasks.compactMap { task -> KanbanFieldChange? in
+            var ids = Set(task.labels.map(\.id))
+            if present { ids.insert(label.id) } else { ids.remove(label.id) }
+            let old = taskValue(task, "labels"), new = KanbanValue.uuids(ids.sorted { $0.uuidString < $1.uuidString })
+            return old == new ? nil : KanbanFieldChange(entity: .task, id: task.id, field: "labels", old: old, new: new)
+        }
+        guard !changes.isEmpty else { return }
+        let data = try KanbanActivityPayload(changes: changes).encoded()
+        changes.forEach { setTask($0, in: project) }
+        let stamp = now()
+        let changed = Set(changes.map(\.id))
+        tasks.filter { changed.contains($0.id) }.forEach { $0.updatedAt = stamp }
+        try save(project, kind: .edited, taskIDs: tasks.map(\.id).filter(changed.contains),
+                 summary: "\(present ? "Labelled" : "Unlabelled") \(changed.count) cards \(label.name)", encodedPayload: data)
+    }
+
+    /// Puts these cards of one cell in this order (a reorder under a non-manual sort, from
+    /// the order on screen). Cards the view hides keep their places; the whole cell is then
+    /// renumbered densely, so no two share a position. One entry.
+    func arrange(_ ordered: [KanbanTask]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        let project = try sameProject(ordered)
+        guard let first = ordered.first, ordered.allSatisfy({ $0.archivedAt == nil && $0.column?.id == first.column?.id && $0.resource?.id == first.resource?.id })
+        else { throw KanbanServiceError.invariant("Those cards aren't in one cell.") }
+        let cell = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == first.column?.id && $0.resource?.id == first.resource?.id }
+            .sorted { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }
+        let requested = Set(ordered.map(\.id))
+        var queue = ordered[...]
+        let result = cell.map { card -> KanbanTask in requested.contains(card.id) ? queue.popFirst() ?? card : card }
+        let transitions = result.enumerated().compactMap { index, task -> KanbanTransition? in
+            guard task.sortIndex != Double(index) else { return nil }
+            var to = placement(task)
+            to.sortIndex = Double(index)
+            return KanbanTransition(taskID: task.id, from: placement(task), to: to)
+        }
+        guard !transitions.isEmpty else { return }
+        let data = try KanbanActivityPayload(transitions: transitions).encoded()
+        applyTransitions(transitions, in: project)
+        try save(project, kind: .moved, taskIDs: transitions.map(\.taskID), summary: "Reordered \(transitions.count) cards", encodedPayload: data)
+    }
+
+    private func sameProject(_ tasks: [KanbanTask]) throws -> KanbanProject {
+        guard let project = tasks.first?.project, tasks.allSatisfy({ $0.project?.id == project.id }) else {
+            throw KanbanServiceError.invariant("Pick cards on one board.")
+        }
+        return project
+    }
 
     /// Hard-deletes a card (from the Archive view), keeping a graph that Revert can re-insert.
     func deleteTask(_ task: KanbanTask) throws {
@@ -752,6 +831,15 @@ struct KanbanService {
         try saveOrUndo()
         if recordAsUserOperation { history?.recordUserOperation(entry.id, project: project.id) }
         return entry
+    }
+
+    /// Whether to offer Revert on `activity`: not already reverted, after any restore, and not
+    /// an informational entry. (Revert still checks for newer changes when it runs.)
+    static func offersRevert(_ activity: KanbanActivity) -> Bool {
+        guard activity.revertedByActivityID == nil, let project = activity.project, activity.seq > project.historyBoundarySeq,
+              let kind = KanbanActivityKind(rawValue: activity.kindRaw), ![.memberArchived, .scheduled].contains(kind),
+              let payload = try? KanbanActivityPayload.decode(activity.payload) else { return false }
+        return !(kind == .structure && payload.changes.isEmpty && payload.graph == nil)
     }
 
     /// ⌘Z: reverts the newest user operation on the board's undo stack.
@@ -932,30 +1020,43 @@ struct KanbanService {
 
     // MARK: - Internals: archive and relations
 
-    private func setArchived(_ task: KanbanTask, archived: Bool) throws {
+    private func setArchived(_ tasks: [KanbanTask], archived: Bool) throws {
         try RecurrenceMaterializer.checkpoint(context)
-        guard let project = task.project, (task.archivedAt == nil) == archived else { return }
+        let project = try sameProject(tasks)
+        let affected = tasks.filter { ($0.archivedAt == nil) == archived }
+        guard !affected.isEmpty else { return }
         let stamp = archived ? now() : nil
-        let change = KanbanFieldChange(entity: .task, id: task.id, field: "archivedAt",
-                                       old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date))
+        var changes: [KanbanFieldChange] = [], transitions: [KanbanTransition] = []
         // A card coming back must fit the board as it is now: complete exactly when its
-        // column is Done, and Unassigned if its membership was archived meanwhile.
-        var transitions: [KanbanTransition] = []
-        if !archived {
-            var to = placement(task)
-            if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
-            if let resource = task.resource, resource.archivedAt != nil {
-                to.resourceID = nil
-                to.sortIndex = (project.tasks.filter { $0.id != task.id && $0.archivedAt == nil && $0.column?.id == task.column?.id && $0.resource == nil }
-                    .map(\.sortIndex).max() ?? -1) + 1
-            }
-            if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
+        // column is Done, Unassigned if its membership was archived meanwhile, and at the end
+        // of the cell it lands in (its old position may have been reused), in its old order.
+        struct Cell: Hashable { let column: UUID?; let resource: UUID? }
+        var next: [Cell: Double] = [:]
+        let comingBack = Set(affected.map(\.id))
+        for task in affected {
+            changes.append(KanbanFieldChange(entity: .task, id: task.id, field: "archivedAt",
+                                             old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date)))
         }
-        let data = try KanbanActivityPayload(transitions: transitions, changes: [change]).encoded()
+        if !archived {
+            for task in affected.sorted(by: { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }) {
+                var to = placement(task)
+                if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
+                if let resource = task.resource, resource.archivedAt != nil { to.resourceID = nil }
+                let cell = Cell(column: task.column?.id, resource: to.resourceID)
+                let position: Double = next[cell] ?? ((project.tasks.filter { card in
+                    !comingBack.contains(card.id) && card.archivedAt == nil && card.column?.id == cell.column && card.resource?.id == cell.resource
+                }.map(\.sortIndex).max() ?? -1) + 1)
+                to.sortIndex = position
+                next[cell] = position + 1
+                if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
+            }
+        }
+        let data = try KanbanActivityPayload(transitions: transitions, changes: changes).encoded()
         applyTransitions(transitions, in: project)
-        task.archivedAt = stamp
-        try save(project, kind: archived ? .archived : .restored, taskIDs: [task.id],
-                 summary: "\(archived ? "Archived" : "Restored") \(task.title)", encodedPayload: data)
+        affected.forEach { $0.archivedAt = stamp }
+        let summary = affected.count == 1 ? "\(archived ? "Archived" : "Restored") \(affected[0].title)"
+            : "\(archived ? "Archived" : "Restored") \(affected.count) cards"
+        try save(project, kind: archived ? .archived : .restored, taskIDs: affected.map(\.id), summary: summary, encodedPayload: data)
     }
 
     private func setRelation(_ task: KanbanTask, field: String, ids: [UUID]) throws {

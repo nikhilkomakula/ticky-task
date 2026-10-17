@@ -4,7 +4,7 @@ import Foundation
 /// applies its inverse here first and is refused if the result would break one, before
 /// anything in the store changes.
 struct KanbanInvariants {
-    struct Card { var column: UUID?; var resource: UUID?; var live: Bool; var completed: Bool }
+    struct Card { var column: UUID?; var resource: UUID?; var live: Bool; var completed: Bool; var sortIndex: Double = 0 }
     struct Membership { var person: UUID?; var active: Bool; var start: Date? = nil; var end: Date? = nil }
 
     private var archivedPeople: Set<UUID> = []
@@ -26,7 +26,8 @@ struct KanbanInvariants {
             memberships[r.id] = Membership(person: r.person?.id, active: r.archivedAt == nil, start: r.startDate, end: r.endDate)
         }
         for t in project.tasks {
-            cards[t.id] = Card(column: t.column?.id, resource: t.resource?.id, live: t.archivedAt == nil, completed: t.completedAt != nil)
+            cards[t.id] = Card(column: t.column?.id, resource: t.resource?.id, live: t.archivedAt == nil, completed: t.completedAt != nil,
+                               sortIndex: t.sortIndex)
             dependencies[t.id] = Set(t.dependsOn.map(\.id))
         }
     }
@@ -51,7 +52,8 @@ struct KanbanInvariants {
                 // A live card only goes back onto an active membership (as `reinsert` does).
                 let active = t.resourceId.map { next.memberships[$0]?.active == true } ?? false
                 let resource = t.archivedAt != nil || active ? t.resourceId : nil
-                next.cards[t.id] = Card(column: t.columnId, resource: resource, live: t.archivedAt == nil, completed: t.completedAt != nil)
+                next.cards[t.id] = Card(column: t.columnId, resource: resource, live: t.archivedAt == nil, completed: t.completedAt != nil,
+                                        sortIndex: t.sortIndex)
                 next.placed.insert(t.id)
                 next.dependencies[t.id] = Set(t.dependsOnIds)
             }
@@ -61,6 +63,7 @@ struct KanbanInvariants {
             next.cards[t.taskID]?.column = t.to.columnID
             next.cards[t.taskID]?.resource = t.to.resourceID
             next.cards[t.taskID]?.completed = t.to.completedAt != nil
+            next.cards[t.taskID]?.sortIndex = t.to.sortIndex
             next.placed.insert(t.taskID)
         }
         for change in payload.changes {
@@ -101,6 +104,16 @@ struct KanbanInvariants {
                 return kind == KanbanColumnKind.done.rawValue
                     ? "a card would sit in a Done column without being complete"
                     : "a card would be complete outside a Done column"
+            }
+        }
+        // A card put back mustn't land on a live card's position (a reorder since reused it).
+        for id in placed {
+            guard let card = cards[id], card.live else { continue }
+            if cards.contains(where: { other in
+                other.key != id && other.value.live && other.value.column == card.column && other.value.resource == card.resource
+                    && other.value.sortIndex == card.sortIndex && !placed.contains(other.key)
+            }) {
+                return "a card would share its position with another; move it there instead"
             }
         }
         for column in kindChanged where cards.values.contains(where: { $0.column == column }) {
