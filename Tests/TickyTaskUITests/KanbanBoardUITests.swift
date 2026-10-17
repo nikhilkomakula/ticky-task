@@ -366,9 +366,14 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5), "the card exists before delete")
         // Hover to reveal the delete button
         card.hover()
-        let deleteButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-delete-'")).firstMatch
-        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), "the delete button appears on hover")
-        deleteButton.click()
+        // Every card keeps its (hidden) buttons, so take the shown one on this card.
+        let candidates = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-delete-'"))
+        XCTAssertTrue(candidates.firstMatch.waitForExistence(timeout: 5), "delete buttons exist")
+        let deleteButton = eventually {
+            candidates.allElementsBoundByIndex.contains { isInside($0, card) && $0.isHittable }
+        } ? candidates.allElementsBoundByIndex.first { isInside($0, card) && $0.isHittable } : nil
+        XCTAssertNotNil(deleteButton, "the delete button appears on hover")
+        deleteButton?.click()
         // Confirm in the dialog
         let deleteConfirm = app.sheets.buttons["Delete Card"].firstMatch
         XCTAssertTrue(deleteConfirm.waitForExistence(timeout: 5), "the delete confirmation dialog appears")
