@@ -72,6 +72,7 @@ struct TaskRowView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
+                        .help("Notes")
                         .accessibilityLabel("Has notes")
                         .accessibilityIdentifier("notesIcon")
                 }

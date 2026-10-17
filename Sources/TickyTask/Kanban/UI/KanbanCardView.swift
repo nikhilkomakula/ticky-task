@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SwiftData
 
 /// A board card, in the planner row's visual language (design 01 §5): Critical flag,
 /// priority glyph, title, then labels, due date, estimate, Jira key, blocked and
@@ -9,43 +10,97 @@ struct KanbanCardView: View {
     let project: KanbanProject
     var isSelected = false
     var onOpen: () -> Void = {}
+    var onDelete: (() -> Void)? = nil
+    var isInDragPreview: Bool = false
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
     @AppStorage("compactView") private var compact = false
+    @State private var isHovering = false
+    @FocusState private var isFocused: Bool
 
     private var priority: TaskPriority { TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low }
+
+    /// Helper for notes presence: decode rich notes if present, otherwise use trimmed plain text.
+    private var hasNotes: Bool {
+        if let richData = task.notesRich,
+           let doc = try? JSONDecoder().decode(NotesDocument.self, from: richData) {
+            return !doc.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         let _ = app.kanbanClock   // due-date colours follow the day
         let highlighted = app.highlightedKanbanTaskID == task.id
-        VStack(alignment: .leading, spacing: compact ? 3 : 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if task.isCritical {
-                    Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(.red)
-                        .accessibilityLabel("Critical")
+
+        ZStack(alignment: .topTrailing) {
+            // Main card content (the draggable part)
+            VStack(alignment: .leading, spacing: compact ? 3 : 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    if task.isCritical {
+                        Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(.red)
+                            .help("Critical")
+                            .accessibilityLabel("Critical")
+                    }
+                    Image(systemName: priority.symbol).font(.system(size: 11)).foregroundStyle(priority.tint)
+                        .help(priority.label.lowercased() == "low" ? "Low priority" : priority.label.lowercased() == "medium" ? "Medium priority" : "High priority")
+                        .accessibilityLabel("\(priority.label) priority")
+                    Text(task.title)
+                        .font(.system(size: 13))
+                        .lineLimit(compact ? 2 : 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // Reserve 52pt for hover buttons (not visible, just space)
+                    if !isInDragPreview {
+                        Color.clear.frame(width: 52, height: 22)
+                    }
                 }
-                Image(systemName: priority.symbol).font(.system(size: 11)).foregroundStyle(priority.tint)
-                    .accessibilityLabel("\(priority.label) priority")
-                Text(task.title)
-                    .font(.system(size: 13))
-                    .lineLimit(compact ? 2 : 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !task.labels.isEmpty { labels }
+                metadata
             }
-            if !task.labels.isEmpty { labels }
-            metadata
+            .padding(.vertical, compact ? 4 : 6)
+            .padding(.horizontal, 8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                                                    lineWidth: highlighted || isSelected ? 2 : 1))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+
+            // Hover actions overlay (OUTSIDE gesture subtree)
+            if !isInDragPreview && (isHovering || isFocused) {
+                HStack(spacing: 4) {
+                    Button(action: onOpen) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11))
+                    }
+                    .help("Edit card")
+                    .accessibilityLabel("Edit card")
+                    .accessibilityIdentifier("kanban-card-edit-\(task.id)")
+
+                    if let onDelete {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 11))
+                        }
+                        .help("Delete card")
+                        .accessibilityLabel("Delete card")
+                        .accessibilityIdentifier("kanban-card-delete-\(task.id)")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
+                .frame(width: 52, height: 22)
+            }
         }
-        .padding(.vertical, compact ? 4 : 6)
-        .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
-                                                                lineWidth: highlighted || isSelected ? 2 : 1))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeInOut(duration: 0.2), value: highlighted)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onOpen)
+        .onHover { isHovering = $0 }
+        .focused($isFocused)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Edit", onOpen)
-        .accessibilityIdentifier("kanban-card-\(task.title)")
+        .accessibilityAction(named: "Delete") { onDelete?() }
+        .accessibilityIdentifier("kanban-card-\(task.id)")
     }
 
     private var labels: some View {
@@ -65,7 +120,7 @@ struct KanbanCardView: View {
     private var metadata: some View {
         let subtasks = task.subtasks
         let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
-            || !task.notes.isEmpty || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
+            || hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
             HStack(spacing: 6) {
                 if let due = task.dueDate { dueLabel(due) }
@@ -75,23 +130,28 @@ struct KanbanCardView: View {
                 if let key = task.jiraKey { jiraChip(key) }
                 if task.isBlocked {
                     Image(systemName: "hand.raised.fill").foregroundStyle(.red)
-                        .help(task.blockedReason.map { "Blocked: \($0)" } ?? "Blocked")
+                        .help("Blocked")
                         .accessibilityLabel("Blocked")
                 }
                 if !task.dependsOn.isEmpty {
-                    Image(systemName: "link").help("Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))")
+                    Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
+                        .help("Dependencies")
                         .accessibilityLabel("Has dependencies")
                 }
                 Spacer(minLength: 0)
-                if !task.notes.isEmpty {
-                    Image(systemName: "note.text").accessibilityLabel("Has notes")
+                if hasNotes {
+                    Image(systemName: "note.text").foregroundStyle(.secondary)
+                        .help("Notes")
+                        .accessibilityLabel("Has notes")
+                        .accessibilityIdentifier("kanban-notes-\(task.id)")
                 }
                 if !subtasks.isEmpty {
                     Text("\(subtasks.filter(\.isDone).count)/\(subtasks.count)")
                         .monospacedDigit()
                         .padding(.horizontal, 5)
                         .background(Capsule().fill(.quaternary))
-                        .accessibilityLabel("\(subtasks.filter(\.isDone).count) of \(subtasks.count) subtasks done")
+                        .help("Steps")
+                        .accessibilityLabel("\(subtasks.filter(\.isDone).count) of \(subtasks.count) steps done")
                 }
             }
             .font(.caption2)
@@ -105,9 +165,11 @@ struct KanbanCardView: View {
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()), to: calendar.startOfDay(for: due)).day ?? 0
         let open = task.column?.kind != .done
         let color: Color = !open ? .secondary : days < 0 ? .red : days <= project.dueSoonThresholdDays ? .orange : .secondary
-        return Label(due.formatted(.dateTime.month(.abbreviated).day()), systemImage: "calendar")
+        let helpText = open && days < 0 ? "Overdue" : days > 0 && days <= project.dueSoonThresholdDays ? "Due soon" : "Due date"
+        return Label(due.formatted(.dateTime.month(.abbreviated).day()), systemImage: days < 0 && open ? "exclamationmark.circle.fill" : days > 0 && days <= project.dueSoonThresholdDays && open ? "clock.fill" : "calendar")
             .labelStyle(.titleAndIcon)
             .foregroundStyle(color)
+            .help(helpText)
             .accessibilityLabel(open && days < 0 ? "Overdue, due \(due.formatted(date: .abbreviated, time: .omitted))"
                                 : "Due \(due.formatted(date: .abbreviated, time: .omitted))")
     }
@@ -121,7 +183,7 @@ struct KanbanCardView: View {
                 .background(Capsule().strokeBorder(.secondary.opacity(0.5)))
         }
         .buttonStyle(.plain)
-        .help("Open \(key) in Jira")
+        .help("Open Jira")
         .accessibilityLabel("Jira issue \(key)")
         .accessibilityAddTraits(.isButton)
     }

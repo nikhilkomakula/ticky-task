@@ -558,32 +558,47 @@ struct KanbanColumnHeader: View {
     var drag: BoardDragController?
 
     var body: some View {
-        // Red while over its limit, or while a drag would put it over.
         let over = (column.wipLimit.map { count > $0 } ?? false) || drag?.wipNote?.columnID == column.id
-        HStack(spacing: 6) {
-            Circle()
-                .fill(KanbanUI.color(column.colorHex) ?? (column.kind == .done ? .green : .secondary))
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-            Text(column.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-            if let limit = column.wipLimit {
-                Text("\(count)/\(limit)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(over ? .red : .secondary)
-            } else {
-                Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: style.symbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(style.effectiveAccent)
+                    .help(style.tooltip)
+                    .accessibilityHidden(true)
+                Text(column.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                if let limit = column.wipLimit {
+                    Text("\(count)/\(limit)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(over ? .red : .secondary)
+                } else {
+                    Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                if let hours {
+                    Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
             }
-            if let hours {
-                Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            // 3pt accent rule at bottom
+            .frame(height: 40)
+            .frame(maxWidth: .infinity)
+            // Light wash (6%) of the accent
+            .background(style.effectiveAccent.opacity(0.06))
+            // Bottom accent border
+            .overlay(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 0)
+                    .fill(style.effectiveAccent)
+                    .frame(height: 3)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(column.name), \(count) cards\(column.wipLimit.map { ", limit \($0)" } ?? "")\(over ? ", over the limit" : "")")
+        .accessibilityLabel("\(column.name), \(style.kindName), \(count) cards\(column.wipLimit.map { ", limit \($0)" } ?? "")\(over ? ", over the limit" : "")")
         .accessibilityIdentifier("kanban-colhdr-\(column.name)")
     }
 }
