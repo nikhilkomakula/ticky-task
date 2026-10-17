@@ -17,6 +17,7 @@ struct KanbanTimelineView: View {
         let start: Date
         let end: Date
         let column: String
+        let columnID: UUID
         let overdue: Bool
     }
 
@@ -34,10 +35,18 @@ struct KanbanTimelineView: View {
             let end = calendar.date(byAdding: .day, value: 1, to: max(a, b)) ?? max(a, b)
             let open = task.column?.kind != .done
             return Bar(id: task.id, title: task.title, person: task.resource.flatMap { people[$0.id] } ?? "Unassigned",
-                       start: min(a, b), end: end, column: task.column?.name ?? "", overdue: open && (task.dueDate.map { calendar.startOfDay(for: $0) < today } ?? false))
+                       start: min(a, b), end: end, column: task.column?.name ?? "", columnID: task.column?.id ?? UUID(),
+                       overdue: open && (task.dueDate.map { calendar.startOfDay(for: $0) < today } ?? false))
         }
         .sorted { ($0.person, $0.start) < ($1.person, $1.start) }
         let undated = cards.count - bars.count
+
+        // Build column style map for colouring bars.
+        let columnMap = Dictionary(project.orderedColumns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let columnStyleMap = Dictionary(project.orderedColumns.map { column in
+            (column.name, KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent)
+        }, uniquingKeysWith: { a, _ in a })
+
         VStack(alignment: .leading, spacing: 8) {
             if bars.isEmpty {
                 ContentUnavailableView("Nothing scheduled", systemImage: "calendar",
@@ -48,7 +57,7 @@ struct KanbanTimelineView: View {
                     RuleMark(x: .value("Today", today)).foregroundStyle(.secondary).lineStyle(StrokeStyle(dash: [3, 3]))
                     ForEach(bars) { bar in
                         BarMark(xStart: .value("Start", bar.start), xEnd: .value("End", bar.end), y: .value("Person", bar.person))
-                            .foregroundStyle(by: .value("Column", bar.column))
+                            .foregroundStyle(columnStyleMap[bar.column] ?? .gray)
                             .opacity(bar.overdue ? 1 : 0.85)
                             .annotation(position: .overlay, alignment: .leading) {
                                 Text(bar.title)
@@ -57,7 +66,7 @@ struct KanbanTimelineView: View {
                                     .foregroundStyle(.primary)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
-                                    .background(Color.accentColor.opacity(0.2))
+                                    .background((columnStyleMap[bar.column] ?? .accentColor).opacity(0.2))
                                     .cornerRadius(2)
                             }
                             .accessibilityLabel(bar.title)

@@ -23,13 +23,13 @@ struct KanbanDashboardView: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 420), spacing: 12, alignment: .top)], spacing: 12) {
                 DashboardCard(title: "Load vs capacity", id: "load") {
-                    LoadChart(s: s, members: members, open: { id in open { $0.openOnly = true; if let id { $0.resourceIDs = [id] } else { $0.unassigned = true } } })
+                    LoadChart(s: s, members: members, styleMap: columnStyleMap(s), open: { id in open { $0.openOnly = true; if let id { $0.resourceIDs = [id] } else { $0.unassigned = true } } })
                 }
                 DashboardCard(title: "Capacity, next 12 weeks", id: "heatmap") {
                     HeatmapChart(s: s, members: members, open: { id in open { $0.openOnly = true; $0.resourceIDs = [id] } })
                 }
                 DashboardCard(title: hours ? "Hours by column" : "Tasks by column", id: "columns") {
-                    ColumnsChart(s: s, open: { id in open { $0.columnIDs = [id] } })
+                    ColumnsChart(s: s, styleMap: columnStyleMap(s), open: { id in open { $0.columnIDs = [id] } })
                 }
                 DashboardCard(title: "Unassigned backlog", id: "backlog", action: {
                     open { filter in filter.unassigned = true; filter.columnIDs = Set(s.columns.filter { $0.kind == .backlog }.map(\.id)) }
@@ -53,7 +53,7 @@ struct KanbanDashboardView: View {
                 DashboardCard(title: "Blocked", id: "blocked", action: { open { $0.openOnly = true; $0.blockedOnly = true } }) {
                     BlockedList(blocked: KanbanMetrics.blockedTasks(s), names: names)
                 }
-                DashboardCard(title: "Cumulative flow, 90 days", id: "cfd") { FlowChart(days: flow, hours: hours) }
+                DashboardCard(title: "Cumulative flow, 90 days", id: "cfd") { FlowChart(days: flow, s: s, project: project, hours: hours) }
                 DashboardCard(title: "Completed work (by latest completion)", id: "throughput",
                               subtitle: "Reopened work moves out of earlier weeks") { ThroughputChart(weeks: app.kanbanMetrics.throughput(of: project, key: key, calendar: calendar)) }
                 DashboardCard(title: "Age of work in progress", id: "aging") {
@@ -70,6 +70,20 @@ struct KanbanDashboardView: View {
 
     private var labelNames: [UUID: String] {
         Dictionary(project.labels.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Builds a map from column display name to its effective accent colour.
+    private func columnStyleMap(_ snapshot: MetricsSnapshot) -> [String: Color] {
+        let names = KanbanUI.uniqueNames(snapshot.columns.map { ($0.id, $0.name) }, reserved: [])
+        let liveColumns = Dictionary(project.orderedColumns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var map: [String: Color] = [:]
+        for column in snapshot.columns {
+            let displayName = names[column.id] ?? column.name
+            let liveColumn = liveColumns[column.id]
+            let style = KanbanColumnStyle(kind: column.kind, customColorHex: liveColumn?.colorHex)
+            map[displayName] = style.effectiveAccent
+        }
+        return map
     }
 
     /// Opens the board with a filter for what the chart counts. The metrics count live cards
@@ -130,6 +144,7 @@ private let oneDecimal = FloatingPointFormatStyle<Double>.number.precision(.frac
 private struct LoadChart: View {
     let s: MetricsSnapshot
     let members: [UUID: String]
+    let styleMap: [String: Color]
     var open: (UUID?) -> Void
 
     struct Bar: Identifiable {
@@ -158,6 +173,7 @@ private struct LoadChart: View {
                 BarMark(x: .value("Load", bar.load), y: .value("Person", bar.person))
                     .foregroundStyle(by: .value("Column", bar.column))
             }
+            .chartForegroundStyleScale(domain: styleMap.keys.sorted(), range: styleMap.keys.sorted().map { styleMap[$0] ?? .gray })
             .frame(height: CGFloat(max(rows.count, 2)) * 28 + 30)
             ForEach(rows, id: \.memberID) { row in
                 Button { open(row.memberID) } label: {
@@ -258,6 +274,7 @@ private struct HeatmapChart: View {
 
 private struct ColumnsChart: View {
     let s: MetricsSnapshot
+    let styleMap: [String: Color]
     var open: (UUID) -> Void
 
     struct Bar: Identifiable {
@@ -275,6 +292,7 @@ private struct ColumnsChart: View {
         } else {
             Chart(bars) { bar in
                 BarMark(x: .value("Column", bar.name), y: .value(hours ? "Hours" : "Cards", bar.value))
+                    .foregroundStyle(styleMap[bar.name] ?? .gray)
                     .annotation(position: .top) { Text("\(bar.value.formatted(oneDecimal))\(hours ? "h" : "")").font(.caption2) }
             }
             .frame(height: 160)
@@ -500,6 +518,8 @@ private struct HygieneList: View {
 
 private struct FlowChart: View {
     let days: [KanbanReplay.Day]
+    let s: MetricsSnapshot
+    let project: KanbanProject
     let hours: Bool
 
     struct Point: Identifiable {
@@ -509,8 +529,6 @@ private struct FlowChart: View {
         let value: Double
     }
 
-    private static let palette: [Color] = [.green, .blue, .orange, .purple, .teal, .pink, .indigo, .brown, .mint, .cyan]
-
     var body: some View {
         // One label per column id (names may repeat), with deleted columns marked and grey.
         var seen = Set<UUID>(), columns: [(id: UUID, name: String, deleted: Bool)] = []
@@ -519,7 +537,22 @@ private struct FlowChart: View {
         }
         let labels = KanbanUI.uniqueNames(columns.map { ($0.id, $0.name) }, reserved: [])
         let domain = columns.map { labels[$0.id] ?? $0.name }
-        let range = columns.enumerated().map { index, column in column.deleted ? Color.gray.opacity(0.5) : Self.palette[index % Self.palette.count] }
+
+        // Build colour map from live columns or grey for deleted.
+        let liveColumns = Dictionary(project.orderedColumns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let metricColumns = Dictionary(s.columns.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let range = columns.map { column -> Color in
+            if column.deleted {
+                return Color.gray.opacity(0.5)
+            } else {
+                let liveColumn = liveColumns[column.id]
+                let metricColumn = metricColumns[column.id]
+                let kind = metricColumn?.kind ?? .backlog
+                let style = KanbanColumnStyle(kind: kind, customColorHex: liveColumn?.colorHex)
+                return style.effectiveAccent
+            }
+        }
+
         // Every column on every day (zero when it has no cards), so a band drops to zero
         // instead of bridging the days it was empty.
         let points: [Point] = days.flatMap { day in

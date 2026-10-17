@@ -69,7 +69,7 @@ struct KanbanRowHeader: View {
 
     private func icons(_ resource: KanbanResource) -> some View {
         let contractor = resource.person?.employment == .contractor
-        let partTime = resource.assignment == .partTime
+        let partTime = resource.effectiveAssignment == .partTime
         let employment = contractor ? "Contractor" : "Employee"
         let assignment = partTime ? "Part-time" : "Full-time"
         let allocation = resource.allocationPercent < 100 ? ", \(resource.allocationPercent)%" : ""
