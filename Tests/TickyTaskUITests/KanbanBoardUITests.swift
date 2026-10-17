@@ -239,4 +239,71 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")) },
                       "⌘→ moves it to the next column")
     }
+
+    // MARK: - Increment 6: filters, List view, bulk, undo, Change Log, search
+
+    func testFilterByTextShowsAChipAndClears() {
+        let app = launch()
+        openPlatform(app)
+        element(app, "kanban-filter").click()
+        let field = element(app, "kanban-filter-text")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText("API\r")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(element(app, "kanban-clear-filters").waitForExistence(timeout: 5), "an active filter shows the chips")
+        XCTAssertTrue(eventually { !element(app, "kanban-card-Triage inbox").exists }, "non-matching cards are hidden")
+        XCTAssertTrue(element(app, "kanban-card-Build API").exists)
+        element(app, "kanban-clear-filters").click()
+        XCTAssertTrue(element(app, "kanban-card-Triage inbox").waitForExistence(timeout: 5), "Clear shows everything again")
+    }
+
+    func testListViewBulkAssignAndUndo() {
+        let app = launch()
+        openPlatform(app)
+        app.radioButtons["List"].firstMatch.click()
+        let row = element(app, "kanban-list-row-Triage inbox")
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the List view shows the cards")
+        row.rightClick()
+        app.menuItems["Assign to"].firstMatch.hover()
+        let mia = app.menuItems["Mia Chen"].firstMatch
+        XCTAssertTrue(mia.waitForExistence(timeout: 5))
+        mia.click()
+        app.radioButtons["Board"].firstMatch.click()
+        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-To Do-Mia Chen")) },
+                      "assigned to Mia")
+        app.typeKey("z", modifierFlags: .command)
+        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-To Do-Unassigned")) },
+                      "⌘Z undoes it")
+    }
+
+    func testChangeLogRevertsACreatedCard() {
+        let app = launch()
+        openPlatform(app)
+        app.typeKey("n", modifierFlags: .command)
+        let field = element(app, "kanban-prompt-field")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText("Temporary\r")
+        XCTAssertTrue(element(app, "kanban-card-Temporary").waitForExistence(timeout: 5))
+        element(app, "kanban-change-log").click()
+        let revert = element(app, "kanban-changelog-revert-Added Temporary")
+        XCTAssertTrue(revert.waitForExistence(timeout: 5), "the Change Log lists the new card with Revert")
+        revert.click()
+        element(app, "kanban-changelog-done").click()
+        XCTAssertTrue(eventually { !element(app, "kanban-card-Temporary").exists }, "reverting the creation removes the card")
+    }
+
+    func testSearchFindsACardOnItsBoard() {
+        let app = launch()
+        app.typeKey("f", modifierFlags: .command)
+        let field = app.textFields["search-field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("Load warehouse")
+        let result = element(app, "search-kanban-Load warehouse")
+        XCTAssertTrue(result.waitForExistence(timeout: 5), "Kanban results are listed")
+        result.click()
+        XCTAssertTrue(element(app, "kanban-card-Load warehouse").waitForExistence(timeout: 5), "the Data board opens on the card")
+        XCTAssertTrue(element(app, "kanban-breadcrumb").label.contains("Data") || (element(app, "kanban-breadcrumb").value as? String ?? "").contains("Data"))
+    }
 }
