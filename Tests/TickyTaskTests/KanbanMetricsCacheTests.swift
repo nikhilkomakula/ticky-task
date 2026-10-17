@@ -48,138 +48,58 @@ struct KanbanMetricsCacheTests {
         var activities: [MetricsActivity] { MetricsActivity.records(of: project) }
     }
 
-    @Test("Same key returns cached CFD results")
-    func cacheCFDOnSameKey() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-
-        let flow1 = cache.flow(of: b.project, key: key, calendar: calendar)
-        let flow2 = cache.flow(of: b.project, key: key, calendar: calendar)
-        #expect(flow1 === flow2, "Same key returns the same cached object")
+    private func key(_ generation: Int, _ clock: String = "test") -> KanbanMetricsCache.Key {
+        KanbanMetricsCache.Key(generation: generation, clock: clock, weekStartsMonday: true)
     }
 
-    @Test("Generation change recomputes CFD")
-    func cfdRecomputesOnGenerationChange() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key1 = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-        let key2 = KanbanMetricsCache.Key(generation: 2, clock: "test", weekStartsMonday: true)
-
-        let flow1 = cache.flow(of: b.project, key: key1, calendar: calendar)
-        let flow2 = cache.flow(of: b.project, key: key2, calendar: calendar)
-        #expect(flow1 !== flow2, "Different generation clears cache and recomputes")
+    @Test("Under one key the derived results are served from the cache; a new generation recomputes them")
+    func cachedUntilTheKeyChanges() throws {
+        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        _ = try b.card("A", on: F.date(10, 1))
+        let flow = cache.flow(of: b.project, key: key(1), calendar: calendar)
+        let summary = cache.summary(of: b.project, key: key(1), calendar: calendar)
+        let rows = cache.loadRows(of: b.project, key: key(1), calendar: calendar)
+        _ = try b.card("B", on: F.date(10, 2))   // the board changes, the key doesn't
+        #expect(cache.flow(of: b.project, key: key(1), calendar: calendar) == flow)
+        #expect(cache.summary(of: b.project, key: key(1), calendar: calendar) == summary)
+        #expect(cache.loadRows(of: b.project, key: key(1), calendar: calendar) == rows)
+        #expect(cache.summary(of: b.project, key: key(2), calendar: calendar) != summary, "a new generation sees card B")
+        #expect(cache.flow(of: b.project, key: key(2), calendar: calendar) != flow)
     }
 
-    @Test("CFD cache result equals direct call")
-    func cfdCacheEqualsDirectCall() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-        let snapshot = b.snapshot()
-        let activities = b.activities
-
-        let cached = cache.flow(of: b.project, key: key, calendar: calendar)
-        let direct = R.cfd(snapshot, activities: activities)
-        #expect(cached == direct, "Cached result matches direct computation")
+    @Test("A clock change recomputes too")
+    func clockChangeRecomputes() throws {
+        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        _ = try b.card("A", on: F.date(10, 1))
+        let summary = cache.summary(of: b.project, key: key(1, "day1"), calendar: calendar)
+        _ = try b.card("B", on: F.date(10, 2))
+        #expect(cache.summary(of: b.project, key: key(1, "day2"), calendar: calendar) != summary)
     }
 
-    @Test("Throughput cached separately by weeks parameter")
-    func throughputCachedByWeeks() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-
-        let throughput12 = cache.throughput(of: b.project, key: key, calendar: calendar, weeks: 12)
-        let throughput6 = cache.throughput(of: b.project, key: key, calendar: calendar, weeks: 6)
-        #expect(throughput12 !== throughput6, "Different weeks parameters compute separately")
-        let throughput12Again = cache.throughput(of: b.project, key: key, calendar: calendar, weeks: 12)
-        #expect(throughput12 === throughput12Again, "Same weeks returns cached result")
+    @Test("Cached results equal the direct calls on the cache's own snapshot and log")
+    func cachedEqualsDirect() throws {
+        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        let a = try b.card("A", on: F.date(10, 1))
+        try b.move(a, to: b.doing, on: F.date(10, 3))
+        let k = key(1)
+        let s = cache.snapshot(of: b.project, key: k, calendar: calendar)
+        let log = cache.activities(of: b.project, key: k)
+        #expect(cache.flow(of: b.project, key: k, calendar: calendar) == R.cfd(s, activities: log))
+        #expect(cache.throughput(of: b.project, key: k, calendar: calendar, weeks: 12) == R.throughput(s, activities: log, weeks: 12))
+        #expect(cache.throughput(of: b.project, key: k, calendar: calendar, weeks: 6) == R.throughput(s, activities: log, weeks: 6),
+                "each weeks value is cached on its own")
+        #expect(cache.aging(of: b.project, key: k, calendar: calendar) == R.agingWIP(s, activities: log))
+        #expect(cache.summary(of: b.project, key: k, calendar: calendar) == KanbanMetrics.summary(s))
+        #expect(cache.loadRows(of: b.project, key: k, calendar: calendar) == KanbanMetrics.loadVsCapacity(s))
     }
 
-    @Test("Summary cache result equals direct call")
-    func summaryCacheEqualsDirectCall() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-        let snapshot = b.snapshot()
-
-        let cached = cache.summary(of: b.project, key: key, calendar: calendar)
-        let direct = KanbanMetrics.summary(snapshot)
-        #expect(cached == direct, "Cached summary matches direct computation")
-    }
-
-    @Test("Aging cache result equals direct call")
-    func agingCacheEqualsDirectCall() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-        let snapshot = b.snapshot()
-        let activities = b.activities
-
-        let cached = cache.aging(of: b.project, key: key, calendar: calendar)
-        let direct = R.agingWIP(snapshot, activities: activities)
-        #expect(cached == direct, "Cached aging matches direct computation")
-    }
-
-    @Test("Load rows cache result equals direct call")
-    func loadRowsCacheEqualsDirectCall() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-        let snapshot = b.snapshot()
-
-        let cached = cache.loadRows(of: b.project, key: key, calendar: calendar)
-        let direct = KanbanMetrics.loadVsCapacity(snapshot)
-        #expect(cached == direct, "Cached load rows match direct computation")
-    }
-
-    @Test("Ordered people array preserves ranking across calls")
-    func orderedPeoplePreservesRanking() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key = KanbanMetricsCache.Key(generation: 1, clock: "test", weekStartsMonday: true)
-
-        let people1 = cache.peopleOrdered([b.project], key: key, calendar: calendar)
-        let people2 = cache.peopleOrdered([b.project], key: key, calendar: calendar)
-        #expect(people1 === people2, "Same key returns the same cached ordered people array")
-    }
-
-    @Test("Clock change recomputes all caches")
-    func clockChangeInvalidatesAll() throws {
-        let cache = KanbanMetricsCache()
-        let b = try Board()
-        let _ = try b.card("A", on: F.date(10, 1))
-        let calendar = F.calendar()
-        let key1 = KanbanMetricsCache.Key(generation: 1, clock: "clock1", weekStartsMonday: true)
-        let key2 = KanbanMetricsCache.Key(generation: 1, clock: "clock2", weekStartsMonday: true)
-
-        let flow1 = cache.flow(of: b.project, key: key1, calendar: calendar)
-        let summary1 = cache.summary(of: b.project, key: key1, calendar: calendar)
-        let aging1 = cache.aging(of: b.project, key: key1, calendar: calendar)
-
-        let flow2 = cache.flow(of: b.project, key: key2, calendar: calendar)
-        let summary2 = cache.summary(of: b.project, key: key2, calendar: calendar)
-        let aging2 = cache.aging(of: b.project, key: key2, calendar: calendar)
-
-        #expect(flow1 !== flow2, "Clock change recomputes CFD")
-        #expect(summary1 !== summary2, "Clock change recomputes summary")
-        #expect(aging1 !== aging2, "Clock change recomputes aging")
+    @Test("The ordered people match the rollup, in the same order every time")
+    func orderedPeople() throws {
+        let cache = KanbanMetricsCache(), b = try Board(), calendar = F.calendar()
+        try b.service.addMembership(try b.service.createPerson(name: "Ravi", initials: "RV"), to: b.project)
+        try b.service.addMembership(try b.service.createPerson(name: "Mia", initials: "MI"), to: b.project)
+        let ordered = cache.peopleOrdered([b.project], key: key(1), calendar: calendar)
+        #expect(ordered.count == 2 && cache.peopleOrdered([b.project], key: key(1), calendar: calendar) == ordered)
+        #expect(Set(ordered.map(\.personID)) == Set(cache.people([b.project], key: key(1), calendar: calendar).keys))
     }
 }

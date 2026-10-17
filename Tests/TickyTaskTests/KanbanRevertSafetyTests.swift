@@ -524,22 +524,21 @@ struct KanbanRevertSafetyTests {
         #expect(back.title == "T", "later edits still undo")
     }
 
-    @Test("Restoring multiple placed cards into one cell detects collisions correctly")
+    @Test("Reverting several deletions into one cell gives each card its own position")
     func restoreMultiplePlacedCardsCollisionDetection() throws {
         let b = try board()
-        let a = try b.service.createTask(in: b.project, title: "A", column: b.doing, row: .resource(b.ravi.id))
-        let c = try b.service.createTask(in: b.project, title: "C", column: b.doing, row: .resource(b.ravi.id))
-        let d = try b.service.createTask(in: b.project, title: "D", column: b.doing, row: .resource(b.ravi.id))
-        let aID = a.id, cID = c.id, dID = d.id
-        try b.service.archiveTask(a); try b.service.archiveTask(c); try b.service.archiveTask(d)
-        try b.service.deleteTask(a); try b.service.deleteTask(c); try b.service.deleteTask(d)
-        let deletionSeq = b.project.nextActivitySeq
-        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" }))
-        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" && $0.seq > deletionSeq - 1 }))
-        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" && $0.seq > deletionSeq }))
-        let restored = [aID, cID, dID].compactMap { id in b.project.tasks.first { $0.id == id } }
-        #expect(restored.count == 3, "all three cards restored to different positions in their cell")
+        let cards = try ["A", "C", "D"].map { try b.service.createTask(in: b.project, title: $0, column: b.doing, row: .resource(b.ravi.id)) }
+        let ids = cards.map(\.id)
+        for card in cards { try b.service.deleteTask(card) }
+        let pid = b.project.id
+        let context = try #require(b.project.modelContext)
+        let deletions = try context.fetch(FetchDescriptor<KanbanActivity>(predicate: #Predicate { $0.project?.id == pid }))
+            .filter { $0.kindRaw == KanbanActivityKind.deleted.rawValue }.sorted { $0.seq > $1.seq }
+        #expect(deletions.count == 3)
+        for entry in deletions { try b.service.revert(entry) }
+        let restored = try context.fetch(FetchDescriptor<KanbanTask>()).filter { ids.contains($0.id) }
+        #expect(restored.count == 3)
         #expect(restored.allSatisfy { $0.column?.id == b.doing.id && $0.resource?.id == b.ravi.id })
-        #expect(Set(restored.map(\.sortIndex)).count == 3, "each has a distinct sort index")
+        #expect(Set(restored.map(\.sortIndex)).count == 3, "each has a distinct position")
     }
 }
