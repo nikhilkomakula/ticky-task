@@ -109,7 +109,9 @@ struct KanbanRowHeader: View {
                         Capsule().fill(color).frame(width: geo.size.width * fill)
                     }
                 }
-                .frame(width: 70, height: 6)
+                // Gives way first when the People column is narrowed.
+                .frame(minWidth: 24, maxWidth: 70)
+                .frame(height: 6)
             }
             if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
                 // While a drag hovers: "4 → 6/5".
@@ -122,6 +124,7 @@ struct KanbanRowHeader: View {
                 Text(shortLoad(load, hours: hours))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .fixedSize()
             }
         }
         .help(text + (load.backlogCoverageWeeks.map { " · backlog covers \($0.formatted(.number.precision(.fractionLength(1)))) weeks" } ?? ""))

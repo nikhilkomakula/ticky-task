@@ -1,6 +1,7 @@
 import Foundation
 
-/// A board's remembered view: Board or List, filters, sort and Show Archived (design 01 §5).
+/// A board's remembered view: Board or List, filters, sort, Show Archived and the Board
+/// view's column widths (design 01 §5).
 /// Stored as JSON in `KanbanProject.boardState`; every key is optional, so older or newer
 /// states decode to what they have.
 struct KanbanBoardState: Codable, Equatable, Sendable {
@@ -25,6 +26,10 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
     /// "labels", "estimate"); nil follows `sort`.
     var listSortKey: String?
     var listSortAscending = true
+    /// The People column's width; nil is the default.
+    var rowHeaderWidth: Double?
+    /// Column widths by column id; columns not listed take the default.
+    var columnWidths: [String: Double]?
 
     init() {}
 
@@ -36,6 +41,12 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
         showArchived = (try? c.decodeIfPresent(Bool.self, forKey: .showArchived)) ?? false
         listSortKey = try? c.decodeIfPresent(String.self, forKey: .listSortKey)
         listSortAscending = (try? c.decodeIfPresent(Bool.self, forKey: .listSortAscending)) ?? true
+        // Out-of-range or non-finite widths (a hand-edited or newer file) fall back to what fits.
+        rowHeaderWidth = (try? c.decodeIfPresent(Double.self, forKey: .rowHeaderWidth))
+            .flatMap { $0 }.flatMap { $0.isFinite ? KanbanWidthPolicy.rowHeader.clamp($0) : nil }
+        let widths = ((try? c.decodeIfPresent([String: Double].self, forKey: .columnWidths)) ?? nil)?
+            .compactMapValues { $0.isFinite ? KanbanWidthPolicy.column.clamp($0) : nil }
+        columnWidths = widths?.isEmpty == false ? widths : nil
     }
 
     /// The List view's sort: its own header choice, or the board sort's equivalent.

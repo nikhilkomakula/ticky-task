@@ -6,6 +6,8 @@ import SwiftData
 struct KanbanModuleView: View {
     @Environment(AppState.self) private var app
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @AppStorage(KanbanWidthPolicy.sidebarKey) private var sidebarWidth = KanbanWidthPolicy.sidebar.defaultWidth
+    @State private var live = KanbanLiveWidth()
 
     private var activeBoardID: UUID? {
         guard case let .project(id) = app.kanban.selection, projects.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
@@ -16,9 +18,17 @@ struct KanbanModuleView: View {
         @Bindable var app = app
         HStack(spacing: 0) {
             if app.kanban.showSidebar {
+                let width = CGFloat(KanbanWidthPolicy.sidebar.clamp(sidebarWidth))
                 KanbanSidebar(projects: projects)
-                    .frame(width: 230)
+                    .modifier(KanbanLiveWidthFrame(live: live, slots: [.sidebar], base: { _ in width }))
                 Divider()
+                    // Centred on the divider, above the content on both sides.
+                    .overlay {
+                        KanbanResizeHandle(name: "Sidebar", slot: .sidebar, width: width, policy: .sidebar, live: live,
+                                           onCommit: { sidebarWidth = $0 },
+                                           onReset: { sidebarWidth = KanbanWidthPolicy.sidebar.defaultWidth })
+                    }
+                    .zIndex(1)
             }
             Group {
                 switch app.kanban.selection {
@@ -110,9 +120,6 @@ extension AppState {
 }
 
 enum KanbanUI {
-    static let rowHeaderWidth: CGFloat = 230
-    static let columnWidth: CGFloat = 250
-
     /// The user's calendar with their week start, for the metrics.
     static func calendar(weekStartsMonday: Bool) -> Calendar {
         var calendar = Calendar.current

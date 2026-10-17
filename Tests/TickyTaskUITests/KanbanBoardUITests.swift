@@ -246,6 +246,32 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(eventually { element(app, "kanban-colhdr-Done").frame.minX < element(app, "kanban-colhdr-To Do").frame.minX }, "Done is first now")
     }
 
+    /// Dragging a column's edge widens it, the width survives a relaunch, and a double-click
+    /// puts it back.
+    func testResizeAColumnAndItIsRemembered() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("TickyTaskUITest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ["-uitestStore", dir.appendingPathComponent("TickyTask.store").path]
+
+        var app = launch(store)
+        openPlatform(app)
+        let original = element(app, "kanban-colhdr-To Do").frame.width
+        let handle = element(app, "kanban-resize-To Do column")
+        XCTAssertTrue(handle.waitForExistence(timeout: 5), "the column has a resize handle")
+        let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.2, thenDragTo: start.withOffset(CGVector(dx: 80, dy: 0)))
+        XCTAssertTrue(eventually { element(app, "kanban-colhdr-To Do").frame.width > original + 60 }, "the column widened")
+        let widened = element(app, "kanban-colhdr-To Do").frame.width
+        app.terminate()
+
+        app = launch(store)
+        openPlatform(app)
+        XCTAssertTrue(eventually { abs(element(app, "kanban-colhdr-To Do").frame.width - widened) < 2 }, "the width is remembered")
+        element(app, "kanban-resize-To Do column").doubleClick()
+        XCTAssertTrue(eventually { abs(element(app, "kanban-colhdr-To Do").frame.width - original) < 2 }, "double-click resets it")
+    }
+
     func testKeyboardMovesAFocusedCard() {
         let app = launch()
         openPlatform(app)

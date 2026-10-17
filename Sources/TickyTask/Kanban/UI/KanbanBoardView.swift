@@ -25,6 +25,7 @@ struct KanbanBoardView: View {
     @State private var quickLook: UUID?
     @State private var drag = BoardDragController()
     @State private var position = ScrollPosition()
+    @State private var live = KanbanLiveWidth()
     @FocusState private var focus: KanbanBoardFocus?
     /// ⌘-click selection; a drag or the context menu then acts on all of it.
     @State private var selected: Set<UUID> = []
@@ -39,6 +40,7 @@ struct KanbanBoardView: View {
         // Show Archived adds archived cards, never archived memberships' rows: rows are move targets.
         let snapshot = BoardSnapshot.make(project: project, includeArchived: state.showArchived, includeArchivedRows: false)
         let columns = project.orderedColumns
+        let widths = KanbanBoardWidths(state)
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
         let metrics = app.kanbanMetrics.snapshot(of: project, key: key, calendar: calendar)
@@ -62,14 +64,14 @@ struct KanbanBoardView: View {
                     Section {
                         ForEach(snapshot.rows, id: \.key) { row in
                             let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
-                            boardRow(row, resource: resource, columns: columns, cells: cells,
+                            boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells,
                                      load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
                                      collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs)
                             Divider()
                         }
                         addPersonButton
                     } header: {
-                        columnHeaders(columns, snapshot: snapshot, metrics: metrics)
+                        columnHeaders(columns, widths: widths, snapshot: snapshot, metrics: metrics)
                     }
                 }
             }
@@ -124,7 +126,8 @@ struct KanbanBoardView: View {
 
     // MARK: - Rows
 
-    private func boardRow(_ row: KanbanRowSnapshot, resource: KanbanResource?, columns: [KanbanColumn], cells: [CellKey: [KanbanTask]],
+    private func boardRow(_ row: KanbanRowSnapshot, resource: KanbanResource?, columns: [KanbanColumn], widths: KanbanBoardWidths,
+                          cells: [CellKey: [KanbanTask]],
                           load: KanbanMetrics.LoadRow?, person: KanbanMetrics.PersonRow?,
                           collapsed: Bool, dragIDs: [UUID]) -> some View {
         HStack(alignment: .top, spacing: 0) {
@@ -133,7 +136,7 @@ struct KanbanBoardView: View {
                             onEdit: { editingMembership = resource },
                             onRemove: { archivingMembership = resource })
                 // The full row height, so cards scrolling under it stay covered.
-                .frame(width: KanbanUI.rowHeaderWidth, alignment: .topLeading)
+                .modifier(KanbanLiveWidthFrame(live: live, slots: [.rowHeader], base: widths.width, alignment: .topLeading))
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .opacity(resource.map { drag.isDragging(row: $0.id) } == true ? 0.4 : 1)
@@ -148,13 +151,14 @@ struct KanbanBoardView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
-                    .frame(width: KanbanUI.columnWidth * CGFloat(columns.count), height: 44, alignment: .leading)
+                    .modifier(KanbanLiveWidthFrame(live: live, slots: columns.map { .column($0.id) }, base: widths.width,
+                                                   height: 44, alignment: .leading))
                     // Still a drop target: it reassigns the card and keeps its column.
                     .publishBoardFrame { BoardFrames(rowHeaders: [.init(row: row.key, frame: $0, isSummary: true)]) }
                     .accessibilityIdentifier("kanban-collapsed-\(row.name)")
             } else {
                 ForEach(columns) { column in
-                    KanbanCell(project: project, column: column, row: row,
+                    KanbanCell(project: project, column: column, row: row, width: widths.column(column.id), live: live,
                                tasks: cells[CellKey(column: column.id, row: row.key)] ?? [],
                                drag: drag, focus: $focus, quickLook: $quickLook, selected: selected,
                                dragIDs: dragIDs,
@@ -367,14 +371,20 @@ struct KanbanBoardView: View {
 
     // MARK: - Column headers
 
-    private func columnHeaders(_ columns: [KanbanColumn], snapshot: BoardSnapshot, metrics: MetricsSnapshot) -> some View {
+    private func columnHeaders(_ columns: [KanbanColumn], widths: KanbanBoardWidths, snapshot: BoardSnapshot, metrics: MetricsSnapshot) -> some View {
         HStack(spacing: 0) {
             Text(project.loadMeasure == .hours ? "People · hours this week" : "People · open tasks")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
-                .frame(width: KanbanUI.rowHeaderWidth, height: 40, alignment: .leading)
+                .modifier(KanbanLiveWidthFrame(live: live, slots: [.rowHeader], base: widths.width, height: 40, alignment: .leading))
                 .background(Color(nsColor: .windowBackgroundColor))
+                .overlay(alignment: .trailing) {
+                    KanbanResizeHandle(name: "People column", slot: .rowHeader, width: widths.rowHeader, policy: .rowHeader, live: live,
+                                       isDisabled: drag.isActive,
+                                       onCommit: { width in app.updateBoardState(project, context: context) { $0.setRowHeaderWidth(width) } },
+                                       onReset: { app.updateBoardState(project, context: context) { $0.setRowHeaderWidth(nil) } })
+                }
                 .publishBoardFrame { BoardFrames(corner: $0) }   // inside the shift, so it reports where it's drawn
                 .stickyX(scroll)
                 .zIndex(1)
@@ -383,7 +393,7 @@ struct KanbanBoardView: View {
                 let cards = snapshot.cards.filter { $0.columnID == column.id && !$0.archived }
                 let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
                 KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag)
-                    .frame(width: KanbanUI.columnWidth, height: 40)
+                    .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: widths.width, height: 40))
                     .opacity(drag.isDragging(column: column.id) ? 0.4 : 1)
                     .publishBoardFrame { BoardFrames(columnHeaders: [.init(id: column.id, frame: $0)]) }
                     .boardDraggable(.column(column.id), controller: drag,
@@ -391,6 +401,8 @@ struct KanbanBoardView: View {
                     .focusable()
                     .focused($focus, equals: .column(column.id))
                     .contextMenu { columnMenu(column, index: index, count: columns.count) }
+                    // After the header's drag gesture, so resizing never starts a column drag.
+                    .overlay(alignment: .trailing) { columnResizeHandle(column, widths: widths, columns: columns) }
             }
             Button {
                 prompt = .init(title: "New column", placeholder: "Name") { name in
@@ -407,6 +419,15 @@ struct KanbanBoardView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func columnResizeHandle(_ column: KanbanColumn, widths: KanbanBoardWidths, columns: [KanbanColumn]) -> some View {
+        let ids = columns.map(\.id)
+        return KanbanResizeHandle(name: "\(column.name) column", slot: .column(column.id), width: widths.column(column.id), policy: .column,
+                                  live: live, isDisabled: drag.isActive,
+                                  onCommit: { width in app.updateBoardState(project, context: context) { $0.setColumnWidth(width, for: column.id, keeping: ids) } },
+                                  onReset: { app.updateBoardState(project, context: context) { $0.setColumnWidth(nil, for: column.id, keeping: ids) } },
+                                  onResetAll: { app.updateBoardState(project, context: context) { $0.columnWidths = nil } })
     }
 
     @ViewBuilder
@@ -452,6 +473,8 @@ private struct KanbanCell: View {
     let project: KanbanProject
     let column: KanbanColumn
     let row: KanbanRowSnapshot
+    let width: CGFloat
+    let live: KanbanLiveWidth
     let tasks: [KanbanTask]
     var drag: BoardDragController
     var focus: FocusState<KanbanBoardFocus?>.Binding
@@ -502,7 +525,7 @@ private struct KanbanCell: View {
             .accessibilityIdentifier("kanban-add-card-\(column.name)-\(row.name)")
         }
         .padding(6)
-        .frame(width: KanbanUI.columnWidth, alignment: .top)
+        .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: { _ in width }, alignment: .top))
         // The full row height, so the blank space under short cells is a drop target too.
         .frame(minHeight: 72, maxHeight: .infinity, alignment: .top)
         .background(KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent.opacity(0.06))
