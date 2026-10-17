@@ -22,6 +22,8 @@ struct SettingsView: View {
                 .tabItem { Label("Data", systemImage: "externaldrive") }
             AISettingsView()
                 .tabItem { Label("AI", systemImage: "sparkles") }
+            KanbanSettingsView()
+                .tabItem { Label("Kanban", systemImage: "square.grid.3x2") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }

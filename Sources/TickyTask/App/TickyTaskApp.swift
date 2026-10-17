@@ -42,6 +42,13 @@ struct TickyTaskApp: App {
                 FindTaskCommand(appState: appState)
                 WeeklySummaryCommand(appState: appState)
             }
+            CommandGroup(after: .help) {
+                Button("Keyboard Shortcuts") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    appState.isShortcutsPresented = true
+                }
+                .keyboardShortcut("/", modifiers: .command)
+            }
             CommandGroup(replacing: .undoRedo) {
                 KanbanUndoCommands(appState: appState)
             }

@@ -122,6 +122,7 @@ struct ContentView: View {
         .sheet(isPresented: $app.isWeeklySummaryPresented) {
             WeeklySummarySheet(weekAnchor: app.weekAnchor)
         }
+        .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
     }
 
     /// Keep the drag controller's persistence context + sort config current.
@@ -157,6 +158,7 @@ struct ContentView: View {
         runMaterialize(through: defaultHorizon)   // before carry-forward + reminders so they see occurrences
         runCarryForward()
         AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
+        runKanbanAutoArchive()
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.scheduleEndOfDayReminder(enabled: endOfDayEnabled, minutes: endOfDayMinutes)
@@ -206,8 +208,20 @@ struct ContentView: View {
         }
     }
 
+    /// Settings › Kanban › Archive finished cards automatically (off by default).
+    private func runKanbanAutoArchive() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: KanbanBoardDefaults.autoArchiveEnabledKey, default: false) else { return }
+        do {
+            try app.kanbanService(context).autoArchive(olderThanDays: defaults.integer(forKey: KanbanBoardDefaults.autoArchiveDaysKey, default: 30))
+        } catch {
+            NSLog("TickyTask: Kanban auto-archive failed: \(error.localizedDescription)")
+        }
+    }
+
     private func carryForwardIfDayChanged() {
         guard WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
+        runKanbanAutoArchive()
         runMaterialize(through: defaultHorizon)
         runCarryForward()
     }

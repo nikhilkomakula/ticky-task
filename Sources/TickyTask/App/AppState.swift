@@ -29,6 +29,8 @@ final class AppState {
     var isSearchPresented = false
     /// Whether the Weekly Summary sheet is showing (toolbar button / ⇧⌘Y).
     var isWeeklySummaryPresented = false
+    /// Whether the keyboard shortcuts sheet is showing (Help › Keyboard Shortcuts, ⌘/).
+    var isShortcutsPresented = false
     /// A task to briefly highlight after a search jump. Holds the task's stable
     /// `id` — not the model — so it's safe if the task is later deleted; it
     /// auto-clears after the flash.
@@ -74,6 +76,9 @@ final class AppState {
         self.calendar = calendar
         self.weekAnchor = now
         self.selectedDayKey = WeekMath.dayKey(for: now, calendar: calendar)
+        // Settings › Kanban › Open at launch, among the visible modules.
+        let defaults = UserDefaults.standard
+        module = ModulePolicy(defaults).resolve(defaults.string(forKey: "defaultModule").flatMap(AppModule.init(rawValue:)) ?? .planner)
         // Test/screenshot hook (inert in normal use): start in a given view.
         if ProcessInfo.processInfo.environment["WTD_INITIAL_VIEW"] == "calendar" {
             viewMode = .calendar

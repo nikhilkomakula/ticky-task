@@ -47,11 +47,13 @@ struct KanbanService {
     /// A new board with `template`'s columns and labels. Not undoable (archive it instead);
     /// its first change-log entry records the creation.
     @discardableResult
-    func createProject(name: String, key: String, template: KanbanTemplate = .standard) throws -> KanbanProject {
+    func createProject(name: String, key: String, template: KanbanTemplate = .standard,
+                       defaults: KanbanBoardDefaults = KanbanBoardDefaults()) throws -> KanbanProject {
         try RecurrenceMaterializer.checkpoint(context)
         if let problem = template.problem { throw KanbanServiceError.invariant(problem) }
         let existing = try context.fetch(FetchDescriptor<KanbanProject>())
         let project = KanbanProject(name: name, key: key, sortIndex: (existing.map(\.sortIndex).max() ?? -1) + 1)
+        defaults.apply(to: project)
         context.insert(project)
         for (index, column) in template.columns.enumerated() {
             let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
@@ -82,6 +84,20 @@ struct KanbanService {
         let template = KanbanTemplate(from: project, name: name)
         try KanbanTemplateStore.save(template, defaults)
         return template
+    }
+
+    /// Archives finished cards whose completion is more than `days` days old, on every board
+    /// (one entry per board). Opt-in (Settings › Kanban); never deletes; skipped in a
+    /// recovery session, like the planner's auto-delete.
+    func autoArchive(olderThanDays days: Int, now: Date = Date()) throws {
+        guard days >= 1, !PersistenceRecovery.didRelaunch,
+              let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
+        for project in try context.fetch(FetchDescriptor<KanbanProject>()) where project.archivedAt == nil {
+            let stale = project.tasks.filter { task in
+                task.archivedAt == nil && task.column?.kind == .done && (task.completedAt.map { $0 < cutoff } ?? false)
+            }
+            if !stale.isEmpty { try setArchived(stale, archived: true) }
+        }
     }
 
     /// The board-level settings and appearance that can be edited (and undone).

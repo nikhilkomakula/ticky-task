@@ -244,7 +244,8 @@ struct KanbanNewBoardSheet: View {
         let template = templates.first { $0.id == templateID } ?? .standard
         do {
             let project = try app.kanbanService(context).createProject(
-                name: name.trimmingCharacters(in: .whitespaces), key: key.isEmpty ? Self.key(from: name) : key, template: template)
+                name: name.trimmingCharacters(in: .whitespaces), key: key.isEmpty ? Self.key(from: name) : key, template: template,
+                defaults: KanbanBoardDefaults(UserDefaults.standard))
             app.kanban.selection = .project(project.id)
             dismiss()
         } catch {
