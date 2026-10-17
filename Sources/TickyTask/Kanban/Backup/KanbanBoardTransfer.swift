@@ -91,18 +91,22 @@ enum KanbanBoardTransfer {
         /// the merge target, or from earlier in the file, including an earlier board merged into
         /// the same one) and its allocation, role and dates are dropped. Mirrors `apply`.
         func reusedMemberships(projects: [KanbanProject], people here: [KanbanPerson]) -> [UUID: [String]] {
-            let archived = Set(here.filter { $0.archivedAt != nil }.map(\.id))
-            var taken: [UUID: Set<String>] = [:]   // destination board → whose active membership is there
+            let archivedHere = Set(here.filter { $0.archivedAt != nil }.map(\.id))
+            let archivedInFile = Set(kanban.people.filter { $0.archivedAt != nil }.map(\.id))
+            var taken: [String: Set<String>] = [:]   // destination board → whose active membership is there
             var reused: [UUID: [String]] = [:]
             for board in boards {
-                let destination = board.mergeInto ?? board.id
+                // An existing board, or the new one this board becomes (never an existing id).
+                let destination = board.mergeInto.map { "here:\($0)" } ?? "new:\(board.id)"
                 if taken[destination] == nil {
                     let target = board.mergeInto.flatMap { id in projects.first { $0.id == id } }
                     taken[destination] = Set(target?.resources.filter { $0.archivedAt == nil }.compactMap { $0.person.map { "here:\($0.id)" } } ?? [])
                 }
                 for dto in kanban.resources.filter({ $0.projectId == board.id && $0.archivedAt == nil }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
                     guard let choice = self.people.first(where: { $0.id == dto.personId }) else { continue }
-                    if let linked = choice.linkTo, archived.contains(linked) { continue }   // arrives archived
+                    // Someone archived (here, or in the file for a new person) arrives archived.
+                    let arrivesArchived = choice.linkTo.map(archivedHere.contains) ?? archivedInFile.contains(choice.id)
+                    if arrivesArchived { continue }
                     // Someone created by the import is nobody here yet.
                     let identity = choice.linkTo.map { "here:\($0)" } ?? "new:\(choice.id)"
                     if !taken[destination, default: []].insert(identity).inserted { reused[board.id, default: []].append(choice.name) }
@@ -233,7 +237,8 @@ enum KanbanBoardTransfer {
         init(_ project: KanbanProject) {
             let live = project.resources.filter { $0.archivedAt == nil }
             active = Dictionary(live.compactMap { r in r.person.map { ($0.id, r) } }, uniquingKeysWith: { a, _ in a })
-            rows = project.resources.count
+            // After the last row: positions can be sparse (a reverted addition isn't renumbered).
+            rows = Int((project.resources.map(\.sortIndex).max() ?? -1).rounded(.down)) + 1
         }
     }
 

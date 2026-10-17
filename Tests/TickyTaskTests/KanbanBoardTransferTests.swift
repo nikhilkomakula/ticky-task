@@ -166,12 +166,7 @@ struct KanbanBoardTransferTests {
 
     @Test("Two boards in one file merged into one board: the preview and the import agree on one membership each")
     func twoBoardsIntoOne() throws {
-        let (from, project) = try source()
-        let s = KanbanService(from)
-        let other = try s.createProject(name: "Data", key: "DATA")
-        let ravi = try #require(project.resources.first { $0.displayName == "Ravi" }?.person)
-        try s.addMembership(ravi, to: other, allocationPercent: 40)
-        let data = try T.export([project, other], context: from)
+        let (_, _, _, data) = try twoBoards()
         let to = fresh()
         let target = try KanbanService(to).createProject(name: "Everything", key: "ALL")
         var plan = try T.plan(data, context: to)
@@ -186,6 +181,65 @@ struct KanbanBoardTransferTests {
         let firstBoardRavi = try #require(plan.kanban.resources.first { $0.projectId == plan.boards[0].id && $0.archivedAt == nil })
         #expect(active.first?.allocationPercent == firstBoardRavi.allocationPercent, "the first one is kept")
         #expect(Set(rows.map(\.sortIndex)).count == rows.count, "rows get distinct positions")
+    }
+
+    /// The source board plus "Data" with Ravi on it, exported together.
+    private func twoBoards() throws -> (ModelContext, KanbanProject, KanbanProject, Data) {
+        let (from, project) = try source()
+        let s = KanbanService(from)
+        let other = try s.createProject(name: "Data", key: "DATA")
+        let ravi = try #require(project.resources.first { $0.displayName == "Ravi" }?.person)
+        try s.addMembership(ravi, to: other, allocationPercent: 40)
+        return (from, project, other, try T.export([project, other], context: from))
+    }
+
+    @Test("A new board never counts as an existing one with the same id")
+    func newBoardIsItsOwnDestination() throws {
+        let (from, platform, data, file) = try twoBoards()
+        var plan = try T.plan(file, context: from)
+        let platformChoice = try #require(plan.boards.firstIndex { $0.id == platform.id })
+        plan.boards[platformChoice].mergeInto = data.id   // Platform into the existing Data; Data's copy stays new
+        let reused = plan.reusedMemberships(projects: try from.fetch(FetchDescriptor<KanbanProject>()),
+                                            people: try from.fetch(FetchDescriptor<KanbanPerson>()))
+        #expect(reused[platform.id] == ["Ravi"], "Ravi is already on Data")
+        #expect(reused[data.id] == nil, "the new copy of Data gets its own Ravi")
+    }
+
+    @Test("Someone archived in the file and created new arrives archived on every board, never reused")
+    func archivedNewPersonIsNeverReused() throws {
+        let (_, platform, _, file) = try twoBoards()
+        var envelope = try BackupCoding.decoder().decode(T.Envelope.self, from: file)
+        let ravi = try #require(envelope.kanban.people.firstIndex { $0.name == "Ravi" })
+        envelope.kanban.people[ravi].archivedAt = Date()
+        let to = fresh()
+        let target = try KanbanService(to).createProject(name: "Everything", key: "ALL")
+        var plan = try T.plan(try BackupCoding.encoder().encode(envelope), context: to)
+        for i in plan.boards.indices { plan.boards[i].mergeInto = target.id }
+        #expect(plan.reusedMemberships(projects: [target], people: []).values.allSatisfy { !$0.contains("Ravi") })
+        try T.apply(plan, fileName: "both", context: to)
+        let id = target.id
+        let rows = try to.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
+        let raviRows = rows.filter { $0.displayName == "Ravi" }
+        #expect(raviRows.count == 2 && raviRows.allSatisfy { $0.archivedAt != nil }, "one archived membership per board in the file")
+        _ = platform
+    }
+
+    @Test("Imported rows start after the last row, even when positions have gaps")
+    func rowsAfterSparsePositions() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let s = KanbanService(to)
+        let target = try s.createProject(name: "Gaps", key: "GAP")
+        let a = try s.addMembership(try s.createPerson(name: "Ana", initials: "AN"), to: target)
+        let b = try s.addMembership(try s.createPerson(name: "Bo", initials: "BO"), to: target)
+        a.sortIndex = 0; b.sortIndex = 2   // as after a reverted middle addition
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = target.id
+        try T.apply(plan, fileName: "f", context: to)
+        let id = target.id
+        let rows = try to.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
+        #expect(Set(rows.map(\.sortIndex)).count == rows.count && rows.filter { $0.sortIndex > 2 }.count == rows.count - 2)
     }
 
     @Test("Formulas behind leading whitespace or control characters are neutralised too")
