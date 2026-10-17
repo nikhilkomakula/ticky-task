@@ -54,6 +54,7 @@ private struct KanbanProjectScope: ViewModifier {
     let project: KanbanProject
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
+    @AppStorage("weekStartsMonday") private var weekStartsMonday = true
 
     func body(content: Content) -> some View {
         content
@@ -72,12 +73,14 @@ private struct KanbanProjectScope: ViewModifier {
 
     private func expose(_ id: UUID?) {
         guard let id, let task = project.tasks.first(where: { $0.id == id }) else { return }
+        // The calendar the board filters with, so "due next week" means the same here.
+        let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let state = KanbanBoardState.decode(project.boardState)
-        let hidden = state.view != .board || !state.filter.matches(task) || (task.archivedAt != nil && !state.showArchived)
+        let hidden = state.view != .board || !state.filter.matches(task, calendar: calendar) || (task.archivedAt != nil && !state.showArchived)
         guard hidden else { return }
         app.updateBoardState(project, context: context) { state in
             state.view = .board
-            if !state.filter.matches(task) { state.filter = KanbanCardFilter() }
+            if !state.filter.matches(task, calendar: calendar) { state.filter = KanbanCardFilter() }
             if task.archivedAt != nil { state.showArchived = true }
         }
     }

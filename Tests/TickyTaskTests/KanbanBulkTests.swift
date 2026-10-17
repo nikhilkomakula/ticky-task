@@ -90,4 +90,28 @@ struct KanbanBulkTests {
         try s.move(.cards([cards[0].id], to: .rowHeader(.resource(mia.id))), in: project)
         #expect(throws: KanbanServiceError.self, "one cell only") { try s.arrange([cards[0], cards[1]]) }
     }
+
+    @Test("Arranging the visible cards of a filtered cell keeps the hidden ones in place, with no shared positions")
+    func arrangeKeepsHiddenSiblings() throws {
+        let (s, _, cards) = try board()   // A=0, B=1, C=2; A is hidden by a filter
+        try s.arrange([cards[2], cards[1]])
+        #expect(cards.map(\.title).sorted { a, b in
+            cards.first { $0.title == a }!.sortIndex < cards.first { $0.title == b }!.sortIndex
+        } == ["A", "C", "B"])
+        #expect(Set(cards.map(\.sortIndex)) == [0, 1, 2])
+    }
+
+    @Test("Cards restored in place go to the end of their cell when their positions were reused")
+    func restoreInPlaceAppends() throws {
+        let (s, project, cards) = try board()   // A=0, B=1, C=2
+        try s.setArchived([cards[0], cards[1]], true)
+        let e = try s.createTask(in: project, title: "E")
+        try s.setArchived([cards[0], cards[1]], false)
+        let live = project.tasks.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
+        #expect(Set(live.map(\.sortIndex)).count == live.count, "\(live.map { "\($0.title)=\($0.sortIndex)" })")
+        #expect(live.map(\.title).suffix(2) == ["A", "B"], "after C and E, in their old order")
+        _ = e
+        try s.undo(in: project)
+        #expect(cards[0].archivedAt != nil && cards[1].archivedAt != nil)
+    }
 }

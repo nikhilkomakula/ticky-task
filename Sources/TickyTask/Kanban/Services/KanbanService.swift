@@ -693,14 +693,20 @@ struct KanbanService {
                  summary: "\(present ? "Labelled" : "Unlabelled") \(changed.count) cards \(label.name)", encodedPayload: data)
     }
 
-    /// Puts one cell's cards in exactly this order (a reorder under a non-manual sort, from
-    /// the order on screen). One entry.
+    /// Puts these cards of one cell in this order (a reorder under a non-manual sort, from
+    /// the order on screen). Cards the view hides keep their places; the whole cell is then
+    /// renumbered densely, so no two share a position. One entry.
     func arrange(_ ordered: [KanbanTask]) throws {
         try RecurrenceMaterializer.checkpoint(context)
         let project = try sameProject(ordered)
         guard let first = ordered.first, ordered.allSatisfy({ $0.archivedAt == nil && $0.column?.id == first.column?.id && $0.resource?.id == first.resource?.id })
         else { throw KanbanServiceError.invariant("Those cards aren't in one cell.") }
-        let transitions = ordered.enumerated().compactMap { index, task -> KanbanTransition? in
+        let cell = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == first.column?.id && $0.resource?.id == first.resource?.id }
+            .sorted { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }
+        let requested = Set(ordered.map(\.id))
+        var queue = ordered[...]
+        let result = cell.map { card -> KanbanTask in requested.contains(card.id) ? queue.popFirst() ?? card : card }
+        let transitions = result.enumerated().compactMap { index, task -> KanbanTransition? in
             guard task.sortIndex != Double(index) else { return nil }
             var to = placement(task)
             to.sortIndex = Double(index)
@@ -1021,28 +1027,29 @@ struct KanbanService {
         guard !affected.isEmpty else { return }
         let stamp = archived ? now() : nil
         var changes: [KanbanFieldChange] = [], transitions: [KanbanTransition] = []
-        var nextUnassigned: [UUID: Double] = [:]   // per column, for cards whose row went away
+        // A card coming back must fit the board as it is now: complete exactly when its
+        // column is Done, Unassigned if its membership was archived meanwhile, and at the end
+        // of the cell it lands in (its old position may have been reused), in its old order.
+        struct Cell: Hashable { let column: UUID?; let resource: UUID? }
+        var next: [Cell: Double] = [:]
+        let comingBack = Set(affected.map(\.id))
         for task in affected {
             changes.append(KanbanFieldChange(entity: .task, id: task.id, field: "archivedAt",
                                              old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date)))
-            // A card coming back must fit the board as it is now: complete exactly when its
-            // column is Done, and Unassigned if its membership was archived meanwhile.
-            guard !archived else { continue }
-            var to = placement(task)
-            if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
-            if let resource = task.resource, resource.archivedAt != nil, let column = task.column?.id {
-                // After every card that will be in this Unassigned cell: the live ones and those
-                // coming back to it in place, so no two share a position.
-                let comingBack = Set(affected.map(\.id))
-                let inCell = project.tasks.filter { card in
-                    card.column?.id == column && card.resource == nil && (card.archivedAt == nil || comingBack.contains(card.id))
-                }
-                let next: Double = nextUnassigned[column] ?? ((inCell.map(\.sortIndex).max() ?? -1) + 1)
-                to.resourceID = nil
-                to.sortIndex = next
-                nextUnassigned[column] = next + 1
+        }
+        if !archived {
+            for task in affected.sorted(by: { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }) {
+                var to = placement(task)
+                if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
+                if let resource = task.resource, resource.archivedAt != nil { to.resourceID = nil }
+                let cell = Cell(column: task.column?.id, resource: to.resourceID)
+                let position: Double = next[cell] ?? ((project.tasks.filter { card in
+                    !comingBack.contains(card.id) && card.archivedAt == nil && card.column?.id == cell.column && card.resource?.id == cell.resource
+                }.map(\.sortIndex).max() ?? -1) + 1)
+                to.sortIndex = position
+                next[cell] = position + 1
+                if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
             }
-            if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
         }
         let data = try KanbanActivityPayload(transitions: transitions, changes: changes).encoded()
         applyTransitions(transitions, in: project)
