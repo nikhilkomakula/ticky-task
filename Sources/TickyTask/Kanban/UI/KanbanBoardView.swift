@@ -235,16 +235,18 @@ struct KanbanBoardView: View {
             let siblings = snapshot.cards(in: card.columnID, row: card.row).filter { !$0.archived }.map(\.id)
             let shown = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).map(\.id)
             let position = siblings.firstIndex(of: id) ?? 0
-            // Under another sort, a keyboard reorder works on the order on screen (as a drop does).
+            // Under another sort, or with a filter hiding some of the cell, a keyboard reorder
+            // works on the order on screen (as a drop does), so the card visibly moves one place.
+            let viewState = KanbanBoardState.decode(project.boardState)
             if command && option, [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(press.key),
-               KanbanBoardState.decode(project.boardState).sort != .manual {
+               viewState.sort != .manual || viewState.filter.isActive {
                 var order = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).filter { $0.archivedAt == nil }
                 guard let from = order.firstIndex(where: { $0.id == id }) else { return .handled }
                 let to = from + ([.upArrow, .leftArrow].contains(press.key) ? -1 : 1)
                 guard order.indices.contains(to) else { return .handled }
                 order.swapAt(from, to)
                 app.runKanban { try service.arrange(order) }
-                app.updateBoardState(project, context: context) { $0.sort = .manual }
+                if viewState.sort != .manual { app.updateBoardState(project, context: context) { $0.sort = .manual } }
                 return .handled
             }
             switch (press.key, command, option) {
