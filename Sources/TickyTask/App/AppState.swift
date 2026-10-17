@@ -106,9 +106,9 @@ final class AppState {
     /// Assumes `weekAnchor` is already the week containing `date` (reveal sets it).
     private func isDayVisibleInWeek(_ date: Date) -> Bool {
         let defaults = UserDefaults.standard
-        let columns = max(1, min(12, defaults.object(forKey: "calendarColumns") as? Int ?? 5))
-        let mondayStart = defaults.object(forKey: "weekStartsMonday") as? Bool ?? true
-        let showWeekends = defaults.object(forKey: "showWeekends") as? Bool ?? false
+        let columns = max(1, min(12, defaults.integer(forKey: "calendarColumns", default: 5)))
+        let mondayStart = defaults.bool(forKey: "weekStartsMonday", default: true)
+        let showWeekends = defaults.bool(forKey: "showWeekends", default: false)
         let key = WeekMath.dayKey(for: date, calendar: calendar)
         return weekDays(columns: columns, weekStartsMonday: mondayStart, showWeekends: showWeekends)
             .contains { WeekMath.dayKey(for: $0, calendar: calendar) == key }

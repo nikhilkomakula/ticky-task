@@ -164,10 +164,10 @@ struct ContentView: View {
         // were applied immediately before the restore notification; @AppStorage's
         // view update can arrive on a later render pass.
         let defaults = UserDefaults.standard
-        let isEnabled = defaults.object(forKey: "autoCarryForward") as? Bool ?? true
+        let isEnabled = defaults.bool(forKey: "autoCarryForward", default: true)
         guard isEnabled else { return }
         let todayKey = WeekMath.dayKey(for: Date())
-        let weekendsShown = defaults.object(forKey: "showWeekends") as? Bool ?? false
+        let weekendsShown = defaults.bool(forKey: "showWeekends", default: false)
         let targetKey = BehaviorService.carryForwardTarget(todayKey: todayKey, showWeekends: weekendsShown)
         do {
             try BehaviorService.carryForwardIncomplete(context: context, targetKey: targetKey)
