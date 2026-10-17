@@ -65,68 +65,40 @@ final class KanbanPresentationTests: XCTestCase {
         XCTAssertEqual(style.symbol, "circle.lefthalf.filled")
     }
 
-    // MARK: - Notes Presence Policy
+    // MARK: - Notes presence (KanbanTask.hasNotes, the rule the card's notes glyph uses)
 
-    /// Helper to simulate the hasNotes policy: decode rich notes if present,
-    /// otherwise use trimmed plain text; formatting-only or whitespace-only is empty.
-    private func testNotesPresence(richNotesJSON: String?, plainNotes: String?) -> Bool {
-        // If there are rich notes, try to decode them and check the resolved plain text.
-        if let richJSON = richNotesJSON {
-            if let data = richJSON.data(using: .utf8),
-               let doc = try? JSONDecoder().decode(NotesDocument.self, from: data) {
-                let plainText = doc.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-                return !plainText.isEmpty
-            }
+    private func card(rich: [String]?, plain: String) throws -> KanbanTask {
+        let task = KanbanTask(title: "Card")
+        task.notes = plain
+        if let rich {
+            task.notesRich = try NotesCodec.encode(NotesDocument(blocks: rich.map { NotesBlock(runs: [NotesRun(text: $0)]) }))
         }
-        // Fall back to plain notes.
-        let plain = (plainNotes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return !plain.isEmpty
+        return task
     }
 
-    func testNotesPresenceWithRichNotesOnly() {
-        // Valid rich notes with content.
-        let richJSON = """
-        {"blocks":[{"type":"paragraph","text":"Hello","id":"b1","indent":0}]}
-        """
-        XCTAssertTrue(testNotesPresence(richNotesJSON: richJSON, plainNotes: ""))
+    func testNotesPresenceWithRichNotesOnly() throws {
+        XCTAssertTrue(try card(rich: ["Hello"], plain: "").hasNotes, "rich notes with no plain-text projection still count")
     }
 
-    func testNotesPresenceWithPlainNotesOnly() {
-        XCTAssertTrue(testNotesPresence(richNotesJSON: nil, plainNotes: "Some task notes"))
+    func testNotesPresenceWithPlainNotesOnly() throws {
+        XCTAssertTrue(try card(rich: nil, plain: "Legacy notes").hasNotes)
     }
 
-    func testNotesPresenceWithBothRichAndPlain() {
-        let richJSON = """
-        {"blocks":[{"type":"paragraph","text":"Rich content","id":"b1","indent":0}]}
-        """
-        XCTAssertTrue(testNotesPresence(richNotesJSON: richJSON, plainNotes: "Plain text"))
+    func testNotesPresenceEmptyRichBeatsStalePlain() throws {
+        XCTAssertFalse(try card(rich: ["   "], plain: "stale").hasNotes, "a decoded empty document wins over a stale projection")
     }
 
-    func testNotesPresenceEmpty() {
-        XCTAssertFalse(testNotesPresence(richNotesJSON: nil, plainNotes: ""))
-    }
-
-    func testNotesPresenceWhitespaceOnly() {
-        XCTAssertFalse(testNotesPresence(richNotesJSON: nil, plainNotes: "   \n\t  "))
-    }
-
-    func testNotesPresenceRichFormatOnlyNoText() {
-        // Rich document with formatting but no actual text.
-        let richJSON = """
-        {"blocks":[]}
-        """
-        XCTAssertFalse(testNotesPresence(richNotesJSON: richJSON, plainNotes: ""))
+    func testNotesPresenceEmpty() throws {
+        XCTAssertFalse(try card(rich: nil, plain: "").hasNotes)
+        XCTAssertFalse(try card(rich: nil, plain: "  \n ").hasNotes)
     }
 
     func testNotesPresenceCorruptRichFallsBackToPlain() {
-        // Corrupt rich JSON should fall back to plain text.
-        let corruptJSON = """
-        {"blocks": invalid}
-        """
-        XCTAssertTrue(testNotesPresence(richNotesJSON: corruptJSON, plainNotes: "Fallback plain"))
+        let task = KanbanTask(title: "Card")
+        task.notesRich = Data("not a document".utf8)
+        task.notes = "Readable"
+        XCTAssertTrue(task.hasNotes)
     }
-
-    // MARK: - Column Styling Across Views
 
     func testColumnStyleBadgeCreation() {
         // KanbanColumnBadge should render with the correct kind glyph and accessible name.
