@@ -25,7 +25,7 @@ and are pinned by `Tests/TickyTaskTests/KanbanMetrics*Tests.swift`.
 | `done(t)` | `live(t) ∧ kind(t.column) == .done` |
 | `m(t)` | count mode: `1`; hours mode: `t.estimateHours ?? project.defaultEstimateHours` (an explicit `0` counts as an estimate) |
 | `w(t)` | `weightedLoad ? max(t.isCritical ? 2 : 1, t.priority == .high ? 1.5 : 1) : 1` |
-| `v(t)` | `m(t) · w(t)`, the load contribution. **Only metrics 1 and 2 and the drag preview use `w`;** the work-state metrics use raw `m` |
+| `v(t)` | `m(t) · w(t)`, the load contribution. **Only metrics 1, 2 and 3b and the drag preview use `w`;** the work-state metrics use raw `m` |
 | `v₀(t)` | this week's share of the load. Count mode: `v(t)`. Hours mode: the share of `v(t)` that the §1 heatmap distributes into week 0, which is 0 for a task scheduled entirely next week |
 | `workDays(range)` | the days in `range` whose weekday is in `project.workWeekDays` |
 
@@ -129,6 +129,31 @@ Cell value:
   listed separately.
 - **Roll-off:** contractors with `n = Δd(today, endDate)` fall into the disjoint buckets `0…30`, `31…60` and `61…90`. An end
   date of today is 0. Each entry shows its open-task count.
+
+**(3b) People rollup — `peopleRollup(snapshots: [MetricsSnapshot]) -> [PersonLoadRow]`** (D15, cross-board). Let
+`M(p)` be the person's active memberships: not archived, `day(startDate) ≤ today ≤ day(endDate)`, on non-archived
+projects.
+- **Total allocation:** `A(p) = Σ_{r∈M(p)} r.allocationPercent`. It is **over-allocated** when `A(p) > 100` (compared with
+  `ε`).
+- **Combined count** (always computed, whatever each board's mode):
+  - `N_c(p) = Σ_{r∈M(p)} Σ_{open t, t.resource == r} w_board(t)`, where `w_board` is the weight from that task's own board
+    (1 when weighting is off) and the task count `m` is always 1. This is independent of `L(r)`, which is hours on hours
+    boards.
+  - `C_c(p) = Σ C(r)`, so absolute overrides are kept: two 50 % memberships with the default target add up to one full
+    target.
+  - `u_count = N_c / C_c`, or `.noCapacity` when `C_c == 0`.
+- **Combined hours:** only when **every** board in `M(p)` is in hours mode. `Hrs_c = Σ L(r)` (this week's hours) against
+  `Σ H(r)`, giving `u_hours`.
+- **One rule for the headline, badge and ordering:** the person's band uses **`u_hours` when every board is in hours mode,
+  and `u_count` otherwise**. That matches the unit their boards chose. Both figures are shown when both exist.
+  - Example: two 50 % memberships with one 30-hour task each this week, both boards in hours mode → `60/40` hours, **red**.
+    The count figure (`2/5`, green) is shown as secondary text.
+  - Mixed modes → the count band; the hours stay in the per-board cells.
+- **Per-board cells:** each board's own `L(r)/T(r)` and band, in that board's unit.
+- **Row badge on a board** (01 §5): shown when the person is over-allocated, or their combined band is red.
+- **Ordering:** most over capacity first (by the band's utilisation descending; `.noCapacity` rows with load come first),
+  then by name.
+- Archived people and memberships are excluded. A person with no active memberships appears only in the directory.
 
 ## 2. Work state
 
@@ -262,6 +287,7 @@ That puts the DST change on 2026-10-25 inside the replay window. Two variants ar
 | 1 Load vs capacity | `loadVsCapacity` | `hoursModeUsesCurrentWeekHours`, `backlogCoverageSeparate`, `stacksOnlyNonDoneColumnsInBoardOrder`, `filtersEmploymentAndAssignment`, `unassignedRowHasNoTarget`, `archivedResourceExcluded` |
 | Drag preview | `projectedLoad` | `dragInAddsOnlyUncounted`, `dragOutSubtracts`, `dropIntoDoneSubtracts`, `sameResourceSameColumnIsZeroDelta`, `multiSelectionMixedOwners` |
 | 2 Heatmap | `capacityHeatmap` | `noDatesCurrentWeek`, `dueOnlyDueWeek`, `startOnlyPastSpansToCurrentWeek`, `startOnlyFutureIsStartWeek`, `overdueClampedToCurrentWeek`, `dueBeforeStartSwappedReachesLaterEndpoint`, `doneTasksExcluded`, `hoursSpreadAcrossWorkDays`, `weekendOnlyWindowGoesToEndWeek`, `resourceStartsMidWeekProRated3of5`, `endedResourceCellUnavailableFlagsLoad`, `emptyWorkWeekNoCapacity`, `sundayWeekStart` |
+| 3b People rollup | `peopleRollup` | `countNumeratorIndependentOfHoursBoards`, `allHoursBoardsBandUsesHours`, `mixedModesBandUsesCounts`, `totalAllocationOver100Warns`, `combinedCountIsSumOfBoards`, `perBoardWeightingRespected`, `mixedModesCombineInCounts`, `allHoursModeCombinesHours`, `endedMembershipExcluded`, `archivedProjectExcluded`, `zeroTargetNoCapacity`, `orderMostOverFirst` |
 | 3 Composition | `composition` | `gridCountsAndHours`, `notStartedListedSeparately`, `rollOffBucketsDisjoint`, `endTodayIsBucket0`, `fteNeverInRollOff` |
 | 4 By column / resource | `tasksByColumn`, `tasksByResource` | `includesDoneExcludesArchived`, `unassignedBucket`, `unweightedEvenWhenToggleOn` |
 | 5 Unassigned backlog | `unassignedBacklog` | `oldestFirstTieById`, `readyRequiresNotBlockedAndDepsDone`, `deletedDepDropsOut`, `archivedDepBlocksWithRemedy`, `multiLabelCountsPerLabel` |
@@ -289,3 +315,5 @@ That puts the DST change on 2026-10-25 inside the replay window. Two variants ar
 - Being created directly in Done is not a completion.
 - Deleted tasks keep their history.
 - A resource past its end date is flagged even if it is archived.
+- The People rollup always computes a weighted task count. Its band uses hours only when every board is in hours mode,
+  and it warns above 100 % total allocation.
