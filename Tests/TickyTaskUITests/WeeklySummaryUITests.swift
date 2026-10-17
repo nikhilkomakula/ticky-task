@@ -48,6 +48,20 @@ final class WeeklySummaryUITests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: "summary-task-\(title)").firstMatch
     }
 
+    /// Clicks a task row, scrolling the sheet's list until it's on screen first. The seed
+    /// puts the tasks on today, so late in the week they sit below the fold.
+    private func select(_ app: XCUIApplication, _ title: String) {
+        let row = task(app, title)
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "\(title) should be listed")
+        let list = app.sheets.scrollViews.firstMatch
+        // The sign of a scroll delta differs between setups; try one way, then the other.
+        for delta in Array(repeating: -150.0, count: 8) + Array(repeating: 150.0, count: 16) where !row.isHittable {
+            list.scroll(byDeltaX: 0, deltaY: delta)
+        }
+        XCTAssertTrue(row.isHittable, "\(title) should be scrolled into view")
+        row.click()
+    }
+
     func testSelectGenerateEditAndCopy() throws {
         let app = launchedApp()
         openSummary(app)
@@ -56,16 +70,14 @@ final class WeeklySummaryUITests: XCTestCase {
         XCTAssertFalse(generate.isEnabled, "Generate needs a selected task with notes")
 
         // A task without notes alone is not enough.
-        let noNotes = task(app, "No-notes task")
-        XCTAssertTrue(noNotes.waitForExistence(timeout: 5))
-        noNotes.click()
+        select(app, "No-notes task")
         XCTAssertFalse(generate.isEnabled, "selection without notes must not enable Generate")
 
         // Selecting a task that has notes enables Generate.
-        task(app, "Retry fix").click()
+        select(app, "Retry fix")
         XCTAssertTrue(generate.isEnabled)
         let count = app.staticTexts["summary-selection-count"].firstMatch
-        XCTAssertEqual(text(of: count), "2 selected · 1 with notes")
+        waitForText(count, "2 selected · 1 with notes")
 
         generate.click()
         let text = app.textViews["summary-text"].firstMatch
@@ -102,7 +114,7 @@ final class WeeklySummaryUITests: XCTestCase {
     func testCancelKeepsSelection() throws {
         let app = launchedApp(["-uitestSummaryDelay", "30"])
         openSummary(app)
-        task(app, "Rollout doc").click()
+        select(app, "Rollout doc")
         XCTAssertTrue(app.buttons["summary-generate"].firstMatch.isEnabled, "selecting a task with notes enables Generate")
         app.buttons["summary-generate"].firstMatch.click()
         let cancel = app.buttons["summary-cancel"].firstMatch
@@ -116,7 +128,7 @@ final class WeeklySummaryUITests: XCTestCase {
     func testAuthenticationErrorIsSurfaced() throws {
         let app = launchedApp(["-uitestSummaryFailure", "auth"])
         openSummary(app)
-        task(app, "Retry fix").click()
+        select(app, "Retry fix")
         XCTAssertTrue(app.buttons["summary-generate"].firstMatch.isEnabled, "selecting a task with notes enables Generate")
         app.buttons["summary-generate"].firstMatch.click()
         let title = app.staticTexts["summary-error-title"].firstMatch
