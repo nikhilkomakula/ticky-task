@@ -526,7 +526,7 @@ struct KanbanService {
 
     @discardableResult
     func createTask(in project: KanbanProject, title: String, column: KanbanColumn? = nil,
-                    row: KanbanRowKey = .unassigned, before: UUID? = nil) throws -> KanbanTask {
+                    row: KanbanRowKey = .unassigned, before: UUID? = nil, dueDate: Date? = nil) throws -> KanbanTask {
         try RecurrenceMaterializer.checkpoint(context)
         guard let column = column ?? project.columns.first(where: { $0.kind == .backlog }), column.project?.id == project.id
         else { throw KanbanServiceError.invariant("Pick a column on this board.") }
@@ -538,6 +538,7 @@ struct KanbanService {
         let resource = try resource(for: row, in: project)
         let task = KanbanTask(title: title)
         task.createdAt = now(); task.updatedAt = now()
+        task.dueDate = dueDate
         if column.kind == .done { task.completedAt = now() }
         // Its cell after insertion (before `before`, or last), renumbered densely. The
         // siblings that shift are recorded, so undoing the creation shifts them back.

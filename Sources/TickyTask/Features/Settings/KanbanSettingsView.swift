@@ -19,6 +19,8 @@ struct KanbanSettingsView: View {
     @AppStorage("kanban.notifyDueMinutes") private var notifyDueMinutes = 9 * 60
     @AppStorage(KanbanBoardDefaults.autoArchiveEnabledKey) private var autoArchive = false
     @AppStorage(KanbanBoardDefaults.autoArchiveDaysKey) private var autoArchiveDays = 30
+    @AppStorage(KanbanPopover.projectKey) private var popoverProjectID = ""
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var templates = KanbanTemplateStore.saved()
     @State private var message: String?
 
@@ -49,6 +51,17 @@ struct KanbanSettingsView: View {
                 }
                 Stepper("Due soon: within \(dueSoon) day\(dueSoon == 1 ? "" : "s")", value: $dueSoon, in: 0...30)
                 Toggle("Offer to move a card to Done when its steps are done", isOn: $suggestDone)
+            }
+            Section("Menu bar") {
+                Picker("Quick add files cards in", selection: $popoverProjectID) {
+                    Text("The last opened board").tag("")
+                    ForEach(projects.filter { $0.archivedAt == nil || $0.id.uuidString == popoverProjectID }) {
+                        Text($0.name).tag($0.id.uuidString)
+                    }
+                }
+                Text("New cards go to the board's backlog, Unassigned, due on the day picked in the menu bar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Section("Notifications") {
                 Toggle("Notify on Kanban due dates", isOn: $notifyDueDates)

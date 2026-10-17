@@ -10,6 +10,10 @@ struct MiniMonthCalendar: View {
     /// Menu-bar-local selection (independent of the main window), so the popover
     /// can default to today on each open without moving the main window.
     @Binding var selectedDayKey: String
+    /// Days to mark with a dot (Kanban due dates in the popover's Kanban mode).
+    var markedDays: Set<String> = []
+    /// Planner drop targets; off in Kanban mode, where nothing on the calendar takes a drop.
+    var acceptsDrops = true
     @Environment(\.modelContext) private var context
     @Environment(DragController.self) private var drag
     @Query(sort: [SortDescriptor(\TaskItem.sortIndex)]) private var allTasks: [TaskItem]
@@ -97,10 +101,14 @@ struct MiniMonthCalendar: View {
                     .stroke(isToday ? Color.accentColor : .clear, lineWidth: 1)
             )
             .foregroundStyle(inMonth ? (isToday ? Color.accentColor : .primary) : .secondary)
+            .overlay(alignment: .bottom) {
+                if markedDays.contains(key) {
+                    Circle().fill(Color.accentColor).frame(width: 4, height: 4).padding(.bottom, 2)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture { selectedDayKey = key }
-            .publishContainerFrame(.monthDay(key), accepts: .task, axis: .vertical,
-                                   isEmpty: allTasks.filter { $0.dayKey == key }.isEmpty)
+            .modifier(DayDropTarget(key: key, enabled: acceptsDrops, isEmpty: { allTasks.filter { $0.dayKey == key }.isEmpty }))
     }
 
     /// Saturday (7) or Sunday (1) in the Gregorian calendar — independent of the
@@ -122,6 +130,20 @@ struct MiniMonthCalendar: View {
     private func alignMonthToSelection() {
         if let selected = WeekMath.date(fromDayKey: selectedDayKey) {
             monthAnchor = selected
+        }
+    }
+}
+
+private struct DayDropTarget: ViewModifier {
+    let key: String
+    let enabled: Bool
+    let isEmpty: () -> Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.publishContainerFrame(.monthDay(key), accepts: .task, axis: .vertical, isEmpty: isEmpty())
+        } else {
+            content
         }
     }
 }

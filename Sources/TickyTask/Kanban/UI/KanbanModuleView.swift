@@ -42,6 +42,9 @@ struct KanbanModuleView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onChange(of: app.kanban.selection, initial: true) { _, selection in
+            if case let .project(id) = selection { UserDefaults.standard.set(id.uuidString, forKey: KanbanPopover.lastProjectKey) }
+        }
         .alert("Can’t make that change", isPresented: Binding(get: { app.kanbanError != nil }, set: { if !$0 { app.kanbanError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

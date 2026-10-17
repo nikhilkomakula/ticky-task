@@ -57,6 +57,8 @@ final class AppState {
     /// Today's day key and the time zone, refreshed by the root's minute timer, on activation
     /// and when the time zone changes, so metrics follow the calendar (01 §2.5).
     var kanbanClock = AppState.currentKanbanClock()
+    /// The menu-bar popover's Planner | Kanban choice, kept until relaunch (nil: the Default view).
+    var popoverModule: AppModule?
 
     static func currentKanbanClock() -> String { "\(WeekMath.dayKey(for: Date()))|\(TimeZone.current.identifier)" }
 
