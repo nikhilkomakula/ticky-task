@@ -56,7 +56,7 @@ struct KanbanTimelineView: View {
                 Chart {
                     RuleMark(x: .value("Today", today)).foregroundStyle(.secondary).lineStyle(StrokeStyle(dash: [3, 3]))
                     ForEach(bars) { bar in
-                        BarMark(xStart: .value("Start", bar.start), xEnd: .value("End", bar.end), y: .value("Person", bar.person))
+                        BarMark(xStart: .value("Start", bar.start), xEnd: .value("End", bar.end), y: .value("Resource", bar.person))
                             .foregroundStyle(columnStyleMap[bar.columnID] ?? .gray)
                             .opacity(bar.overdue ? 1 : 0.85)
                             .annotation(position: .overlay, alignment: .leading) {

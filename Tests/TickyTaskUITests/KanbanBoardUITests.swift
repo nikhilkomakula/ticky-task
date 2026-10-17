@@ -72,7 +72,7 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertFalse(element(app, "kanban-crossboard-Ravi Kumar").exists)
         element(app, "kanban-sidebar-all").click()
         XCTAssertTrue(element(app, "kanban-project-card-Data").waitForExistence(timeout: 5))
-        app.radioButtons["People"].firstMatch.click()
+        app.radioButtons["Resources"].firstMatch.click()
         XCTAssertTrue(element(app, "kanban-overallocated-Mia Chen").waitForExistence(timeout: 5), "People flags the over-allocation")
     }
 
@@ -305,7 +305,7 @@ final class KanbanBoardUITests: XCTestCase {
         let add = element(app, "kanban-add-person")
         XCTAssertTrue(add.waitForExistence(timeout: 10))
         add.click()
-        let existing = app.radioButtons["Existing person"].firstMatch
+        let existing = app.radioButtons["Existing resource"].firstMatch
         XCTAssertTrue(existing.waitForExistence(timeout: 5), "there is someone to pick, so the choice shows")
         existing.click()
         XCTAssertTrue(element(app, "kanban-person-picker").waitForExistence(timeout: 5))

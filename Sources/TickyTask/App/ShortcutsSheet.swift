@@ -19,7 +19,7 @@ struct ShortcutsSheet: View {
                 ("⌃⌘↑ / ⌃⌘↓", "Collapse / expand all rows"), ("⌘-click", "Select several cards"), ("Esc", "Clear the selection"),
             ]))
             groups.append(("Focused card", [
-                ("↑ ↓ ← →", "Move between cards"), ("⌘← / ⌘→", "Previous / next column"), ("⌘↑ / ⌘↓", "Previous / next person"),
+                ("↑ ↓ ← →", "Move between cards"), ("⌘← / ⌘→", "Previous / next column"), ("⌘↑ / ⌘↓", "Previous / next resource"),
                 ("⌥⌘ arrows", "Reorder within the cell"), ("Return", "Open"), ("Space", "Quick look"), ("M", "Move…"), ("⌘D", "Duplicate"),
             ]))
             groups.append(("Focused column or row header", [("⌥⌘ arrows", "Reorder columns or rows")]))

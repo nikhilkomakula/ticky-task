@@ -120,7 +120,7 @@ struct KanbanFilterPopover: View {
             Toggle("Critical only", isOn: binding(\.criticalOnly, filter))
             Toggle("Open cards only", isOn: binding(\.openOnly, filter))
             Toggle("Blocked only", isOn: binding(\.blockedOnly, filter))
-            LabeledContent("People") {
+            LabeledContent("Resources") {
                 VStack(alignment: .leading) {
                     Toggle("Unassigned", isOn: binding(\.unassigned, filter))
                     ForEach(project.resources.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }) { resource in

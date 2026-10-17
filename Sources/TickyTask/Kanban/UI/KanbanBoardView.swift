@@ -209,7 +209,7 @@ struct KanbanBoardView: View {
 
     private var addPersonButton: some View {
         Button { isAddingPerson = true } label: {
-            Label("Add person", systemImage: "person.badge.plus")
+            Label("Add resource", systemImage: "person.badge.plus")
         }
         .buttonStyle(.borderless)
         .padding(10)
@@ -439,14 +439,14 @@ struct KanbanBoardView: View {
     private func columnHeaders(_ columns: [KanbanColumn], widths: KanbanBoardWidths, snapshot: BoardSnapshot, metrics: MetricsSnapshot,
                                hidden: [UUID: Int]) -> some View {
         HStack(spacing: 0) {
-            Text(project.loadMeasure == .hours ? "People · hours this week" : "People · open tasks")
+            Text(project.loadMeasure == .hours ? "Resources · hours this week" : "Resources · open tasks")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .modifier(KanbanLiveWidthFrame(live: live, slots: [.rowHeader], base: widths.width, height: 40, alignment: .leading))
                 .background(Color(nsColor: .windowBackgroundColor))
                 .overlay(alignment: .trailing) {
-                    KanbanResizeHandle(name: "People column", slot: .rowHeader, width: widths.rowHeader, policy: .rowHeader, live: live,
+                    KanbanResizeHandle(name: "Resources column", slot: .rowHeader, width: widths.rowHeader, policy: .rowHeader, live: live,
                                        isDisabled: drag.isActive,
                                        onCommit: { width in app.updateBoardState(project, context: context) { $0.setRowHeaderWidth(width) } },
                                        onReset: { app.updateBoardState(project, context: context) { $0.setRowHeaderWidth(nil) } })

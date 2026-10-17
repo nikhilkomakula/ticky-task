@@ -16,34 +16,34 @@ TickyTask's **Kanban** module helps you track work across teams with visibility 
 
 Or load a saved template.
 
-**Set it up.** Right-click a column header to rename it, change its color, set a WIP limit, or move it left or right. Add people using the **Add person** button below the board's rows (see People and memberships below). Every new board starts with an **Unassigned** row pinned at the top.
+**Set it up.** Right-click a column header to rename it, change its color, set a WIP limit, or move it left or right. Add resources using the **Add resource** button below the board's rows (see Resources and memberships below). Every new board starts with an **Unassigned** row pinned at the top.
 
 ---
 
-## People and memberships
+## Resources and memberships
 
-**People** are stored globally so you can add the same person to multiple boards. When you add someone to a board, you create a **membership** that defines how much of their time that board gets.
+**Resources** are stored globally so you can add the same resource to multiple boards. When you add someone to a board, you create a **membership** that defines how much of their time that board gets.
 
-**Create a person.** Click the **Add person** button below the board's rows to open the sheet. Choose **New person**, or **Existing person** to add someone already in TickyTask (for example from another board); the choice only appears when there's someone to pick. A person has a name, initials, employment type (FTE or contractor), and optional skills.
+**Create a resource.** Click the **Add resource** button below the board's rows to open the sheet. Choose **New resource**, or **Existing resource** to add someone already in TickyTask (for example from another board); the choice only appears when there's someone to pick. A resource has a name, initials, employment type (FTE or contractor), and optional skills.
 
 **Set membership details on a board.** Right-click a row header and choose **Edit membership…** to set:
 - **Allocation %**: what portion of their time they spend on this board (e.g., 50 % for a half-time contractor).
 - **Assignment**: full-time or part-time (used for display and filtering).
 - **Role**: optional (shows only on this board).
 - **Start date** and **End date** (optional; the date they roll off the project).
-- **Weekly hours override** and **Open-task target override** (optional per-person customizations).
+- **Weekly hours override** and **Open-task target override** (optional per-resource customizations).
 
-The load target for each person—how many cards they should have open—is calculated from the board's **Open-task target per person** (default: 5) multiplied by their allocation %. A 50 % person on a board targeting 5 cards would have a target of 2.5 cards. The board's target is set when the board is created in **Settings › Kanban › New boards**. You can override a person's target per board in **Edit membership…**, or change the board's target in **Edit board** (right-click a board).
+The load target for each resource—how many cards they should have open—is calculated from the board's **Open-task target per resource** (default: 5) multiplied by their allocation %. A 50 % resource on a board targeting 5 cards would have a target of 2.5 cards. The board's target is set when the board is created in **Settings › Kanban › New boards**. You can override a resource's target per board in **Edit membership…**, or change the board's target in **Edit board** (right-click a board).
 
-**Remove a person from a board.** Right-click their row header and choose **Remove from board…**. Their cards move to **Unassigned** and can be undone from the **Change Log**.
+**Remove a resource from a board.** Right-click their row header and choose **Remove from board…**. Their cards move to **Unassigned** and can be undone from the **Change Log**.
 
-**View all people.** Click **All projects** in the sidebar, then select the **People** tab to see a summary of each person and their allocation across all boards. This is a read-only report; edits to person details must be made per-board in **Edit membership…**.
+**View all resources.** Click **All projects** in the sidebar, then select the **Resources** tab to see a summary of each resource and their allocation across all boards. This is a read-only report; edits to resource details must be made per-board in **Edit membership…**.
 
 ---
 
 ## Cards
 
-**Add a card.** Press **⌘N** (or click the toolbar's **+ Card**) to add a card in the backlog, unassigned. Hover over a cell (column + person intersection) and click **+** to add it in that column and row. Either way, you enter the title in a prompt; the card does not open in the editor automatically.
+**Add a card.** Press **⌘N** (or click the toolbar's **+ Card**) to add a card in the backlog, unassigned. Hover over a cell (column + resource intersection) and click **+** to add it in that column and row. Either way, you enter the title in a prompt; the card does not open in the editor automatically.
 
 **Edit a card.** Click any card to open the editor. Fields include:
 
@@ -67,7 +67,7 @@ The load target for each person—how many cards they should have open—is calc
 
 **Duplicate a card.** Right-click it and choose **Duplicate**, or focus it and press **⌘D**. The copy (titled "… copy") lands right after it with the same fields, labels, dependencies and steps (steps start not done). It's one **Change Log** entry, so **⌘Z** removes it.
 
-**Sort someone's cards by priority.** Click the sort icon (↑↓) on a person's row header to put their cards in every column in priority order: Critical, High, Medium, then Low, keeping the current order among equals. **⌘Z** undoes it. To keep that row sorted as cards change, open the icon's menu (or right-click the row header) and turn on **Keep sorted by priority**; the icon turns blue. It applies to that row only, over the board's **Sort**, and turns off when you reorder that row's cards by hand.
+**Sort someone's cards by priority.** Click the sort icon (↑↓) on a resource's row header to put their cards in every column in priority order: Critical, High, Medium, then Low, keeping the current order among equals. **⌘Z** undoes it. To keep that row sorted as cards change, open the icon's menu (or right-click the row header) and turn on **Keep sorted by priority**; the icon turns blue. It applies to that row only, over the board's **Sort**, and turns off when you reorder that row's cards by hand.
 
 **Archive a card.** Click **Archive** in the editor. Archived cards can be shown with **Show Archived** on the board toolbar.
 
@@ -105,7 +105,7 @@ The load target for each person—how many cards they should have open—is calc
 - **Due** date (any, overdue, this week, next week).
 - **Priority**, **Critical** flag, **Unassigned**, and **Open cards only**.
 - **Blocked** cards, **Jira link** (has one or missing), **Estimate** (has one or missing).
-- **Labels** and **People**.
+- **Labels** and **Resources**.
 
 Active filters appear as removable chips below the toolbar. Click **Clear** to reset all.
 
@@ -115,11 +115,11 @@ Active filters appear as removable chips below the toolbar. Click **Clear** to r
 
 **Finished cards.** Each Done cell shows its five most recently finished cards, plus any without a completion date. Click **n older** under them to see the rest, and **Show fewer** to tuck them away again. The column header says how many show, e.g. **17 (5 shown)**; WIP limits and hours still count every card. To always see every done card on a board, right-click a Done column header and choose **Done cards › All**. A filter or **Show Archived** also shows everything.
 
-**Archive done cards.** In the board's **⋯** menu, choose **Archive done cards…**, then either cards finished more than a number of days ago or all done cards. It covers every Done column and person on the board, including cards hidden by filters, and is one **Change Log** entry, so **⌘Z** undoes it. Nothing is deleted: **Show Archived** brings the cards back into view.
+**Archive done cards.** In the board's **⋯** menu, choose **Archive done cards…**, then either cards finished more than a number of days ago or all done cards. It covers every Done column and resource on the board, including cards hidden by filters, and is one **Change Log** entry, so **⌘Z** undoes it. Nothing is deleted: **Show Archived** brings the cards back into view.
 
 **List view.** Switch to **List** in the top toolbar to see a sortable table with multi-select. Use right-click to bulk move, assign, label, or change priority.
 
-**Timeline.** Switch to **Timeline** to see dated cards as bars, grouped by person, with today marked.
+**Timeline.** Switch to **Timeline** to see dated cards as bars, grouped by resource, with today marked.
 
 ---
 
@@ -127,8 +127,8 @@ Active filters appear as removable chips below the toolbar. Click **Clear** to r
 
 Switch to **Dashboard** to see your board's metrics. Each chart shows counts or hours depending on the board's **Measure load in** setting (Settings › Kanban › New boards). Charts include:
 
-- **Load vs Capacity**: the number of open cards (or hours) each person has against their target. Click a person's button below the chart to filter the board.
-- **Capacity, next 12 weeks**: a 12-week heat map showing when people are busiest. Click a person's button below the chart to filter the board.
+- **Load vs Capacity**: the number of open cards (or hours) each resource has against their target. Click a resource's button below the chart to filter the board.
+- **Capacity, next 12 weeks**: a 12-week heat map showing when resources are busiest. Click a resource's button below the chart to filter the board.
 - **Hours by column** / **Tasks by column**: how many cards (or hours) are in each column. Click a column to filter the board.
 - **Unassigned Backlog**: cards waiting to be assigned, sorted by ready-to-pull status. Click to filter the board.
 - **Due Dates**: cards grouped by due date (overdue, this week, next week). Click to filter the board to overdue cards.
@@ -140,9 +140,9 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 - **Cumulative flow, 90 days**: card count over the past 90 days, showing new and completed work (no drill-down).
 - **Completed work (by latest completion)**: completed work by week; reopened work moves out of earlier weeks (no drill-down).
 - **Burn-up, 90 days**: scope (all cards added) and completed work over 90 days (no drill-down).
-- **Hygiene**: counts of open cards with no due date, open cards with no Jira link, cards whose steps are all done but that aren't in Done, Done cards with open steps, people with no open work, and people past their end date who still hold work. **No due date** and **No Jira link** are links that open the board filtered to those cards; the other rows are counts only.
+- **Hygiene**: counts of open cards with no due date, open cards with no Jira link, cards whose steps are all done but that aren't in Done, Done cards with open steps, resources with no open work, and resources past their end date who still hold work. **No due date** and **No Jira link** are links that open the board filtered to those cards; the other rows are counts only.
 
-**All projects** doesn't combine the dashboards. Its **Boards** tab shows a card per board: its load against capacity, open and done counts, and how many cards are overdue, people rolling off within 30 days, and people over capacity. Its **People** tab lists each person's allocation and load across all boards and flags anyone over 100 %.
+**All projects** doesn't combine the dashboards. Its **Boards** tab shows a card per board: its load against capacity, open and done counts, and how many cards are overdue, resources rolling off within 30 days, and resources over capacity. Its **Resources** tab lists each resource's allocation and load across all boards and flags anyone over 100 %.
 
 ---
 
@@ -158,22 +158,22 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 
 ## Kanban Summary
 
-**Write a status update.** Click the **Kanban Summary** button in the toolbar (next to **Weekly Summary**). Pick cards to include using the selection view (**By person** or **Whole board** — both group the selection the same way for display; the summary is always organized by person and column). Click **Select all with notes** to pre-select cards that have notes. Choose your AI connection (ChatGPT account, Codex config, or local model) and the model/effort, then click **Generate**. The update uses card titles, status, person, column, labels, priority, blocked state, Jira keys, subtasks, and notes—no ids or dates.
+**Write a status update.** Click the **Kanban Summary** button in the toolbar (next to **Weekly Summary**). Pick cards to include using the selection view (**By resource** or **Whole board** — both group the selection the same way for display; the summary is always organized by resource and column). Click **Select all with notes** to pre-select cards that have notes. Choose your AI connection (ChatGPT account, Codex config, or local model) and the model/effort, then click **Generate**. The update uses card titles, status, resource, column, labels, priority, blocked state, Jira keys, subtasks, and notes—no ids or dates.
 
 ---
 
 ## Export, import and CSV
 
-**Export a board.** Right-click a board in the sidebar and choose **Export board…** to save a `.tickytask-board` JSON file with the board's columns, labels, people and cards.
+**Export a board.** Right-click a board in the sidebar and choose **Export board…** to save a `.tickytask-board` JSON file with the board's columns, labels, resources and cards.
 
 **Export as CSV.** Right-click a board and choose **Export as CSV…** to save a spreadsheet for spreadsheet tools or other systems.
 
 **Import a board.** Click the import icon (arrow down) in the sidebar to pick a `.tickytask-board` file. A preview shows:
 - **Boards**: create new or merge into an existing board.
-- **People**: link to existing people or create new ones (by id first, then by name).
+- **Resources**: link to existing resources or create new ones (by id first, then by name).
 - **Repairs**: dropped dependency loops, unassigned cards from archived memberships, and completion mismatches.
 
-Imported history is not included. Archived people arrive archived, with their cards Unassigned. **Undo** doesn't reach past an import.
+Imported history is not included. Archived resources arrive archived, with their cards Unassigned. **Undo** doesn't reach past an import.
 
 ---
 
@@ -199,7 +199,8 @@ The menu bar's calendar now marks days with due Kanban cards so you can see at a
 
 **New boards** defaults:
 - **Measure load in**: open tasks or hours. This affects all charts and capacity calculations.
-- **Open-task target per person**: the default load target (e.g., 5 tasks per person).
+- **Show allocation in row headers** (under **Boards**, on by default): turn it off to hide the part-time icon and percentage beside each name. Allocation still sets capacity.
+- **Open-task target per resource**: the default load target (e.g., 5 tasks per resource).
 - **Weight Critical and High cards**: if on, High and Critical cards count extra toward load (e.g., 2 or 1.5 × their count).
 - **Over a WIP limit**: warn (show red but allow drop) or block the move.
 - **Due soon: within N days**: the threshold for marking cards as due soon (default: 3 days).
@@ -246,7 +247,7 @@ Restoring a backup clears undo/redo for the board and imports. Everything is res
 | **With a card focused** | |
 | ↑ ↓ ← → | Move focus between cards |
 | ⌘← / ⌘→ | Previous / next column |
-| ⌘↑ / ⌘↓ | Previous / next person |
+| ⌘↑ / ⌘↓ | Previous / next resource |
 | ⌥⌘ arrows | Reorder within the cell |
 | Return | Open the card editor |
 | Space | Quick look (preview) |
@@ -298,14 +299,14 @@ sequenceDiagram
     File-->>App: File selected
     App->>App: Decode & validate file
     App->>Preview: Show preview sheet
-    Preview->>User: Display boards, people<br/>& repair choices
-    User->>Preview: Choose new/merge,<br/>person links
+    Preview->>User: Display boards, resources<br/>& repair choices
+    User->>Preview: Choose new/merge,<br/>resource links
     Preview->>Preview: Build resolution plan
     User->>Preview: Click Import
     Preview->>App: Validate choices
     App->>Store: Fetch existing data
     App->>Store: Begin transaction
-    App->>Store: Insert/merge boards<br/>& people
+    App->>Store: Insert/merge boards<br/>& resources
     App->>Store: Repair references
     App->>Store: Commit transaction
     Store-->>App: Done
@@ -345,7 +346,7 @@ Every card goes through these states:
 
 From any state except deleted, you can:
 - **Revert** a change from the Change Log (if newer changes haven't made it impossible).
-- **Restore** from archived back to its original column and assignee. The assignee returns only if that person is still on the board; otherwise the card is Unassigned.
+- **Restore** from archived back to its original column and assignee. The assignee returns only if that resource is still on the board; otherwise the card is Unassigned.
 - **Delete** it (permanent, but undoable via Change Log until the entry is gone).
 - **Schedule to day** to link it with a planner task.
 
@@ -356,7 +357,7 @@ From any state except deleted, you can:
 - **Drag near column headers** to change a card's column while keeping its assignee.
 - **Drag onto a row header** to reassign while keeping the column.
 - **Drag onto Unassigned** to unassign immediately.
-- **Collapse rows** (⌥-click a disclosure chevron or **⌃⌘↑**) to see counts and load gauges without scrolling through each person.
+- **Collapse rows** (⌥-click a disclosure chevron or **⌃⌘↑**) to see counts and load gauges without scrolling through each resource.
 - **Multi-select + right-click** lets you move, assign, label, or change priority for many cards at once, recorded as one Change Log entry.
 - **Undo and redo** are per-project and remembered until relaunch; redo clears when you make a new change.
 - **Change Log Revert** works even after a relaunch and catches conflicts; undo doesn't.

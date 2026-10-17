@@ -18,6 +18,7 @@ struct KanbanRowHeader: View {
     var onEdit: () -> Void
     var onRemove: () -> Void
     @Environment(AppState.self) private var app
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = true
 
     var body: some View {
         let _ = app.kanbanClock   // the roll-off badge counts days from today
@@ -106,10 +107,12 @@ struct KanbanRowHeader: View {
             Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark")
                 .help(employment)
                 .accessibilityHidden(true)
-            Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
-                .help("Allocation")
-                .accessibilityHidden(true)
-            if resource.allocationPercent < 100 {
+            if showAllocation {
+                Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
+                    .help("Allocation")
+                    .accessibilityHidden(true)
+            }
+            if showAllocation, resource.allocationPercent < 100 {
                 Text("\(resource.allocationPercent)%").monospacedDigit()
                     .accessibilityHidden(true)
             }
@@ -117,7 +120,8 @@ struct KanbanRowHeader: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(employment), \(assignment)\(allocation)")
+        // What's spoken matches what's shown.
+        .accessibilityLabel(showAllocation ? "\(employment), \(assignment)\(allocation)" : employment)
     }
 
     /// A bar filled to the utilisation (capped at the bar's end), coloured by band.

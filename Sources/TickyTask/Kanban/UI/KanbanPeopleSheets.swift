@@ -27,19 +27,19 @@ struct KanbanAddPersonSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Add person to \(project.name)").font(.headline)
+            Text("Add resource to \(project.name)").font(.headline)
             Form {
                 // Only offered when there's someone to pick: people on other boards, or removed from this one.
                 if !available.isEmpty {
                     Picker("Add", selection: $source) {
-                        Text("New person").tag(Source.new)
-                        Text("Existing person").tag(Source.existing)
+                        Text("New resource").tag(Source.new)
+                        Text("Existing resource").tag(Source.existing)
                     }
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("kanban-person-source")
                 }
                 if source == .existing, !available.isEmpty {
-                    Picker("Person", selection: $personID) {
+                    Picker("Resource", selection: $personID) {
                         ForEach(available) { Text($0.name).tag(Optional($0.id)) }
                     }
                     .accessibilityIdentifier("kanban-person-picker")
@@ -129,7 +129,7 @@ struct KanbanMembershipSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(resource.displayName) on \(resource.project?.name ?? "")").font(.headline)
             Form {
-                Section("Person (every board)") {
+                Section("Resource (every board)") {
                     TextField("Name", text: $name)
                     TextField("Initials", text: $initials)
                     Picker("Employment", selection: $employment) {
@@ -205,7 +205,7 @@ struct KanbanMembershipSheet: View {
         ]
         // Check the person's fields first, so a refused name can't leave the membership saved.
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
-            error = "A person needs a name."
+            error = "A resource needs a name."
             return
         }
         do {

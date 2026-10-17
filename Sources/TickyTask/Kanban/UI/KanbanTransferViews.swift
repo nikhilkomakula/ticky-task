@@ -70,7 +70,7 @@ struct KanbanImportSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import “\(request.fileName)”").font(.headline)
-            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) people. Imported boards start a fresh history.")
+            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) resources. Imported boards start a fresh history.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Form {
@@ -83,15 +83,15 @@ struct KanbanImportSheet: View {
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
                         let reused = request.plan.reusedMemberships(projects: projects, people: people)[board.id] ?? []
                         if !reused.isEmpty {
-                            Text("One membership per person on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")
+                            Text("One membership per resource on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
-                Section("People") {
+                Section("Resources") {
                     ForEach($request.plan.people) { $person in
                         Picker(person.name, selection: $person.linkTo) {
-                            Text("Add as a new person").tag(UUID?.none)
+                            Text("Add as a new resource").tag(UUID?.none)
                             ForEach(people.filter { $0.archivedAt == nil || $0.id == person.linkTo }) { Text("Same as \($0.name)").tag(Optional($0.id)) }
                         }
                         if let linked = person.linkTo.flatMap({ id in people.first { $0.id == id } }), linked.archivedAt != nil {

@@ -167,10 +167,10 @@ private struct LoadChart: View {
             }
         }
         if rows.isEmpty {
-            Empty(text: "No open work and no people on this board yet.")
+            Empty(text: "No open work and no resources on this board yet.")
         } else {
             Chart(bars) { bar in
-                BarMark(x: .value("Load", bar.load), y: .value("Person", bar.person))
+                BarMark(x: .value("Load", bar.load), y: .value("Resource", bar.person))
                     .foregroundStyle(by: .value("Column", bar.column))
             }
             .chartForegroundStyleScale(domain: styleMap.keys.sorted(), range: styleMap.keys.sorted().map { styleMap[$0] ?? .gray })
@@ -250,10 +250,10 @@ private struct HeatmapChart: View {
             }
         }
         if rows.isEmpty {
-            Empty(text: "No people on this board yet.")
+            Empty(text: "No resources on this board yet.")
         } else {
             Chart(cells) { cell in
-                RectangleMark(x: .value("Week", cell.week, unit: .weekOfYear), y: .value("Person", cell.person))
+                RectangleMark(x: .value("Week", cell.week, unit: .weekOfYear), y: .value("Resource", cell.person))
                     .foregroundStyle(Self.color(cell.state))
                     .opacity(cell.value.map { min(max($0, 0.25), 1) } ?? 1)
                     .accessibilityLabel("\(cell.person), week of \(cell.week.formatted(.dateTime.month().day()))")
@@ -490,7 +490,7 @@ private struct HygieneList: View {
             Check(id: "No Jira link", count: h.missingJira.count, filter: { $0.openOnly = true; $0.hasJira = false }),
             Check(id: "All steps done but not in Done", count: h.subtasksDoneNotDone.count, filter: nil),
             Check(id: "Done with open steps", count: h.doneWithOpenSubtasks.count, filter: nil),
-            Check(id: "People with no open work", count: h.idleResources.count, filter: nil),
+            Check(id: "Resources with no open work", count: h.idleResources.count, filter: nil),
             Check(id: "Past their end date, still holding work", count: h.pastEndHoldingWork.count, filter: nil),
         ] + (hours ? [Check(id: "No estimate", count: h.missingEstimate.count, filter: { $0.openOnly = true; $0.hasEstimate = false })] : [])
         ForEach(checks) { check in

@@ -8,7 +8,7 @@ struct KanbanAllProjectsView: View {
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @State private var tab = Tab.boards
 
-    enum Tab: String, CaseIterable { case boards = "Boards", people = "People" }
+    enum Tab: String, CaseIterable { case boards = "Boards", people = "Resources" }
 
     var body: some View {
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)

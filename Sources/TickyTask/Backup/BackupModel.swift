@@ -201,6 +201,8 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     var kanbanOpenTaskTargetDefault: Double? = nil
     var kanbanDueSoonThresholdDefault: Int? = nil
     var kanbanSuggestDoneDefault: Bool? = nil
+    /// Settings › Kanban › Show allocation in row headers.
+    var kanbanShowAllocation: Bool? = nil
     /// Kanban notifications.
     var kanbanNotifyDueDates: Bool? = nil
     var kanbanNotifyDueMinutes: Int? = nil
@@ -249,6 +251,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
             kanbanOpenTaskTargetDefault: d.object(forKey: "kanban.openTaskTargetDefault") as? Double,
             kanbanDueSoonThresholdDefault: d.object(forKey: "kanban.dueSoonThresholdDefault") as? Int,
             kanbanSuggestDoneDefault: d.object(forKey: "kanban.suggestDoneDefault") as? Bool,
+            kanbanShowAllocation: d.object(forKey: KanbanBoardDefaults.showAllocationKey) as? Bool,
             kanbanNotifyDueDates: d.object(forKey: "kanban.notifyDueDates") as? Bool,
             kanbanNotifyDueMinutes: d.object(forKey: "kanban.notifyDueMinutes") as? Int,
             kanbanAutoArchiveEnabled: d.object(forKey: "kanban.autoArchiveEnabled") as? Bool,
@@ -269,7 +272,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "showPlannerModule", "showKanbanModule", "defaultModule", "kanbanPopoverProjectID",
         "kanbanSummary.instructions", "kanban.templates",
         "kanban.weightedLoadDefault", "kanban.wipPolicyDefault", "kanban.loadMeasureDefault",
-        "kanban.openTaskTargetDefault", "kanban.dueSoonThresholdDefault", "kanban.suggestDoneDefault",
+        "kanban.openTaskTargetDefault", "kanban.dueSoonThresholdDefault", "kanban.suggestDoneDefault", KanbanBoardDefaults.showAllocationKey,
         "kanban.notifyDueDates", "kanban.notifyDueMinutes", "kanban.autoArchiveEnabled", "kanban.autoArchiveDays",
         "kanban.defaultLabels",
     ] + SummaryPreferences.portableKeys
@@ -305,6 +308,7 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = kanbanOpenTaskTargetDefault { d.set(v, forKey: "kanban.openTaskTargetDefault") }
         if let v = kanbanDueSoonThresholdDefault { d.set(v, forKey: "kanban.dueSoonThresholdDefault") }
         if let v = kanbanSuggestDoneDefault { d.set(v, forKey: "kanban.suggestDoneDefault") }
+        if let v = kanbanShowAllocation { d.set(v, forKey: KanbanBoardDefaults.showAllocationKey) }
         if let v = kanbanNotifyDueDates { d.set(v, forKey: "kanban.notifyDueDates") }
         if let v = kanbanNotifyDueMinutes { d.set(v, forKey: "kanban.notifyDueMinutes") }
         if let v = kanbanAutoArchiveEnabled { d.set(v, forKey: "kanban.autoArchiveEnabled") }

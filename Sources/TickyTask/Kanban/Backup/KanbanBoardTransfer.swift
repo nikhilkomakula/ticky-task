@@ -25,7 +25,7 @@ enum KanbanBoardTransfer {
             switch self {
             case .notABoardFile: "That isn't a TickyTask board file."
             case .newerVersion: "That board file was made by a newer version of TickyTask."
-            case let .missingPerson(name): "The file refers to a person it doesn't include (on “\(name)”)."
+            case let .missingPerson(name): "The file refers to a resource it doesn't include (on “\(name)”)."
             case .noSuchBoard: "The board to merge into no longer exists."
             case let .rowPositions(name): "“\(name)” has damaged positions or history numbering, so nothing was imported."
             }

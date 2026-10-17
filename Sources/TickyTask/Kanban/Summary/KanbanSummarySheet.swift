@@ -103,7 +103,7 @@ private struct KanbanSummarySelectionView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Picker("Scope", selection: $session.scope) {
-                    Text("By person").tag(KanbanSummaryScope.byResource)
+                    Text("By resource").tag(KanbanSummaryScope.byResource)
                     Text("Whole board").tag(KanbanSummaryScope.wholeProject)
                 }
                 .frame(maxWidth: 160)
@@ -215,7 +215,7 @@ private struct KanbanResourceSection: View {
                             .foregroundStyle(selectedHere == 0 ? Color.secondary : Color.accentColor)
                     }
                     .buttonStyle(.plain)
-                    .help(selectedHere < cards.count ? "Select all cards from this person" : "Deselect this person")
+                    .help(selectedHere < cards.count ? "Select all cards from this resource" : "Deselect this resource")
                 }
                 Text(resource).font(.subheadline.weight(.medium))
                 Spacer()

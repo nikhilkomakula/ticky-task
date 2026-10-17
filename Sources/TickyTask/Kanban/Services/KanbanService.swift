@@ -270,7 +270,7 @@ struct KanbanService {
     /// a plain confirmed edit, outside every Change Log (01 §2.2).
     func editPerson(_ person: KanbanPerson, name: String? = nil, initials: String? = nil, employment: KanbanEmployment? = nil) throws {
         try RecurrenceMaterializer.checkpoint(context)
-        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty { throw KanbanServiceError.invariant("A person needs a name.") }
+        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty { throw KanbanServiceError.invariant("A resource needs a name.") }
         if let name { person.name = name }
         if let initials { person.initials = initials }
         if let employment { person.employmentRaw = employment.rawValue }
@@ -648,7 +648,7 @@ struct KanbanService {
         for step in draft.steps {
             if let assigneeID = step.assigneeID {
                 guard project.resources.contains(where: { $0.id == assigneeID && $0.archivedAt == nil }) else {
-                    throw KanbanServiceError.invariant("That person isn't an active member of this board.")
+                    throw KanbanServiceError.invariant("That resource isn't an active member of this board.")
                 }
             }
         }
@@ -1316,7 +1316,7 @@ struct KanbanService {
     private func resource(for row: KanbanRowKey, in project: KanbanProject) throws -> KanbanResource? {
         guard case let .resource(id) = row else { return nil }
         guard let resource = project.resources.first(where: { $0.id == id && $0.archivedAt == nil }) else {
-            throw KanbanServiceError.invariant("That person isn't on this board.")
+            throw KanbanServiceError.invariant("That resource isn't on this board.")
         }
         return resource
     }
@@ -1826,7 +1826,7 @@ struct KanbanService {
         let people = try context.fetch(FetchDescriptor<KanbanPerson>())
         for dto in graph.resources {
             guard let person = people.first(where: { $0.id == dto.personId }), person.archivedAt == nil
-            else { throw KanbanServiceError.conflict("Restore that person in People first.") }
+            else { throw KanbanServiceError.conflict("Restore that resource in Resources first.") }
         }
         for dto in graph.subtasks where !(graph.tasks.contains { $0.id == dto.taskId } || project.tasks.contains { $0.id == dto.taskId }) {
             throw KanbanServiceError.conflict("“\(dto.title)”’s card no longer exists.")

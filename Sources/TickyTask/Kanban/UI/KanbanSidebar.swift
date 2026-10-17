@@ -85,7 +85,7 @@ struct KanbanSidebar: View {
                 app.runKanban { try app.kanbanService(context).deleteProject(project) }
             }
         } message: {
-            Text("Its cards, rows and history are deleted permanently. People stay in the directory.")
+            Text("Its cards, rows and history are deleted permanently. Resources stay in the directory.")
         }
     }
 

@@ -15,6 +15,7 @@ struct KanbanSettingsView: View {
     @AppStorage(KanbanBoardDefaults.openTaskTargetKey) private var openTaskTarget = 5.0
     @AppStorage(KanbanBoardDefaults.dueSoonKey) private var dueSoon = 3
     @AppStorage(KanbanBoardDefaults.suggestDoneKey) private var suggestDone = true
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = true
     @AppStorage("kanban.notifyDueDates") private var notifyDueDates = false
     @AppStorage("kanban.notifyDueMinutes") private var notifyDueMinutes = 9 * 60
     @AppStorage(KanbanBoardDefaults.autoArchiveEnabledKey) private var autoArchive = false
@@ -39,12 +40,19 @@ struct KanbanSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("Boards") {
+                Toggle("Show allocation in row headers", isOn: $showAllocation)
+                    .accessibilityIdentifier("settings-show-allocation")
+                Text("The part-time icon and percentage beside each name. Allocation still sets capacity and stays in Edit membership.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("New boards") {
                 Picker("Measure load in", selection: $loadMeasure) {
                     Text("Open tasks").tag(KanbanLoadMeasure.taskCount.rawValue)
                     Text("Hours").tag(KanbanLoadMeasure.hours.rawValue)
                 }
-                TextField("Open-task target per person", value: $openTaskTarget, format: .number)
+                TextField("Open-task target per resource", value: $openTaskTarget, format: .number)
                 Toggle("Weight Critical and High cards", isOn: $weightedLoad)
                 Picker("Over a WIP limit", selection: $wipPolicy) {
                     Text("Warn").tag(KanbanWIPPolicy.warn.rawValue)
