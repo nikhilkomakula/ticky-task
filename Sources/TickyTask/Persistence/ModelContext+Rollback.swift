@@ -21,6 +21,14 @@ extension ModelContext {
         _ = try? fetch(FetchDescriptor<TaskOccurrence>())
         _ = try? fetch(FetchDescriptor<TaskTag>())
         _ = try? fetch(FetchDescriptor<CustomList>())
+        _ = try? fetch(FetchDescriptor<KanbanPerson>())
+        _ = try? fetch(FetchDescriptor<KanbanProject>())
+        _ = try? fetch(FetchDescriptor<KanbanColumn>())
+        _ = try? fetch(FetchDescriptor<KanbanResource>())
+        _ = try? fetch(FetchDescriptor<KanbanLabel>())
+        _ = try? fetch(FetchDescriptor<KanbanTask>())
+        _ = try? fetch(FetchDescriptor<KanbanSubtask>())
+        _ = try? fetch(FetchDescriptor<KanbanActivity>())
     }
 }
 

@@ -56,6 +56,7 @@ struct BackupStoreDTO: Codable, Equatable, Sendable {
     /// 2 (0.1.17): recurring series are a hidden definition plus occurrence rows
     /// with stable slots. Older apps reject it rather than misreading a definition
     /// that has no day; this app still imports version 1.
+    /// Schema version stays 2 for Kanban (D8); Kanban data carries its own version.
     static let currentSchemaVersion = 2
 
     var schemaVersion: Int
@@ -65,6 +66,9 @@ struct BackupStoreDTO: Codable, Equatable, Sendable {
     /// User-facing preferences (UserDefaults) captured at export and applied on
     /// restore. Optional so older backups without it still decode.
     var settings: AppSettingsDTO? = nil
+    /// Kanban data (v0.2.0+). Optional so pre-Kanban backups decode; absent means
+    /// "keep existing boards" (D11), present-but-empty means "no boards".
+    var kanban: KanbanBackupDTO? = nil
 }
 
 struct BackupDataDTO: Codable, Equatable, Sendable {
@@ -179,6 +183,27 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
     /// keyed by their UserDefaults key. Optional so older backups decode; the CLI
     /// path and the local-server API key are never included.
     var weeklySummary: [String: String]? = nil
+    /// Kanban module visibility (v0.2.0+).
+    var showPlannerModule: Bool? = nil
+    var showKanbanModule: Bool? = nil
+    /// Default module on launch: "planner" or "kanban".
+    var defaultModule: String? = nil
+    /// Last-opened Kanban project for popover quick-add.
+    var kanbanPopoverProjectID: String? = nil
+    /// Kanban Summary custom instructions.
+    var kanbanSummaryInstructions: String? = nil
+    /// Kanban user templates (JSON string).
+    var kanbanTemplates: String? = nil
+    /// Kanban defaults for new projects.
+    var kanbanWeightedLoadDefault: Bool? = nil
+    var kanbanWipPolicyDefault: String? = nil
+    var kanbanLoadMeasureDefault: String? = nil
+    var kanbanOpenTaskTargetDefault: Double? = nil
+    var kanbanDueSoonThresholdDefault: Int? = nil
+    var kanbanSuggestDoneDefault: Bool? = nil
+    /// Kanban notifications.
+    var kanbanNotifyDueDates: Bool? = nil
+    var kanbanNotifyDueMinutes: Int? = nil
 
     /// Snapshot the current preferences. Uses `object(forKey:)` so an unset key
     /// stays `nil` rather than reading back as `false` / `0`.
@@ -206,7 +231,21 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
                     }
                 }
                 return values.isEmpty ? nil : values
-            }()
+            }(),
+            showPlannerModule: d.object(forKey: "showPlannerModule") as? Bool,
+            showKanbanModule: d.object(forKey: "showKanbanModule") as? Bool,
+            defaultModule: d.string(forKey: "defaultModule"),
+            kanbanPopoverProjectID: d.string(forKey: "kanbanPopoverProjectID"),
+            kanbanSummaryInstructions: d.string(forKey: "kanbanSummary.instructions"),
+            kanbanTemplates: d.string(forKey: "kanban.templates"),
+            kanbanWeightedLoadDefault: d.object(forKey: "kanban.weightedLoadDefault") as? Bool,
+            kanbanWipPolicyDefault: d.string(forKey: "kanban.wipPolicyDefault"),
+            kanbanLoadMeasureDefault: d.string(forKey: "kanban.loadMeasureDefault"),
+            kanbanOpenTaskTargetDefault: d.object(forKey: "kanban.openTaskTargetDefault") as? Double,
+            kanbanDueSoonThresholdDefault: d.object(forKey: "kanban.dueSoonThresholdDefault") as? Int,
+            kanbanSuggestDoneDefault: d.object(forKey: "kanban.suggestDoneDefault") as? Bool,
+            kanbanNotifyDueDates: d.object(forKey: "kanban.notifyDueDates") as? Bool,
+            kanbanNotifyDueMinutes: d.object(forKey: "kanban.notifyDueMinutes") as? Int
         )
     }
 
@@ -219,6 +258,11 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         "autoDeleteCompletedEnabled", "autoDeleteCompletedDays",
         "endOfDayReminderEnabled", "endOfDayReminderMinutes",
         "menuBarOnly", "autoCheckUpdates",
+        "showPlannerModule", "showKanbanModule", "defaultModule", "kanbanPopoverProjectID",
+        "kanbanSummary.instructions", "kanban.templates",
+        "kanban.weightedLoadDefault", "kanban.wipPolicyDefault", "kanban.loadMeasureDefault",
+        "kanban.openTaskTargetDefault", "kanban.dueSoonThresholdDefault", "kanban.suggestDoneDefault",
+        "kanban.notifyDueDates", "kanban.notifyDueMinutes",
     ] + SummaryPreferences.portableKeys
 
     /// Reproduce the backed-up settings: clear every portable key first (so a
@@ -240,6 +284,20 @@ struct AppSettingsDTO: Codable, Equatable, Sendable {
         if let v = endOfDayReminderMinutes { d.set(v, forKey: "endOfDayReminderMinutes") }
         if let v = menuBarOnly { d.set(v, forKey: "menuBarOnly") }
         if let v = autoCheckUpdates { d.set(v, forKey: "autoCheckUpdates") }
+        if let v = showPlannerModule { d.set(v, forKey: "showPlannerModule") }
+        if let v = showKanbanModule { d.set(v, forKey: "showKanbanModule") }
+        if let v = defaultModule { d.set(v, forKey: "defaultModule") }
+        if let v = kanbanPopoverProjectID { d.set(v, forKey: "kanbanPopoverProjectID") }
+        if let v = kanbanSummaryInstructions { d.set(v, forKey: "kanbanSummary.instructions") }
+        if let v = kanbanTemplates { d.set(v, forKey: "kanban.templates") }
+        if let v = kanbanWeightedLoadDefault { d.set(v, forKey: "kanban.weightedLoadDefault") }
+        if let v = kanbanWipPolicyDefault { d.set(v, forKey: "kanban.wipPolicyDefault") }
+        if let v = kanbanLoadMeasureDefault { d.set(v, forKey: "kanban.loadMeasureDefault") }
+        if let v = kanbanOpenTaskTargetDefault { d.set(v, forKey: "kanban.openTaskTargetDefault") }
+        if let v = kanbanDueSoonThresholdDefault { d.set(v, forKey: "kanban.dueSoonThresholdDefault") }
+        if let v = kanbanSuggestDoneDefault { d.set(v, forKey: "kanban.suggestDoneDefault") }
+        if let v = kanbanNotifyDueDates { d.set(v, forKey: "kanban.notifyDueDates") }
+        if let v = kanbanNotifyDueMinutes { d.set(v, forKey: "kanban.notifyDueMinutes") }
         // Only known keys are restored, so a crafted backup can't write arbitrary defaults.
         // A credential-bearing endpoint URL is never restored (it would land in plain defaults).
         for (key, value) in weeklySummary ?? [:] where SummaryPreferences.portableKeys.contains(key)

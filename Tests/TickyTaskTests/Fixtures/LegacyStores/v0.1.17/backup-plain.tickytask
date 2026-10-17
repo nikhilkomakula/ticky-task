@@ -1,0 +1,734 @@
+{
+  "encrypted" : false,
+  "format" : 1,
+  "store" : {
+    "appVersion" : "0.1.17",
+    "data" : {
+      "customLists" : [
+        {
+          "id" : "0E06C7E2-B201-45CE-BB3F-82252CB12025",
+          "name" : "Someday",
+          "sortIndex" : 2
+        },
+        {
+          "id" : "F83B17FD-117D-4721-A42E-5C1BF7C47E4E",
+          "name" : "Inbox",
+          "sortIndex" : 1
+        }
+      ],
+      "subtasks" : [
+        {
+          "id" : "5B26DDFA-548E-4F8B-8EA2-5377F965E0A0",
+          "isDone" : true,
+          "parentId" : "CBB050FF-E747-4B6A-8B18-8691D5F57279",
+          "sortIndex" : 1,
+          "title" : "T-sub1"
+        },
+        {
+          "id" : "680C6729-4DE2-4E2D-871F-7C305567BA52",
+          "isDone" : false,
+          "parentId" : "CBB050FF-E747-4B6A-8B18-8691D5F57279",
+          "sortIndex" : 2,
+          "title" : "T-sub2"
+        },
+        {
+          "id" : "72C23530-37C5-448C-9C59-6380E37F8A1C",
+          "isDone" : false,
+          "parentId" : "3170F680-FF23-4CF3-BD20-088F935624D9",
+          "sortIndex" : 2,
+          "title" : "OD-sub2"
+        },
+        {
+          "id" : "C3BC09BC-5002-4EBE-BC3C-4AF04FD4FAFA",
+          "isDone" : false,
+          "parentId" : "BF51AB27-93CD-4381-BF66-ADAFF91AFE46",
+          "sortIndex" : 1,
+          "title" : "C-sub"
+        },
+        {
+          "id" : "D0DEF689-310B-4912-904B-39947D0623BA",
+          "isDone" : true,
+          "parentId" : "3170F680-FF23-4CF3-BD20-088F935624D9",
+          "sortIndex" : 1,
+          "title" : "OD-sub1"
+        }
+      ],
+      "taskItems" : [
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.183Z",
+          "customListId" : "F83B17FD-117D-4721-A42E-5C1BF7C47E4E",
+          "id" : "2371B2CE-D8B7-444B-903D-1D5C8F68BF82",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "listed notes",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "One-off listed",
+          "updatedAt" : "2026-10-17T02:35:26.183Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.197Z",
+          "customListId" : "F83B17FD-117D-4721-A42E-5C1BF7C47E4E",
+          "id" : "265373B7-E61A-463A-9E02-590274CB6A48",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260907",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.197Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.183Z",
+          "dayKey" : "20260907",
+          "id" : "3170F680-FF23-4CF3-BD20-088F935624D9",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "one-off notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImtpbmQiOiJwYXJhZ3JhcGgiLCJjaGVja2VkIjpmYWxzZSwiaW5kZW50IjowLCJpZCI6IkJDQTMwMEI0LTU5NUQtNEI0OC05OTYyLTJCNzZDQjY3RTUzQyIsInJ1bnMiOlt7InVuZGVybGluZSI6ZmFsc2UsInRleHQiOiJyaWNoIG9uZS1vZmYiLCJzdHJpa2V0aHJvdWdoIjpmYWxzZSwiYm9sZCI6ZmFsc2UsIml0YWxpYyI6ZmFsc2V9XX1dfQ==",
+          "priority" : 2,
+          "sortIndex" : 0,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "timeMinutes" : 600,
+          "title" : "One-off dated",
+          "updatedAt" : "2026-10-17T02:35:26.183Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.223Z",
+          "dayKey" : "20260914",
+          "id" : "34C0D2C0-36B9-40E8-A458-02B32FD0EB82",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260914",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-17T02:35:26.223Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.219Z",
+          "dayKey" : "20261103",
+          "id" : "34CF2C39-D486-4662-9952-484CB5C00948",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261103",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.219Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.197Z",
+          "dayKey" : "20260906",
+          "id" : "4FD46F18-1C26-4568-8023-DF4039F9A14B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260905",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.197Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.223Z",
+          "dayKey" : "20260928",
+          "id" : "5329E817-6848-4276-9691-72B4CB020D06",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260928",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-17T02:35:26.223Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.218Z",
+          "dayKey" : "20261027",
+          "id" : "5765F7BC-6ECC-4ACA-9D9C-38B973D9635B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261027",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.218Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.198Z",
+          "dayKey" : "20260909",
+          "id" : "608FFD20-3372-4210-8585-718DC3F745C4",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260909",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Standup (moved room)",
+          "updatedAt" : "2026-10-17T02:35:26.198Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.217Z",
+          "dayKey" : "20260922",
+          "id" : "61D4A8EE-C54E-459B-BE5F-99017C7E6F6B",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260922",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.217Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.219Z",
+          "dayKey" : "20260907",
+          "id" : "711D70F5-B9C7-407E-85CA-7F861889A914",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260907",
+          "occurrenceModified" : true,
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "templateId" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-17T02:35:26.222Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.218Z",
+          "dayKey" : "20261020",
+          "id" : "7186D13C-1F95-4067-BA76-96502292FB42",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261020",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.218Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.225Z",
+          "id" : "7FAD0640-999A-4B21-BB96-FB1E52D1481A",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 6,
+            "interval" : 1,
+            "monthDays" : [
+              1,
+              15
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-17T02:35:26.225Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.223Z",
+          "dayKey" : "20260921",
+          "id" : "81EA88E9-B4C4-477F-911D-49C5BB358089",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260921",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-17T02:35:26.223Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.218Z",
+          "dayKey" : "20261013",
+          "id" : "8FEE1B78-C61B-462E-BE1B-4CFB1BB1A784",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261013",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.218Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "completedAt" : "2026-09-04T06:30:00.000Z",
+          "createdAt" : "2026-10-17T02:35:26.196Z",
+          "dayKey" : "20260904",
+          "id" : "95902BFC-2D8B-4BD5-8B80-5F78FABBC68D",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260904",
+          "occurrenceModified" : true,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-09-04T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.225Z",
+          "dayKey" : "20260901",
+          "id" : "976514B8-CF05-4ED6-B574-C311001400CE",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260901",
+          "occurrenceModified" : true,
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "templateId" : "7FAD0640-999A-4B21-BB96-FB1E52D1481A",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-17T02:35:26.225Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.218Z",
+          "dayKey" : "20261006",
+          "id" : "9C70E219-58B6-47E4-9C9B-A8254E9752D7",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261006",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.218Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.185Z",
+          "dayKey" : "20260902",
+          "id" : "A3CE677B-AC44-437E-90A2-A8B437507F68",
+          "isDone" : false,
+          "needsImmediateAttention" : true,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Critical one-off",
+          "updatedAt" : "2026-10-17T02:35:26.185Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "completedAt" : "2026-09-01T06:30:00.000Z",
+          "createdAt" : "2026-10-17T02:35:26.183Z",
+          "dayKey" : "20260901",
+          "id" : "A75A3CD2-4263-43DD-B950-36C590446043",
+          "isDone" : true,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Done one-off",
+          "updatedAt" : "2026-09-01T06:30:00.000Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.223Z",
+          "dayKey" : "20261005",
+          "id" : "A9B5290D-2BC0-477A-ACFF-892C4AAF0F61",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261005",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "title" : "Weekly review",
+          "updatedAt" : "2026-10-17T02:35:26.223Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.222Z",
+          "id" : "AEC55457-3E47-4860-9D71-4906E5598768",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 0,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 2,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-07T06:30:00.000Z",
+            "weekdays" : [
+              2
+            ]
+          },
+          "sortIndex" : 0,
+          "tagIds" : [
+
+          ],
+          "title" : "Weekly review v2",
+          "updatedAt" : "2026-10-17T02:35:26.222Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.225Z",
+          "dayKey" : "20260915",
+          "id" : "B8891FAD-576E-4A04-92EA-929C835ABB98",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260915",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 2,
+          "tagIds" : [
+
+          ],
+          "templateId" : "7FAD0640-999A-4B21-BB96-FB1E52D1481A",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-17T02:35:26.225Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.196Z",
+          "dayKey" : "20260903",
+          "id" : "BF51AB27-93CD-4381-BF66-ADAFF91AFE46",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "child-0903 notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImluZGVudCI6MCwiY2hlY2tlZCI6ZmFsc2UsImlkIjoiQjVGMjU5M0QtN0I0QS00MjgxLThDODQtQjAxODFFMDMyMUFDIiwicnVucyI6W3siaXRhbGljIjpmYWxzZSwidW5kZXJsaW5lIjpmYWxzZSwic3RyaWtldGhyb3VnaCI6ZmFsc2UsImJvbGQiOmZhbHNlLCJ0ZXh0IjoiY2hpbGQgcmljaCJ9XSwia2luZCI6InBhcmFncmFwaCJ9XX0=",
+          "occurrenceKey" : "20260903",
+          "occurrenceModified" : true,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.196Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.217Z",
+          "dayKey" : "20260915",
+          "id" : "C4D83D38-5FA6-428B-8B38-EB05FFA23C2E",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260915",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.217Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.194Z",
+          "id" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "priority" : 1,
+          "recurrence" : {
+            "end" : {
+              "never" : {
+
+              }
+            },
+            "frequency" : 2,
+            "interval" : 1,
+            "monthDays" : [
+
+            ],
+            "startDate" : "2026-09-01T06:30:00.000Z",
+            "weekdays" : [
+              3
+            ]
+          },
+          "recurrenceEffectiveFromKey" : "20260910",
+          "sortIndex" : 0,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.216Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.185Z",
+          "dayKey" : "20260901",
+          "id" : "CBB050FF-E747-4B6A-8B18-8691D5F57279",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "template notes",
+          "notesRich" : "eyJ2ZXJzaW9uIjoxLCJibG9ja3MiOlt7ImNoZWNrZWQiOmZhbHNlLCJpZCI6IjNGRjU3QkFFLTc3NDItNDI4My1BMTM5LUREOTYwQTgyMEQ2NSIsInJ1bnMiOlt7InRleHQiOiJ0ZW1wbGF0ZSByaWNoIiwic3RyaWtldGhyb3VnaCI6ZmFsc2UsIml0YWxpYyI6ZmFsc2UsInVuZGVybGluZSI6ZmFsc2UsImJvbGQiOmZhbHNlfV0sImluZGVudCI6MCwia2luZCI6InBhcmFncmFwaCJ9XX0=",
+          "occurrenceKey" : "20260901",
+          "occurrenceModified" : true,
+          "priority" : 1,
+          "sortIndex" : 0,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.195Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.225Z",
+          "dayKey" : "20261001",
+          "id" : "D8505BB2-5746-46AE-8B3C-AAB4AD2DD7F8",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261001",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "7FAD0640-999A-4B21-BB96-FB1E52D1481A",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-17T02:35:26.225Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.197Z",
+          "dayKey" : "20260906",
+          "id" : "D95A8D56-03CB-4B71-B6A2-A1A95E9433C4",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260906",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.197Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.195Z",
+          "dayKey" : "20260902",
+          "id" : "DF539641-0C7C-4ED5-BCD9-5961B6550643",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260902",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.195Z"
+        },
+        {
+          "alarmEnabled" : true,
+          "createdAt" : "2026-10-17T02:35:26.217Z",
+          "dayKey" : "20260929",
+          "id" : "F07C490D-A675-4F2F-854F-906838E05A33",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20260929",
+          "occurrenceModified" : false,
+          "priority" : 1,
+          "sortIndex" : 1,
+          "tagIds" : [
+            "6B564289-2B89-46FA-8A72-972ADFA0C350"
+          ],
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB",
+          "timeMinutes" : 570,
+          "title" : "Daily standup",
+          "updatedAt" : "2026-10-17T02:35:26.217Z"
+        },
+        {
+          "alarmEnabled" : false,
+          "createdAt" : "2026-10-17T02:35:26.226Z",
+          "dayKey" : "20261015",
+          "id" : "F2D2AF52-94F0-40A7-B464-7063C5B60D8C",
+          "isDone" : false,
+          "needsImmediateAttention" : false,
+          "notes" : "",
+          "occurrenceKey" : "20261015",
+          "occurrenceModified" : false,
+          "priority" : 0,
+          "sortIndex" : 1,
+          "tagIds" : [
+
+          ],
+          "templateId" : "7FAD0640-999A-4B21-BB96-FB1E52D1481A",
+          "title" : "Paycheck",
+          "updatedAt" : "2026-10-17T02:35:26.226Z"
+        }
+      ],
+      "taskOccurrences" : [
+        {
+          "dayKey" : "20260908",
+          "id" : "11381E5D-3012-4589-8DFC-CCE4590E4769",
+          "isDone" : false,
+          "skipped" : true,
+          "templateId" : "C5CD04B2-04D9-4F85-B1F6-6BFEE679B5FB"
+        }
+      ],
+      "taskTags" : [
+        {
+          "id" : "6B564289-2B89-46FA-8A72-972ADFA0C350",
+          "name" : "work"
+        }
+      ]
+    },
+    "exportedAt" : "2026-09-13T06:30:00.000Z",
+    "schemaVersion" : 2
+  }
+}
