@@ -1011,10 +1011,13 @@ struct KanbanService {
     }
 
     private func applyTransitions(_ transitions: [KanbanTransition], in project: KanbanProject) {
+        let tasksByID = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let columnsByID = Dictionary(project.columns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let resourcesByID = Dictionary(project.resources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for t in transitions {
-            guard let task = task(t.taskID, in: project) else { continue }
-            if let column = project.columns.first(where: { $0.id == t.to.columnID }) { task.column = column }
-            task.resource = t.to.resourceID.flatMap { id in project.resources.first { $0.id == id } }
+            guard let task = tasksByID[t.taskID] else { continue }
+            if let column = columnsByID[t.to.columnID] { task.column = column }
+            task.resource = t.to.resourceID.flatMap { resourcesByID[$0] }
             task.sortIndex = t.to.sortIndex
             task.completedAt = t.to.completedAt
             task.updatedAt = now()
@@ -1098,14 +1101,18 @@ struct KanbanService {
                                              old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date)))
         }
         if !archived {
+            var maxima: [Cell: Double] = [:]
+            for card in project.tasks where !comingBack.contains(card.id) && card.archivedAt == nil {
+                let cell = Cell(column: card.column?.id, resource: card.resource?.id)
+                maxima[cell] = maxima[cell].map { max($0, card.sortIndex) } ?? card.sortIndex
+            }
+            next = maxima.mapValues { $0 + 1 }
             for task in affected.sorted(by: { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }) {
                 var to = placement(task)
                 if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
                 if let resource = task.resource, resource.archivedAt != nil { to.resourceID = nil }
                 let cell = Cell(column: task.column?.id, resource: to.resourceID)
-                let position: Double = next[cell] ?? ((project.tasks.filter { card in
-                    !comingBack.contains(card.id) && card.archivedAt == nil && card.column?.id == cell.column && card.resource?.id == cell.resource
-                }.map(\.sortIndex).max() ?? -1) + 1)
+                let position: Double = next[cell] ?? 0
                 to.sortIndex = position
                 next[cell] = position + 1
                 if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }

@@ -107,12 +107,19 @@ struct KanbanInvariants {
             }
         }
         // A card put back mustn't land on a live card's position (a reorder since reused it).
+        struct Position: Hashable {
+            let column: UUID?
+            let resource: UUID?
+            let sortIndex: Double
+        }
+        let occupied = Set(cards.compactMap { id, card in
+            card.live && !placed.contains(id)
+                ? Position(column: card.column, resource: card.resource, sortIndex: card.sortIndex)
+                : nil
+        })
         for id in placed {
             guard let card = cards[id], card.live else { continue }
-            if cards.contains(where: { other in
-                other.key != id && other.value.live && other.value.column == card.column && other.value.resource == card.resource
-                    && other.value.sortIndex == card.sortIndex && !placed.contains(other.key)
-            }) {
+            if occupied.contains(Position(column: card.column, resource: card.resource, sortIndex: card.sortIndex)) {
                 return "a card would share its position with another; move it there instead"
             }
         }

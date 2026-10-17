@@ -226,6 +226,19 @@ struct KanbanReplayTests {
         #expect(aging.map(\.ageDays) == [13, 4], "Legacy from createdAt; A from its latest entry into In Progress")
     }
 
+    @Test func throughputBucketsReopensAcrossWeeks() throws {
+        let b = try Board()
+        let multi = try b.card("Multi", on: F.date(9, 21))
+        try b.move(multi, to: b.done, on: F.date(9, 23))     // week of 21 Sep
+        try b.move(multi, to: b.doing, on: F.date(9, 30))    // reopened in week of 28 Sep
+        try b.move(multi, to: b.done, on: F.date(10, 7))     // completed again week of 5 Oct
+        try b.move(multi, to: b.doing, on: F.date(10, 10))   // reopened again in week of 12 Oct (current)
+        let weeks = R.throughput(b.snapshot(), activities: b.activities, weeks: 5)
+        #expect(weeks.count == 5)
+        #expect(weeks.map(\.completed) == [0, 0, 0, 1, 0], "only latest completion matters, week of 5 Oct")
+        #expect(weeks.map(\.reopened) == [0, 1, 0, 0, 1], "reopens bucket in their own weeks")
+    }
+
     @Test func replayBudget() throws {
         let b = try Board()
         let cards = try (0..<200).map { try b.card("Card \($0)", on: F.date(9, 1 + $0 % 28)) }

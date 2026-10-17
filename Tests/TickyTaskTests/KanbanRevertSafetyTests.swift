@@ -523,4 +523,23 @@ struct KanbanRevertSafetyTests {
         try b.service.undo(in: b.project)
         #expect(back.title == "T", "later edits still undo")
     }
+
+    @Test("Restoring multiple placed cards into one cell detects collisions correctly")
+    func restoreMultiplePlacedCardsCollisionDetection() throws {
+        let b = try board()
+        let a = try b.service.createTask(in: b.project, title: "A", column: b.doing, row: .resource(b.ravi.id))
+        let c = try b.service.createTask(in: b.project, title: "C", column: b.doing, row: .resource(b.ravi.id))
+        let d = try b.service.createTask(in: b.project, title: "D", column: b.doing, row: .resource(b.ravi.id))
+        let aID = a.id, cID = c.id, dID = d.id
+        try b.service.archiveTask(a); try b.service.archiveTask(c); try b.service.archiveTask(d)
+        try b.service.deleteTask(a); try b.service.deleteTask(c); try b.service.deleteTask(d)
+        let deletionSeq = b.project.nextActivitySeq
+        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" }))
+        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" && $0.seq > deletionSeq - 1 }))
+        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" && $0.seq > deletionSeq }))
+        let restored = [aID, cID, dID].compactMap { id in b.project.tasks.first { $0.id == id } }
+        #expect(restored.count == 3, "all three cards restored to different positions in their cell")
+        #expect(restored.allSatisfy { $0.column?.id == b.doing.id && $0.resource?.id == b.ravi.id })
+        #expect(Set(restored.map(\.sortIndex)).count == 3, "each has a distinct sort index")
+    }
 }
