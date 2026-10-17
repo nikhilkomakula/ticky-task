@@ -86,17 +86,27 @@ enum KanbanBoardTransfer {
             a.kanban == b.kanban && a.boards == b.boards && a.people == b.people && a.report == b.report
         }
 
-        /// The file's people whose active membership on `board` won't get a row of its own,
-        /// because a board has one active membership per person: their linked person already has
-        /// one on `project` (a merge), or an earlier person in the file is linked to the same one.
-        /// Theirs is dropped for the one that's kept (its allocation, role and dates).
-        func reusedMemberships(_ board: BoardChoice, into project: KanbanProject?) -> [String] {
-            var taken = Set(project?.resources.filter { $0.archivedAt == nil }.compactMap { $0.person?.id } ?? [])
-            var reused: [String] = []
-            for dto in kanban.resources.filter({ $0.projectId == board.id && $0.archivedAt == nil }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
-                guard let choice = people.first(where: { $0.id == dto.personId }) else { continue }
-                let local = choice.linkTo ?? choice.id   // unlinked people are created, so they're their own
-                if !taken.insert(local).inserted { reused.append(choice.name) }
+        /// Per board in the file, the people whose active membership won't get a row of its own:
+        /// a board has one active membership per person, so theirs joins one already there (on
+        /// the merge target, or from earlier in the file, including an earlier board merged into
+        /// the same one) and its allocation, role and dates are dropped. Mirrors `apply`.
+        func reusedMemberships(projects: [KanbanProject], people here: [KanbanPerson]) -> [UUID: [String]] {
+            let archived = Set(here.filter { $0.archivedAt != nil }.map(\.id))
+            var taken: [UUID: Set<String>] = [:]   // destination board → whose active membership is there
+            var reused: [UUID: [String]] = [:]
+            for board in boards {
+                let destination = board.mergeInto ?? board.id
+                if taken[destination] == nil {
+                    let target = board.mergeInto.flatMap { id in projects.first { $0.id == id } }
+                    taken[destination] = Set(target?.resources.filter { $0.archivedAt == nil }.compactMap { $0.person.map { "here:\($0.id)" } } ?? [])
+                }
+                for dto in kanban.resources.filter({ $0.projectId == board.id && $0.archivedAt == nil }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
+                    guard let choice = self.people.first(where: { $0.id == dto.personId }) else { continue }
+                    if let linked = choice.linkTo, archived.contains(linked) { continue }   // arrives archived
+                    // Someone created by the import is nobody here yet.
+                    let identity = choice.linkTo.map { "here:\($0)" } ?? "new:\(choice.id)"
+                    if !taken[destination, default: []].insert(identity).inserted { reused[board.id, default: []].append(choice.name) }
+                }
             }
             return reused
         }
@@ -175,6 +185,7 @@ enum KanbanBoardTransfer {
         }
 
         var touched: [KanbanProject] = []
+        var destinations: [UUID: Destination] = [:]
         var nextSort = (existingProjects.values.map(\.sortIndex).max() ?? -1) + 1
         for board in plan.boards {
             guard let dto = k.projects.first(where: { $0.id == board.id }) else { continue }
@@ -192,7 +203,9 @@ enum KanbanBoardTransfer {
                 context.insert(project)
                 merging = false
             }
-            insertBoard(dto.id, from: k, into: project, merging: merging, people: people, now: now, context: context)
+            var destination = destinations[project.id] ?? Destination(project)
+            insertBoard(dto.id, from: k, into: project, merging: merging, people: people, destination: &destination, now: now, context: context)
+            destinations[project.id] = destination
             let entry = KanbanActivity(seq: project.nextActivitySeq, at: now, kind: KanbanActivityKind.structure.rawValue,
                                        summary: "Imported from \(fileName)", payload: note)
             context.insert(entry)
@@ -208,6 +221,20 @@ enum KanbanBoardTransfer {
             throw error
         }
         return touched
+    }
+
+    /// A board receiving rows, tracked across the file's boards (two can merge into one), so
+    /// reuse doesn't depend on inverse arrays catching up with unsaved inserts.
+    private struct Destination {
+        /// Person id → their active membership on the board.
+        var active: [UUID: KanbanResource]
+        var rows: Int
+
+        init(_ project: KanbanProject) {
+            let live = project.resources.filter { $0.archivedAt == nil }
+            active = Dictionary(live.compactMap { r in r.person.map { ($0.id, r) } }, uniquingKeysWith: { a, _ in a })
+            rows = project.resources.count
+        }
     }
 
     private static func copySettings(_ dto: KanbanProjectDTO, to project: KanbanProject) {
@@ -231,7 +258,7 @@ enum KanbanBoardTransfer {
     /// membership reused for the same person). Non-throwing.
     @MainActor
     private static func insertBoard(_ source: UUID, from k: KanbanBackupDTO, into project: KanbanProject, merging: Bool,
-                                    people: [UUID: KanbanPerson], now: Date, context: ModelContext) {
+                                    people: [UUID: KanbanPerson], destination: inout Destination, now: Date, context: ModelContext) {
         func mine(_ id: UUID?) -> Bool { id == source }
 
         var columns: [UUID: KanbanColumn] = [:]
@@ -274,20 +301,15 @@ enum KanbanBoardTransfer {
         }
 
         var resources: [UUID: KanbanResource] = [:]
-        var rowCount = project.resources.count
         for dto in k.resources.filter({ mine($0.projectId) }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
             guard let person = dto.personId.flatMap({ people[$0] }) else { continue }
             // Reuse: one active membership per person and board.
-            if dto.archivedAt == nil, let existing = project.resources.first(where: { $0.person?.id == person.id && $0.archivedAt == nil }) {
+            if dto.archivedAt == nil, let existing = destination.active[person.id] {
                 resources[dto.id] = existing
                 continue
             }
-            if dto.archivedAt == nil, let earlier = resources.values.first(where: { $0.person?.id == person.id && $0.archivedAt == nil }) {
-                resources[dto.id] = earlier
-                continue
-            }
-            let resource = KanbanResource(person: person, sortIndex: Double(rowCount))
-            rowCount += 1
+            let resource = KanbanResource(person: person, sortIndex: Double(destination.rows))
+            destination.rows += 1
             resource.role = dto.role
             resource.assignmentRaw = dto.assignmentRaw
             resource.allocationPercent = dto.allocationPercent
@@ -297,6 +319,7 @@ enum KanbanBoardTransfer {
             resource.endDate = dto.endDate
             // Linked to someone archived here: the membership arrives archived (its cards Unassigned).
             resource.archivedAt = dto.archivedAt ?? person.archivedAt.map { _ in now }
+            if resource.archivedAt == nil { destination.active[person.id] = resource }
             context.insert(resource)
             resource.project = project
             resources[dto.id] = resource

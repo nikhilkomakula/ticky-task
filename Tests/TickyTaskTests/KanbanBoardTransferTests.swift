@@ -145,17 +145,47 @@ struct KanbanBoardTransferTests {
         let plan = try T.plan(try BackupCoding.encoder().encode(envelope), context: from)
         #expect(plan.report.droppedDependencyEdges == 1)
         let board = try #require(plan.boards.first)
-        #expect(plan.reusedMemberships(board, into: project) == ["Ravi"], "Mia's membership in the file is archived")
-        #expect(plan.reusedMemberships(board, into: try KanbanService(from).createProject(name: "Empty", key: "EMP")).isEmpty)
-        #expect(plan.reusedMemberships(board, into: nil).isEmpty, "a new board: everyone gets their own row")
-        // Mia linked to Ravi here: two people in the file, one person on the board.
+        let projects = try from.fetch(FetchDescriptor<KanbanProject>()), here = try from.fetch(FetchDescriptor<KanbanPerson>())
+        #expect(plan.reusedMemberships(projects: projects, people: here).isEmpty, "a new board: everyone gets their own row")
+        var merged = plan
+        merged.boards[0].mergeInto = project.id
+        #expect(merged.reusedMemberships(projects: projects, people: here)[board.id] == ["Ravi"], "Mia's membership in the file is archived")
+        // Ravi added as a new person: nobody here yet, so he gets his own row.
+        let ravi = try #require(merged.people.firstIndex { $0.name == "Ravi" })
+        merged.people[ravi].linkTo = nil
+        #expect(merged.reusedMemberships(projects: projects, people: here).isEmpty)
+        // Mia (made active) linked to Ravi: two people in the file, one person on the board.
         var linked = plan
         let mia = try #require(linked.people.firstIndex { $0.name == "Mia" })
         linked.people[mia].linkTo = linked.people.first { $0.name == "Ravi" }?.linkTo
-        var miaActive = linked.kanban
-        for i in miaActive.resources.indices where miaActive.resources[i].personId == linked.people[mia].id { miaActive.resources[i].archivedAt = nil }
-        linked.kanban = miaActive
-        #expect(linked.reusedMemberships(board, into: nil) == ["Mia"], "the second one linked to Ravi joins his membership")
+        for i in linked.kanban.resources.indices where linked.kanban.resources[i].personId == linked.people[mia].id {
+            linked.kanban.resources[i].archivedAt = nil
+        }
+        #expect(linked.reusedMemberships(projects: projects, people: here)[board.id] == ["Mia"], "she joins Ravi's membership")
+    }
+
+    @Test("Two boards in one file merged into one board: the preview and the import agree on one membership each")
+    func twoBoardsIntoOne() throws {
+        let (from, project) = try source()
+        let s = KanbanService(from)
+        let other = try s.createProject(name: "Data", key: "DATA")
+        let ravi = try #require(project.resources.first { $0.displayName == "Ravi" }?.person)
+        try s.addMembership(ravi, to: other, allocationPercent: 40)
+        let data = try T.export([project, other], context: from)
+        let to = fresh()
+        let target = try KanbanService(to).createProject(name: "Everything", key: "ALL")
+        var plan = try T.plan(data, context: to)
+        for i in plan.boards.indices { plan.boards[i].mergeInto = target.id }
+        let reused = plan.reusedMemberships(projects: [target], people: [])
+        #expect(reused[plan.boards[0].id] == nil && reused[plan.boards[1].id] == ["Ravi"], "the second board's Ravi joins the first's")
+        try T.apply(plan, fileName: "both", context: to)
+        let id = target.id
+        let rows = try to.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
+        let active = rows.filter { $0.archivedAt == nil }
+        #expect(active.count == 1 && active.first?.displayName == "Ravi", "one active membership per person")
+        let firstBoardRavi = try #require(plan.kanban.resources.first { $0.projectId == plan.boards[0].id && $0.archivedAt == nil })
+        #expect(active.first?.allocationPercent == firstBoardRavi.allocationPercent, "the first one is kept")
+        #expect(Set(rows.map(\.sortIndex)).count == rows.count, "rows get distinct positions")
     }
 
     @Test("Formulas behind leading whitespace or control characters are neutralised too")

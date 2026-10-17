@@ -81,8 +81,7 @@ struct KanbanImportSheet: View {
                             ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
                         }
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
-                        let target = board.mergeInto.flatMap { id in projects.first { $0.id == id } }
-                        let reused = request.plan.reusedMemberships(board, into: target)
+                        let reused = request.plan.reusedMemberships(projects: projects, people: people)[board.id] ?? []
                         if !reused.isEmpty {
                             Text("One membership per person on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")
                                 .font(.caption).foregroundStyle(.secondary)
