@@ -207,15 +207,11 @@ struct MenuBarContentView: View {
     }
 }
 
-/// Kanban-only child that restricts the query to active tasks/projects only,
-/// so Planner mode does not instantiate it.
+/// The calendar in Kanban mode, with its own query of live dated cards, so Planner mode never
+/// runs it. `dueDayKeys` drops cards on archived boards.
 private struct MenuBarKanbanCalendarView: View {
     @Binding var selectedDayKey: String
-    @Query(filter: #Predicate<KanbanTask> {
-        $0.dueDate != nil &&
-        $0.archivedAt == nil &&
-        $0.project?.archivedAt == nil
-    }) private var kanbanDueTasks: [KanbanTask]
+    @Query(filter: #Predicate<KanbanTask> { $0.dueDate != nil && $0.archivedAt == nil }) private var kanbanDueTasks: [KanbanTask]
 
     var body: some View {
         MiniMonthCalendar(selectedDayKey: $selectedDayKey,

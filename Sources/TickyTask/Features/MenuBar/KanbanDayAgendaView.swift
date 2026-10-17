@@ -158,7 +158,8 @@ private struct KanbanPopoverRow: View {
             Circle()
                 .fill(KanbanUI.color(task.project?.colorHex) ?? .accentColor)
                 .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
+                .help(task.project?.name ?? "")
+                .accessibilityHidden(true)   // the hint names the board
             Text(task.title)
                 .lineLimit(1)
                 .strikethrough(done)
@@ -179,7 +180,6 @@ private struct KanbanPopoverRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(task.title)\(task.isCritical ? ", Critical" : "")")
         .accessibilityHint("Opens \(task.project?.name ?? "the board") with the card highlighted")
     }
 }
