@@ -83,9 +83,8 @@ struct KanbanNotesAndAllocationTests {
     @Test("Below 100% is partTime")
     func belowHundredIsPartTime() throws {
         let (s, project) = try board()
-        let kPerson = KanbanPerson(name: "Bob", initials: "B", employment: .fte)
         for pct in [1, 50, 99] {
-            let resource = try s.addMembership(kPerson, to: project, allocationPercent: pct)
+            let resource = try s.addMembership(try s.createPerson(name: "Bob \(pct)", initials: "B"), to: project, allocationPercent: pct)
             #expect(resource.effectiveAssignment == .partTime, "Failed for \(pct)%")
         }
     }

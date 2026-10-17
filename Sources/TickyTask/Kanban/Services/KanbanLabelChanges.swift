@@ -13,6 +13,8 @@ struct KanbanLabelChanges: Equatable, Sendable {
         var name: String?
         var colorHex: String?
         var symbolName: String?
+        /// Removes the label's symbol (`symbolName` nil alone means "unchanged").
+        var clearsSymbol = false
     }
 
     var adds: [Add] = []

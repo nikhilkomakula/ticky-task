@@ -67,7 +67,8 @@ struct KanbanService {
             context.insert(model)
             model.project = project
         }
-        for (index, label) in template.labels.enumerated() {
+        // Built-in templates take Settings › Kanban's default labels; saved templates keep their own.
+        for (index, label) in (template.isBuiltIn ? defaults.labelsForNewBoard() : template.labels).enumerated() {
             let model = KanbanLabel(name: label.name, colorHex: label.colorHex, sortIndex: Double(index))
             model.symbolName = label.symbolName
             context.insert(model)
@@ -706,128 +707,68 @@ struct KanbanService {
     /// Returns without saving if there are no effective changes.
     func applyLabelChanges(_ changes: KanbanLabelChanges, to project: KanbanProject) throws {
         try RecurrenceMaterializer.checkpoint(context)
-
-        // Validate: names non-empty and unique case-insensitively, ids exist
-        var seen = Set<String>()
-        for add in changes.adds {
-            let trimmed = add.name.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty else { throw KanbanServiceError.invariant("A label name can't be blank.") }
-            let lower = trimmed.lowercased()
-            guard !seen.contains(lower) else { throw KanbanServiceError.invariant("Label names must be unique.") }
-            seen.insert(lower)
+        let current = project.labels.sorted { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }
+        let byID = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for id in changes.edits.map(\.id) + changes.deleteIDs + changes.orderIDs where byID[id] == nil {
+            throw KanbanServiceError.invariant("That label isn't on this board.")
         }
+        let deleted = Set(changes.deleteIDs)
+        let edits = Dictionary(changes.edits.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        func clean(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-        for edit in changes.edits {
-            guard project.labels.contains(where: { $0.id == edit.id }) else {
-                throw KanbanServiceError.invariant("That label doesn't exist on this board.")
-            }
-            if let name = edit.name {
-                let trimmed = name.trimmingCharacters(in: .whitespaces)
-                guard !trimmed.isEmpty else { throw KanbanServiceError.invariant("A label name can't be blank.") }
-                let lower = trimmed.lowercased()
-                // Check uniqueness excluding self
-                for existing in project.labels {
-                    guard existing.id != edit.id else { continue }
-                    if existing.name.lowercased() == lower { throw KanbanServiceError.invariant("Label names must be unique.") }
-                }
-                guard !seen.contains(lower) else { throw KanbanServiceError.invariant("Label names must be unique.") }
-                seen.insert(lower)
-            }
+        // The catalog as it will be. Only names being added or changed must be unique, so an
+        // untouched legacy duplicate doesn't block other edits.
+        let surviving = current.filter { !deleted.contains($0.id) }
+        var finalNames = surviving.map { (id: Optional($0.id), name: clean(edits[$0.id]?.name ?? $0.name), changed: edits[$0.id]?.name != nil) }
+        finalNames += changes.adds.map { (id: nil, name: clean($0.name), changed: true) }
+        for (index, entry) in finalNames.enumerated() where entry.changed {
+            guard !entry.name.isEmpty else { throw KanbanServiceError.invariant("A label needs a name.") }
+            let clash = finalNames.enumerated().contains { $0.offset != index && $0.element.name.caseInsensitiveCompare(entry.name) == .orderedSame }
+            guard !clash else { throw KanbanServiceError.invariant("There's already a label called “\(entry.name)”.") }
         }
+        let ordered = changes.orderIDs.filter { !deleted.contains($0) }
+        let order = ordered + surviving.map(\.id).filter { !ordered.contains($0) }   // listed first, the rest as they were
+        let affected = project.tasks.filter { task in task.labels.contains { deleted.contains($0.id) } }
+        var state = KanbanBoardState.decode(project.boardState)
+        let prunesFilter = !state.filter.labelIDs.isDisjoint(with: deleted)
+        state.filter.labelIDs.subtract(deleted)
+        let stateData = prunesFilter ? state.encoded() : nil
+        if prunesFilter && stateData == nil { throw KanbanServiceError.invariant("The board's filter couldn't be updated.") }
 
-        for deleteID in changes.deleteIDs {
-            guard project.labels.contains(where: { $0.id == deleteID }) else {
-                throw KanbanServiceError.invariant("That label doesn't exist on this board.")
-            }
+        var notes: [String] = []
+        for add in changes.adds { notes.append("added \(clean(add.name))") }
+        for label in surviving {
+            guard let edit = edits[label.id] else { continue }
+            if let name = edit.name, clean(name) != label.name { notes.append("renamed \(label.name) to \(clean(name))") }
+            else if (edit.colorHex.map { $0 != label.colorHex } ?? false) || (edit.symbolName.map { $0 != label.symbolName } ?? false)
+                        || (edit.clearsSymbol && label.symbolName != nil) { notes.append("changed \(label.name)") }
         }
+        for id in changes.deleteIDs { if let label = byID[id] { notes.append("deleted \(label.name)") } }
+        let moved = order.enumerated().contains { byID[$0.element]?.sortIndex != Double($0.offset) }
+        if !changes.orderIDs.isEmpty && moved && notes.isEmpty { notes.append("reordered") }
+        guard !notes.isEmpty || moved || !changes.adds.isEmpty else { return }   // nothing changes, nothing is saved
+        let payload = try KanbanActivityPayload().encoded()   // informational: label edits aren't revertible
 
-        // Validate order
-        let allLabelIDs = project.labels.map(\.id)
-        var expectedOrder = allLabelIDs.filter { !changes.deleteIDs.contains($0) }
-        for add in changes.adds {
-            expectedOrder.append(UUID())  // placeholder for new ids
+        // Nothing below throws until the save.
+        for label in surviving {
+            guard let edit = edits[label.id] else { continue }
+            if let name = edit.name { label.name = clean(name) }
+            if let color = edit.colorHex { label.colorHex = color }
+            if let symbol = edit.symbolName { label.symbolName = symbol } else if edit.clearsSymbol { label.symbolName = nil }
         }
-
-        // Build field changes and apply
-        var fieldChanges: [KanbanFieldChange] = []
-
-        // Apply adds
-        for add in changes.adds {
-            let newLabel = KanbanLabel(name: add.name.trimmingCharacters(in: .whitespaces),
-                                       colorHex: add.colorHex, sortIndex: 0)
-            newLabel.symbolName = add.symbolName
-            context.insert(newLabel)
-            newLabel.project = project
+        for (index, id) in order.enumerated() { byID[id]?.sortIndex = Double(index) }
+        for (offset, add) in changes.adds.enumerated() {
+            let label = KanbanLabel(name: clean(add.name), colorHex: add.colorHex, sortIndex: Double(order.count + offset))
+            label.symbolName = add.symbolName
+            context.insert(label)
+            label.project = project
         }
-
-        // Apply edits
-        for edit in changes.edits {
-            guard let label = project.labels.first(where: { $0.id == edit.id }) else { continue }
-            if let name = edit.name {
-                let trimmed = name.trimmingCharacters(in: .whitespaces)
-                if label.name != trimmed {
-                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "name",
-                                                         old: .string(label.name), new: .string(trimmed)))
-                    label.name = trimmed
-                }
-            }
-            if let color = edit.colorHex {
-                if label.colorHex != color {
-                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "colorHex",
-                                                         old: .string(label.colorHex), new: .string(color)))
-                    label.colorHex = color
-                }
-            }
-            if let symbol = edit.symbolName {
-                if label.symbolName != symbol {
-                    fieldChanges.append(KanbanFieldChange(entity: .label, id: edit.id, field: "symbolName",
-                                                         old: label.symbolName.map(KanbanValue.string), new: .string(symbol)))
-                    label.symbolName = symbol
-                }
-            }
-        }
-
-        // Apply reorder
-        for (index, labelID) in changes.orderIDs.enumerated() {
-            guard let label = project.labels.first(where: { $0.id == labelID }) else { continue }
-            let newIndex = Double(index)
-            if label.sortIndex != newIndex {
-                fieldChanges.append(KanbanFieldChange(entity: .label, id: labelID, field: "sortIndex",
-                                                     old: .double(label.sortIndex), new: .double(newIndex)))
-                label.sortIndex = newIndex
-            }
-        }
-
-        // Apply deletes (remove from cards, then delete label)
-        for deleteID in changes.deleteIDs {
-            guard let label = project.labels.first(where: { $0.id == deleteID }) else { continue }
-
-            // Remove from all cards (including archived)
-            for task in project.tasks {
-                if task.labels.contains(where: { $0.id == deleteID }) {
-                    task.labels.removeAll { $0.id == deleteID }
-                }
-            }
-
-            // Prune from board filters
-            if let boardState = project.boardState, var state = try? JSONDecoder().decode(KanbanBoardState.self, from: boardState) {
-                if state.filter.labelIDs.contains(deleteID) {
-                    state.filter.labelIDs.remove(deleteID)
-                    project.boardState = try JSONEncoder().encode(state)
-                }
-            }
-
-            // Delete label last
-            context.delete(label)
-        }
-
-        // No-op check
-        if fieldChanges.isEmpty && changes.adds.isEmpty && changes.deleteIDs.isEmpty { return }
-
-        // Save with informational activity
-        let payload = KanbanActivityPayload(changes: fieldChanges)
-        try save(project, kind: .structure, taskIDs: [], summary: "Edited labels",
-                 payload: payload, undoable: false)
+        for task in affected { task.labels.removeAll { deleted.contains($0.id) } }   // archived cards too
+        if let stateData { project.boardState = stateData }
+        for id in changes.deleteIDs { if let label = byID[id] { context.delete(label) } }   // last
+        try save(project, kind: .structure, taskIDs: affected.map(\.id),
+                 summary: "Edited labels" + (notes.isEmpty ? "" : ": " + notes.joined(separator: ", ")),
+                 encodedPayload: payload, undoable: false)
     }
 
     /// Applies a move (drag, keyboard, bulk). Returns the WIP outcome so the UI can warn;

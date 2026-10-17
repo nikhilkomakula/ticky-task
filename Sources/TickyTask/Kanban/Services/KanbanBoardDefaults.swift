@@ -52,6 +52,12 @@ struct KanbanBoardDefaults: Equatable, Sendable {
         return KanbanTemplate.defaultLabels
     }
 
+    /// Settings › Kanban's default labels only: nil returns to the factory labels, empty means none.
+    static func saveLabels(_ labels: [KanbanTemplate.Label]?, to defaults: UserDefaults = .standard) throws {
+        guard let labels else { return defaults.removeObject(forKey: defaultLabelsKey) }
+        defaults.set(String(decoding: try JSONEncoder().encode(labels), as: UTF8.self), forKey: defaultLabelsKey)
+    }
+
     /// Saves these defaults to UserDefaults.
     @MainActor
     func save(to defaults: UserDefaults = .standard) throws {
