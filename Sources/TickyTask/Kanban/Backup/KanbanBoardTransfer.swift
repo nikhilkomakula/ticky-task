@@ -127,16 +127,13 @@ enum KanbanBoardTransfer {
 
         let envelope = Envelope(format: "tickytask-board", version: 1, kanban: kanban)
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        let encoder = BackupCoding.encoder()
         return try encoder.encode(envelope)
     }
 
     /// Decode and preview an import file, computing remapping decisions and validating the resolved graph.
     static func preview(_ data: Data, context: ModelContext) throws -> ImportPlan {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        let decoder = BackupCoding.decoder()
 
         // Decode envelope
         struct Envelope: Codable {
@@ -316,10 +313,12 @@ enum KanbanBoardTransfer {
 
             if let existing = membershipByKey[key] {
                 // Collision: existing takes priority
+                let projectName = remappedKanban.projects.first { $0.id == projectId }?.name ?? "Unknown"
+                let personName = remappedKanban.people.first { $0.id == personId }?.name ?? "Unknown"
                 reuseEvents.append(ReuseEvent(
-                    projectName: remappedKanban.projects.first { $0.id == projectId }?.name ?? "Unknown",
-                    personName: remappedKanban.people.first { $0.id == personId }?.name ?? "Unknown",
-                    taskTitle: "",  // Placeholder; filled when tasks are rewritten
+                    projectName: projectName,
+                    personName: personName,
+                    taskTitle: "",
                     reason: "Destination board already has this person"
                 ))
             } else {
@@ -361,10 +360,308 @@ enum KanbanBoardTransfer {
         )
     }
 
-    /// Apply the import plan in a single transaction.
-    static func apply(_ plan: ImportPlan, decisions: [UUID: ImportDecision], context: ModelContext) throws {
-        // Not implemented in this phase; requires coordinator integration.
-        throw BackupError.validationFailed(reason: "Import apply not yet implemented")
+    /// Apply the import plan in a single transaction. The kanban parameter should be the sanitized
+    /// DTO from the import file (use `KanbanBackupValidator.sanitized()` to prepare it).
+    static func apply(_ plan: ImportPlan, kanban: KanbanBackupDTO, decisions: [UUID: ImportDecision], context: ModelContext) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+
+        // Fetch existing data
+        let existingPeople = try context.fetch(FetchDescriptor<KanbanPerson>())
+        let existingProjects = try context.fetch(FetchDescriptor<KanbanProject>())
+
+        let sanitized = kanban
+
+        // MARK: - Prepare Phase (all can fail and will roll back in place)
+
+        do {
+            // Apply decisions to get final project and person actions
+            var finalProjectActions = plan.projectActions
+            var finalPersonActions = plan.personActions
+
+            // Apply any overrides from decisions (if any)
+            for (id, decision) in decisions {
+                // Decisions could override the default actions
+                // For now, we use the plan's default actions
+            }
+
+            // MARK: - Build Insert Maps
+
+            var personMap: [UUID: KanbanPerson] = [:]  // source id → final person
+            var projectMap: [UUID: KanbanProject] = [:]  // source id → final project
+            var columnMap: [UUID: KanbanColumn] = [:]  // source id → final column
+            var resourceMap: [UUID: KanbanResource] = [:]  // source id → final resource
+            var labelMap: [UUID: KanbanLabel] = [:]  // source id → final label
+            var taskMap: [UUID: KanbanTask] = [:]  // source id → final task
+
+            // Process people: create or link
+            for personDto in sanitized.people {
+                let action = finalPersonActions.first { $0.sourceId == personDto.id }?.action
+                let finalPerson: KanbanPerson
+
+                if case .linkById(let existingId) = action {
+                    finalPerson = existingPeople.first { $0.id == existingId } ?? {
+                        let p = KanbanPerson(id: personDto.id, name: personDto.name, initials: personDto.initials, employment: KanbanEmployment(rawValue: personDto.employmentRaw) ?? .fte)
+                        p.colorHex = personDto.colorHex
+                        p.skills = personDto.skills
+                        p.createdAt = personDto.createdAt
+                        p.archivedAt = personDto.archivedAt
+                        return p
+                    }()
+                } else if case .linkByName(let existingId) = action {
+                    finalPerson = existingPeople.first { $0.id == existingId } ?? {
+                        let p = KanbanPerson(id: personDto.id, name: personDto.name, initials: personDto.initials, employment: KanbanEmployment(rawValue: personDto.employmentRaw) ?? .fte)
+                        p.colorHex = personDto.colorHex
+                        p.skills = personDto.skills
+                        p.createdAt = personDto.createdAt
+                        p.archivedAt = personDto.archivedAt
+                        return p
+                    }()
+                } else {
+                    // Create new
+                    finalPerson = KanbanPerson(id: personDto.id, name: personDto.name, initials: personDto.initials, employment: KanbanEmployment(rawValue: personDto.employmentRaw) ?? .fte)
+                    finalPerson.colorHex = personDto.colorHex
+                    finalPerson.skills = personDto.skills
+                    finalPerson.createdAt = personDto.createdAt
+                    finalPerson.archivedAt = personDto.archivedAt
+                    context.insert(finalPerson)
+                }
+
+                personMap[personDto.id] = finalPerson
+            }
+
+            // Process projects: create or merge-into
+            for projectDto in sanitized.projects {
+                let action = finalProjectActions.first { $0.sourceId == projectDto.id }?.action
+                let finalProject: KanbanProject
+
+                if case .mergeInto(let existingId) = action {
+                    guard let existing = existingProjects.first(where: { $0.id == existingId }) else {
+                        throw BackupError.validationFailed(reason: "Merge-into project \(existingId) not found")
+                    }
+                    finalProject = existing
+                } else {
+                    // Rename (create new project)
+                    finalProject = KanbanProject(id: projectDto.id, name: projectDto.name, key: projectDto.key, sortIndex: projectDto.sortIndex)
+                    finalProject.details = projectDto.details
+                    finalProject.colorHex = projectDto.colorHex
+                    finalProject.symbolName = projectDto.symbolName
+                    finalProject.isPinned = projectDto.isPinned
+                    finalProject.createdAt = projectDto.createdAt
+                    finalProject.updatedAt = projectDto.updatedAt
+                    finalProject.archivedAt = projectDto.archivedAt
+                    finalProject.workWeekDays = projectDto.workWeekDays
+                    finalProject.hoursPerDay = projectDto.hoursPerDay
+                    finalProject.defaultCapacityHoursPerWeek = projectDto.defaultCapacityHoursPerWeek
+                    finalProject.wipPolicyRaw = projectDto.wipPolicyRaw
+                    finalProject.loadMeasureRaw = projectDto.loadMeasureRaw
+                    finalProject.openTaskTarget = projectDto.openTaskTarget
+                    finalProject.defaultEstimateHours = projectDto.defaultEstimateHours
+                    finalProject.weightedLoad = projectDto.weightedLoad
+                    finalProject.dueSoonThresholdDays = projectDto.dueSoonThresholdDays
+                    finalProject.suggestDoneWhenSubtasksComplete = projectDto.suggestDoneWhenSubtasksComplete
+                    finalProject.collapsedRowKeys = projectDto.collapsedRowKeys
+                    finalProject.boardState = projectDto.boardState
+                    finalProject.nextActivitySeq = max(projectDto.nextActivitySeq, 1)
+                    finalProject.historyBoundarySeq = finalProject.nextActivitySeq - 1
+                    context.insert(finalProject)
+                }
+
+                projectMap[projectDto.id] = finalProject
+            }
+
+            // Process columns: create or map by name+kind for merge-into
+            var columnsByProject: [UUID: [KanbanColumnDTO]] = [:]
+            for col in sanitized.columns {
+                if let pid = col.projectId {
+                    columnsByProject[pid, default: []].append(col)
+                }
+            }
+
+            for columnDto in sanitized.columns {
+                guard let projectId = columnDto.projectId, let finalProject = projectMap[projectId] else { continue }
+
+                let finalColumn: KanbanColumn
+
+                if case .mergeInto(let existingId)? = finalProjectActions.first(where: { $0.sourceId == projectId })?.action {
+                    // Map to existing column by name + kind
+                    if let existing = finalProject.columns.first(where: { $0.name == columnDto.name && $0.kindRaw == columnDto.kindRaw }) {
+                        finalColumn = existing
+                    } else {
+                        // Create missing column before Done
+                        finalColumn = KanbanColumn(id: columnDto.id, name: columnDto.name, sortIndex: columnDto.sortIndex)
+                        finalColumn.colorHex = columnDto.colorHex
+                        finalColumn.wipLimit = columnDto.wipLimit
+                        finalColumn.kindRaw = columnDto.kindRaw
+                        finalColumn.project = finalProject
+                        context.insert(finalColumn)
+                    }
+                } else {
+                    // Create new column
+                    finalColumn = KanbanColumn(id: columnDto.id, name: columnDto.name, sortIndex: columnDto.sortIndex)
+                    finalColumn.colorHex = columnDto.colorHex
+                    finalColumn.wipLimit = columnDto.wipLimit
+                    finalColumn.kindRaw = columnDto.kindRaw
+                    finalColumn.project = finalProject
+                    context.insert(finalColumn)
+                }
+
+                columnMap[columnDto.id] = finalColumn
+            }
+
+            // Process labels: create or map by name for merge-into
+            for labelDto in sanitized.labels {
+                guard let projectId = labelDto.projectId, let finalProject = projectMap[projectId] else { continue }
+
+                let finalLabel: KanbanLabel
+
+                if case .mergeInto(let existingId)? = finalProjectActions.first(where: { $0.sourceId == projectId })?.action {
+                    // Map to existing label by name
+                    if let existing = finalProject.labels.first(where: { $0.name == labelDto.name }) {
+                        finalLabel = existing
+                    } else {
+                        // Create new label
+                        finalLabel = KanbanLabel(id: labelDto.id, name: labelDto.name, colorHex: labelDto.colorHex, sortIndex: labelDto.sortIndex)
+                        finalLabel.symbolName = labelDto.symbolName
+                        finalLabel.project = finalProject
+                        context.insert(finalLabel)
+                    }
+                } else {
+                    // Create new label
+                    finalLabel = KanbanLabel(id: labelDto.id, name: labelDto.name, colorHex: labelDto.colorHex, sortIndex: labelDto.sortIndex)
+                    finalLabel.symbolName = labelDto.symbolName
+                    finalLabel.project = finalProject
+                    context.insert(finalLabel)
+                }
+
+                labelMap[labelDto.id] = finalLabel
+            }
+
+            // Process resources: create or reuse with person linking
+            for resourceDto in sanitized.resources {
+                guard let projectId = resourceDto.projectId,
+                      let personId = resourceDto.personId,
+                      let finalProject = projectMap[projectId],
+                      let finalPerson = personMap[personId] else { continue }
+
+                let finalResource: KanbanResource
+
+                // Check for reuse: existing active membership for this person+project
+                if let existing = finalProject.resources.first(where: { $0.person?.id == finalPerson.id && $0.archivedAt == nil }) {
+                    finalResource = existing
+                } else {
+                    // Create new resource
+                    finalResource = KanbanResource(id: resourceDto.id)
+                    finalResource.project = finalProject
+                    finalResource.person = finalPerson
+                    finalResource.role = resourceDto.role
+                    finalResource.assignmentRaw = resourceDto.assignmentRaw
+                    finalResource.allocationPercent = resourceDto.allocationPercent
+                    finalResource.capacityHoursPerWeekOverride = resourceDto.capacityHoursPerWeekOverride
+                    finalResource.openTaskTargetOverride = resourceDto.openTaskTargetOverride
+                    finalResource.startDate = resourceDto.startDate
+                    finalResource.endDate = resourceDto.endDate
+                    finalResource.sortIndex = resourceDto.sortIndex
+                    finalResource.archivedAt = resourceDto.archivedAt
+                    context.insert(finalResource)
+                }
+
+                resourceMap[resourceDto.id] = finalResource
+            }
+
+            // Process tasks
+            for taskDto in sanitized.tasks {
+                guard let projectId = taskDto.projectId,
+                      let columnId = taskDto.columnId,
+                      let finalProject = projectMap[projectId],
+                      let finalColumn = columnMap[columnId] else { continue }
+
+                let finalTask = KanbanTask(id: taskDto.id, title: taskDto.title, priority: taskDto.priority, sortIndex: taskDto.sortIndex)
+                finalTask.notes = taskDto.notes
+                finalTask.notesRich = taskDto.notesRich
+                finalTask.isCritical = taskDto.isCritical
+                finalTask.dueDate = taskDto.dueDate
+                finalTask.startDate = taskDto.startDate
+                finalTask.estimateHours = taskDto.estimateHours
+                finalTask.jiraURL = taskDto.jiraURL
+                finalTask.isBlocked = taskDto.isBlocked
+                finalTask.blockedReason = taskDto.blockedReason
+                finalTask.linkedPlannerTaskID = taskDto.linkedPlannerTaskID
+                finalTask.createdAt = taskDto.createdAt
+                finalTask.updatedAt = taskDto.updatedAt
+                finalTask.completedAt = taskDto.completedAt
+                finalTask.archivedAt = taskDto.archivedAt
+                finalTask.project = finalProject
+                finalTask.column = finalColumn
+                finalTask.resource = taskDto.resourceId.flatMap { resourceMap[$0] }
+                finalTask.labels = taskDto.labelIds.compactMap { labelMap[$0] }
+                context.insert(finalTask)
+                taskMap[taskDto.id] = finalTask
+            }
+
+            // Process subtasks
+            for subtaskDto in sanitized.subtasks {
+                guard let taskId = subtaskDto.taskId, let finalTask = taskMap[taskId] else { continue }
+
+                let subtask = KanbanSubtask(id: subtaskDto.id, title: subtaskDto.title, isDone: subtaskDto.isDone, sortIndex: subtaskDto.sortIndex)
+                subtask.completedAt = subtaskDto.completedAt
+                subtask.task = finalTask
+                subtask.assignee = subtaskDto.assigneeId.flatMap { resourceMap[$0] }
+                context.insert(subtask)
+            }
+
+            // Add dependency edges
+            for taskDto in sanitized.tasks {
+                guard let finalTask = taskMap[taskDto.id] else { continue }
+                let targets = taskDto.dependsOnIds.compactMap { taskMap[$0] }
+                finalTask.dependsOn = targets
+            }
+
+            // Add informational "Imported from" activity for each project
+            for projectDto in sanitized.projects {
+                guard let finalProject = projectMap[projectDto.id] else { continue }
+
+                let activity = KanbanActivity(
+                    id: UUID(),
+                    seq: finalProject.nextActivitySeq,
+                    at: Date(),
+                    kind: "structure",
+                    taskIDs: [],
+                    summary: "Imported from \(plan.sourceFilename)",
+                    payload: Data()
+                )
+                activity.project = finalProject
+                context.insert(activity)
+
+                finalProject.nextActivitySeq += 1
+            }
+
+            // MARK: - Validate Phase
+
+            // Validate each project's invariants
+            var archivedPersonIds: Set<UUID> = []
+            for person in personMap.values where person.archivedAt != nil {
+                archivedPersonIds.insert(person.id)
+            }
+
+            for projectDto in sanitized.projects {
+                guard let finalProject = projectMap[projectDto.id] else { continue }
+
+                let invariants = KanbanInvariants(finalProject, archivedPeople: archivedPersonIds)
+                if let violation = invariants.violation {
+                    throw BackupError.validationFailed(reason: "Import would violate board invariants: \(violation)")
+                }
+            }
+
+            // MARK: - Commit
+
+            try context.saveTransaction()
+
+            NotificationCenter.default.post(name: .tickyTaskStoreRestored, object: nil)
+
+        } catch {
+            context.undoFailedTransaction()
+            throw error
+        }
     }
 
     /// Export a project's tasks to CSV (RFC 4180).
