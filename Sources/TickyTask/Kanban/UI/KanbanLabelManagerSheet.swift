@@ -29,7 +29,7 @@ struct KanbanLabelManagerSheet: View {
     }
 
     init(defaults: Void) {
-        let labels = KanbanBoardDefaults().labels ?? KanbanTemplate.defaultLabels
+        let labels = KanbanBoardDefaults(UserDefaults.standard).labelsForNewBoard()
         let models = labels.map { label in
             let model = KanbanLabel(name: label.name, colorHex: label.colorHex)
             model.symbolName = label.symbolName
@@ -335,9 +335,8 @@ struct KanbanLabelManagerSheet: View {
                 let labels = draft.labels.map { label in
                     KanbanTemplate.Label(name: label.name, colorHex: label.colorHex, symbolName: label.symbolName)
                 }
-                var defaults = KanbanBoardDefaults()
-                defaults.labels = labels.isEmpty ? [] : labels
-                try defaults.save()
+                // Only the labels: the other new-board defaults are Settings' own controls.
+                try KanbanBoardDefaults.saveLabels(labels)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription

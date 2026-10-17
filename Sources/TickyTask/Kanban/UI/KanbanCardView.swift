@@ -20,15 +20,6 @@ struct KanbanCardView: View {
 
     private var priority: TaskPriority { TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low }
 
-    /// Helper for notes presence: decode rich notes if present, otherwise use trimmed plain text.
-    private var hasNotes: Bool {
-        if let richData = task.notesRich,
-           let doc = try? JSONDecoder().decode(NotesDocument.self, from: richData) {
-            return !doc.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        return !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     var body: some View {
         let _ = app.kanbanClock   // due-date colours follow the day
         let highlighted = app.highlightedKanbanTaskID == task.id
@@ -120,7 +111,7 @@ struct KanbanCardView: View {
     private var metadata: some View {
         let subtasks = task.subtasks
         let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
-            || hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
+            || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
             HStack(spacing: 6) {
                 if let due = task.dueDate { dueLabel(due) }
@@ -139,7 +130,7 @@ struct KanbanCardView: View {
                         .accessibilityLabel("Has dependencies")
                 }
                 Spacer(minLength: 0)
-                if hasNotes {
+                if task.hasNotes {
                     Image(systemName: "note.text").foregroundStyle(.secondary)
                         .help("Notes")
                         .accessibilityLabel("Has notes")
