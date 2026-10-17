@@ -42,6 +42,11 @@ struct TickyTaskApp: App {
                 FindTaskCommand(appState: appState)
                 WeeklySummaryCommand(appState: appState)
             }
+            CommandGroup(before: .toolbar) {
+                ModuleCommand(appState: appState, module: .planner, key: "1")
+                ModuleCommand(appState: appState, module: .kanban, key: "2")
+                Divider()
+            }
         }
 
         MenuBarExtra("TickyTask", systemImage: menuBarIcon) {
@@ -78,6 +83,26 @@ private struct FindTaskCommand: View {
             appState.isSearchPresented = true
         }
         .keyboardShortcut("f", modifiers: .command)
+    }
+}
+
+/// View › Planner (⌘1) / Kanban (⌘2); disabled while the module is hidden.
+private struct ModuleCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
+    let appState: AppState
+    let module: AppModule
+    let key: KeyEquivalent
+
+    var body: some View {
+        Button(module.label) {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+            appState.module = module
+        }
+        .keyboardShortcut(key, modifiers: .command)
+        .disabled(!ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).isVisible(module))
     }
 }
 

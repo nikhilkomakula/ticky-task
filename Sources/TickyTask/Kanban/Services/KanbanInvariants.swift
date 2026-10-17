@@ -5,7 +5,7 @@ import Foundation
 /// anything in the store changes.
 struct KanbanInvariants {
     struct Card { var column: UUID?; var resource: UUID?; var live: Bool; var completed: Bool }
-    struct Membership { var person: UUID?; var active: Bool }
+    struct Membership { var person: UUID?; var active: Bool; var start: Date? = nil; var end: Date? = nil }
 
     private var archivedPeople: Set<UUID> = []
     /// Columns whose kind the inverse changes; they must hold no cards.
@@ -22,7 +22,9 @@ struct KanbanInvariants {
     init(_ project: KanbanProject, archivedPeople: Set<UUID> = []) {
         self.archivedPeople = archivedPeople
         for column in project.columns { columns[column.id] = column.kindRaw }
-        for r in project.resources { memberships[r.id] = Membership(person: r.person?.id, active: r.archivedAt == nil) }
+        for r in project.resources {
+            memberships[r.id] = Membership(person: r.person?.id, active: r.archivedAt == nil, start: r.startDate, end: r.endDate)
+        }
         for t in project.tasks {
             cards[t.id] = Card(column: t.column?.id, resource: t.resource?.id, live: t.archivedAt == nil, completed: t.completedAt != nil)
             dependencies[t.id] = Set(t.dependsOn.map(\.id))
@@ -42,7 +44,9 @@ struct KanbanInvariants {
             graph.resources.forEach { next.memberships[$0.id] = nil }
         } else if kind == .restoredGraph {
             graph.columns.forEach { next.columns[$0.id] = $0.kindRaw }
-            graph.resources.forEach { next.memberships[$0.id] = Membership(person: $0.personId, active: $0.archivedAt == nil) }
+            graph.resources.forEach {
+                next.memberships[$0.id] = Membership(person: $0.personId, active: $0.archivedAt == nil, start: $0.startDate, end: $0.endDate)
+            }
             for t in graph.tasks {
                 // A live card only goes back onto an active membership (as `reinsert` does).
                 let active = t.resourceId.map { next.memberships[$0]?.active == true } ?? false
@@ -67,6 +71,8 @@ struct KanbanInvariants {
                 // A card coming back must fit where it is: complete in Done, on an active row.
                 if change.new == nil { next.placed.insert(change.id) }
             case (.resource, "archivedAt"): next.memberships[change.id]?.active = change.new == nil
+            case (.resource, "startDate"): next.memberships[change.id]?.start = change.new.flatMap { if case let .date(d) = $0 { d } else { nil } }
+            case (.resource, "endDate"): next.memberships[change.id]?.end = change.new.flatMap { if case let .date(d) = $0 { d } else { nil } }
             case (.column, "kind"):
                 if case let .string(kind)? = change.new { next.columns[change.id] = kind }
                 next.kindChanged.insert(change.id)
@@ -106,6 +112,10 @@ struct KanbanInvariants {
             guard let person = membership.person else { return "a membership would have no person" }
             if archivedPeople.contains(person) { return "an archived person would be back on the board" }
             if !seen.insert(person).inserted { return "someone would be on the board twice" }
+        }
+        // Archived ones too: undoing an archive would bring them back as they are.
+        for membership in memberships.values {
+            if let start = membership.start, let end = membership.end, end < start { return "a membership would end before it starts" }
         }
         // Dependencies stay acyclic.
         var state: [UUID: Int] = [:]   // 1 visiting, 2 done

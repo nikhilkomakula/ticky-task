@@ -22,6 +22,8 @@ struct ContentView: View {
     @AppStorage("taskSortMode") private var sortModeRaw = TaskSortMode.manual.rawValue
     @AppStorage("moveCompletedToBottom") private var moveCompletedToBottom = true
     @AppStorage("showWeekends") private var showWeekends = false
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
 
     /// The main window's drag-to-reorder controller. Rows/containers publish their
     /// frames into it; the overlay draws the lifted preview + insertion line.
@@ -45,11 +47,9 @@ struct ContentView: View {
                 TopToolbar(onSearch: { app.isSearchPresented = true },
                            onWeeklySummary: { app.isWeeklySummaryPresented = true })
                 Divider()
-                switch app.viewMode {
-                case .week:
-                    WeekView()
-                case .calendar:
-                    CalendarMonthView()
+                switch ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).resolve(app.module) {
+                case .planner: PlannerModuleView()
+                case .kanban: KanbanModuleView().id(app.kanbanRestoreToken)
                 }
             }
             DragOverlayView(controller: dragController)
@@ -75,7 +75,14 @@ struct ContentView: View {
         .onChange(of: sortModeRaw) { _, _ in syncDragConfig() }
         .onChange(of: moveCompletedToBottom) { _, _ in syncDragConfig() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await runLaunchTasks() } }
+            if phase == .active {
+                app.refreshKanbanClock()
+                Task { await runLaunchTasks() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            NSTimeZone.resetSystemTimeZone()
+            app.refreshKanbanClock()
         }
         // Enabling the setting mid-session should catch up the current day at once.
         .onChange(of: autoCarryForward) { _, isOn in
@@ -93,6 +100,7 @@ struct ContentView: View {
         // A restore replaced the whole store: reset the session horizon and
         // regenerate, so restored recurring templates show occurrences at once.
         .onReceive(NotificationCenter.default.publisher(for: .tickyTaskStoreRestored)) { _ in
+            reconcileKanbanAfterRestore()
             materializedThroughKey = ""
             runMaterialize(through: defaultHorizon)
             runCarryForward()
@@ -107,6 +115,7 @@ struct ContentView: View {
         // tasks still carry forward — and new occurrences appear — at midnight
         // without a relaunch or refocus.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            app.refreshKanbanClock()
             carryForwardIfDayChanged()
         }
         .sheet(isPresented: $app.isSearchPresented) { SearchView() }
@@ -184,6 +193,19 @@ struct ContentView: View {
     /// slide the occurrence window forward and run carry-forward for the new day
     /// (both idempotent; carry-forward is a no-op when disabled).
     @MainActor
+    /// A restore replaced the boards: drop undo history, invalidate caches, rebuild the
+    /// module (closing sheets that hold replaced rows) and leave a board that's gone (01 §2.5).
+    private func reconcileKanbanAfterRestore() {
+        app.kanbanHistory.clear()
+        app.kanbanGeneration.bump()
+        app.kanbanRestoreToken &+= 1
+        app.highlightedKanbanTaskID = nil
+        if case let .project(id) = app.kanban.selection,
+           ((try? context.fetchCount(FetchDescriptor<KanbanProject>(predicate: #Predicate { $0.id == id }))) ?? 0) == 0 {
+            app.kanban.selection = .allProjects
+        }
+    }
+
     private func carryForwardIfDayChanged() {
         guard WeekMath.dayKey(for: Date()) != lastCarryDayKey else { return }
         runMaterialize(through: defaultHorizon)
@@ -240,6 +262,20 @@ struct ContentView: View {
     }
 }
 
+/// The planner: the week or month view.
+private struct PlannerModuleView: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        switch app.viewMode {
+        case .week:
+            WeekView()
+        case .calendar:
+            CalendarMonthView()
+        }
+    }
+}
+
 /// The single shared toolbar row: centered navigation (‹ Today ›) with the
 /// current week range or month label, and the Week/Month switcher on the right.
 /// Navigation and label adapt to the active view mode.
@@ -249,6 +285,8 @@ private struct TopToolbar: View {
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @AppStorage("calendarColumns") private var calendarColumns = 5
     @AppStorage("showWeekends") private var showWeekends = false
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
     var onSearch: () -> Void = {}
     var onWeeklySummary: () -> Void = {}
 
@@ -256,23 +294,46 @@ private struct TopToolbar: View {
 
     var body: some View {
         @Bindable var app = app
+        let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
+        let module = policy.resolve(app.module)
         ZStack {
             // Center: current week range / month label (truly window-centered).
-            Text(navLabel)
-                .font(.headline.weight(.semibold))
+            if module == .planner {
+                Text(navLabel)
+                    .font(.headline.weight(.semibold))
+            }
 
             HStack(spacing: 12) {
-                // Left: Week / Month switcher.
-                Picker("View", selection: $app.viewMode) {
-                    ForEach(ViewMode.allCases) { mode in
-                        Label(mode.label, systemImage: mode.symbol).tag(mode)
+                if policy.showsSwitcher {
+                    Picker("Module", selection: $app.module) {
+                        ForEach(policy.visible) { module in
+                            Label(module.label, systemImage: module.symbol).tag(module)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Planner (⌘1) · Kanban (⌘2)")
+                    .accessibilityIdentifier("module-switcher")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+
+                if module == .planner {
+                    // Left: Week / Month switcher.
+                    Picker("View", selection: $app.viewMode) {
+                        ForEach(ViewMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.symbol).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                } else {
+                    KanbanToolbarLeading()
+                }
 
                 Spacer()
+
+                if module == .kanban { KanbanToolbarTrailing() }
 
                 // Right: search, Weekly Summary, Settings, then ‹ Today › at the far right.
                 HStack(spacing: 6) {
@@ -310,22 +371,24 @@ private struct TopToolbar: View {
                     .help("Settings")
                     .accessibilityIdentifier("toolbar-settings")
 
-                    Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Previous week" : "Previous month")
-                        .accessibilityIdentifier("toolbar-previous")
-                    Button("Today") { app.goToToday() }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("toolbar-today")
-                    Button { navigate(1) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(.borderless)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                        .help(app.viewMode == .week ? "Next week" : "Next month")
-                        .accessibilityIdentifier("toolbar-next")
+                    if module == .planner {
+                        Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
+                            .buttonStyle(.borderless)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                            .help(app.viewMode == .week ? "Previous week" : "Previous month")
+                            .accessibilityIdentifier("toolbar-previous")
+                        Button("Today") { app.goToToday() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("toolbar-today")
+                        Button { navigate(1) } label: { Image(systemName: "chevron.right") }
+                            .buttonStyle(.borderless)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                            .help(app.viewMode == .week ? "Next week" : "Next month")
+                            .accessibilityIdentifier("toolbar-next")
+                    }
                 }
             }
         }
