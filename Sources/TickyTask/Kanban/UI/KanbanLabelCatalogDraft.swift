@@ -26,6 +26,7 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
 
     private var initialLabels: [DraftLabel]
     var labels: [DraftLabel]
+    private var symbolsCleared: Set<UUID> = []
 
     init(from labels: [KanbanLabel]) {
         let drafts = labels.sorted { $0.sortIndex < $1.sortIndex }
@@ -34,9 +35,12 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
         self.labels = drafts
     }
 
-    /// Add a new label.
-    mutating func add(name: String, colorHex: String, symbolName: String? = nil) {
-        labels.append(DraftLabel(id: UUID(), name: name, colorHex: colorHex, symbolName: symbolName))
+    /// Add a new label and return its ID.
+    @discardableResult
+    mutating func add(name: String, colorHex: String, symbolName: String? = nil) -> UUID {
+        let id = UUID()
+        labels.append(DraftLabel(id: id, name: name, colorHex: colorHex, symbolName: symbolName))
+        return id
     }
 
     /// Edit an existing label's properties.
@@ -48,9 +52,20 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
         }
     }
 
+    /// Mark a label's symbol as explicitly cleared (set to nil).
+    mutating func clearSymbol(id: UUID) {
+        symbolsCleared.insert(id)
+    }
+
+    /// Unmark a label's symbol as cleared (if they select a symbol after clearing).
+    mutating func unmarkSymbolCleared(id: UUID) {
+        symbolsCleared.remove(id)
+    }
+
     /// Delete a label.
     mutating func delete(id: UUID) {
         labels.removeAll { $0.id == id }
+        symbolsCleared.remove(id)
     }
 
     /// Move a label up in the list.
@@ -92,7 +107,7 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
         let initialIDs = Set(initialLabels.map { $0.id })
         for label in labels where !initialIDs.contains(label.id) {
             let trimmed = label.name.trimmingCharacters(in: .whitespaces)
-            changes.adds.append(KanbanLabelChanges.Add(name: trimmed, colorHex: label.colorHex, symbolName: label.symbolName))
+            changes.adds.append(KanbanLabelChanges.Add(id: label.id, name: trimmed, colorHex: label.colorHex, symbolName: label.symbolName))
         }
 
         // Identify edits: labels in both, but changed
@@ -114,6 +129,11 @@ struct KanbanLabelCatalogDraft: Equatable, Sendable {
                 if label.symbolName != initial.symbolName {
                     if edit == nil { edit = KanbanLabelChanges.Edit(id: label.id) }
                     edit?.symbolName = label.symbolName
+                    changed = true
+                }
+                if symbolsCleared.contains(label.id) {
+                    if edit == nil { edit = KanbanLabelChanges.Edit(id: label.id) }
+                    edit?.clearsSymbol = true
                     changed = true
                 }
                 if changed, let edit { changes.edits.append(edit) }

@@ -19,13 +19,16 @@ struct KanbanLabelManagerSheet: View {
     @State private var editName = ""
     @State private var editColor = Color.gray
     @State private var editSymbolName: String? = nil
+    @State private var initialEditSymbolName: String? = nil
     @State private var error: String?
     @State private var deleteConfirmID: UUID?
+    @State private var fromCardEditor: Bool = false
 
-    init(project: KanbanProject) {
+    init(project: KanbanProject, fromCardEditor: Bool = false) {
         let initial = KanbanLabelCatalogDraft(from: project.labels)
         _draft = State(initialValue: initial)
         self.mode = .project(project)
+        self.fromCardEditor = fromCardEditor
     }
 
     init(defaults: Void) {
@@ -91,9 +94,16 @@ struct KanbanLabelManagerSheet: View {
                 Text(error).font(.callout).foregroundStyle(.red)
             }
 
-            Text("Changes apply when you choose Done.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Changes apply when you choose Done.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if fromCardEditor {
+                    Text("Label changes are saved for the board when you choose Done, even if you then cancel the card.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             HStack {
                 Spacer()
@@ -271,6 +281,7 @@ struct KanbanLabelManagerSheet: View {
         editName = label.name
         editColor = Color(hex: label.colorHex) ?? .gray
         editSymbolName = label.symbolName
+        initialEditSymbolName = label.symbolName
     }
 
     private func cancelEdit() {
@@ -278,6 +289,7 @@ struct KanbanLabelManagerSheet: View {
         editName = ""
         editColor = .gray
         editSymbolName = nil
+        initialEditSymbolName = nil
     }
 
     private func saveEdit(_ label: KanbanLabelCatalogDraft.DraftLabel) {
@@ -292,18 +304,20 @@ struct KanbanLabelManagerSheet: View {
             hexValue = "#8E8E93"
         }
         draft.edit(id: label.id, name: trimmedName, colorHex: hexValue, symbolName: editSymbolName)
+
+        // Track if the user deliberately cleared the symbol (transitioned from non-nil to nil)
+        if editSymbolName == nil && initialEditSymbolName != nil {
+            draft.clearSymbol(id: label.id)
+        }
+
         cancelEdit()
     }
 
     private func addLabel() {
-        let newLabel = KanbanLabelCatalogDraft.DraftLabel(
-            id: UUID(),
-            name: "New label",
-            colorHex: "#8E8E93",
-            symbolName: nil
-        )
-        draft.add(name: newLabel.name, colorHex: newLabel.colorHex, symbolName: newLabel.symbolName)
-        startEditing(newLabel)
+        let labelID = draft.add(name: "New label", colorHex: "#8E8E93", symbolName: nil)
+        if let newLabel = draft.labels.first(where: { $0.id == labelID }) {
+            startEditing(newLabel)
+        }
     }
 
     private func confirmDelete(_ label: KanbanLabelCatalogDraft.DraftLabel) {
@@ -312,6 +326,11 @@ struct KanbanLabelManagerSheet: View {
 
     private func done() {
         error = nil
+
+        // Apply any open row edit before validating and saving
+        if let editingID, let label = draft.labels.first(where: { $0.id == editingID }) {
+            saveEdit(label)
+        }
 
         if let validationError = draft.validationError {
             error = validationError

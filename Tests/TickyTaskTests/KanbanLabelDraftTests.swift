@@ -218,9 +218,8 @@ struct KanbanLabelDraftTests {
     @Test
     func addThenDeleteGivesNoOp() {
         var draft = KanbanLabelCatalogDraft(from: [])
-        draft.add(name: "Feature", colorHex: "#34C759")
+        let labelID = draft.add(name: "Feature", colorHex: "#34C759")
 
-        let labelID = draft.labels[0].id
         draft.delete(id: labelID)
 
         #expect(draft.labels.isEmpty)
@@ -229,6 +228,7 @@ struct KanbanLabelDraftTests {
         #expect(changes.adds.isEmpty)
         #expect(changes.edits.isEmpty)
         #expect(changes.deleteIDs.isEmpty)
+        #expect(changes.orderIDs.isEmpty)
     }
 
     // MARK: - Build Changes
@@ -236,16 +236,18 @@ struct KanbanLabelDraftTests {
     @Test
     func buildChangesAdd() {
         var draft = KanbanLabelCatalogDraft(from: [])
-        draft.add(name: "Feature", colorHex: "#34C759", symbolName: "tag")
+        let addID = draft.add(name: "Feature", colorHex: "#34C759", symbolName: "tag")
 
         let changes = draft.buildChanges()
 
         #expect(changes.adds.count == 1)
+        #expect(changes.adds[0].id == addID)
         #expect(changes.adds[0].name == "Feature")
         #expect(changes.adds[0].colorHex == "#34C759")
         #expect(changes.adds[0].symbolName == "tag")
         #expect(changes.edits.isEmpty)
         #expect(changes.deleteIDs.isEmpty)
+        #expect(changes.orderIDs == [addID])
     }
 
     @Test
@@ -325,7 +327,7 @@ struct KanbanLabelDraftTests {
         var draft = KanbanLabelCatalogDraft(from: [label1, label2])
 
         // Add a new label
-        draft.add(name: "Enhancement", colorHex: "#007AFF")
+        let enhancementID = draft.add(name: "Enhancement", colorHex: "#007AFF")
 
         // Rename Feature to Feature Request
         draft.edit(id: label1.id, name: "Feature Request", colorHex: nil, symbolName: nil)
@@ -334,13 +336,16 @@ struct KanbanLabelDraftTests {
         draft.delete(id: label2.id)
 
         // Reorder: Enhancement should be first
-        draft.moveUp(id: draft.labels.last!.id)
+        draft.moveUp(id: enhancementID)
 
         let changes = draft.buildChanges()
 
         #expect(changes.adds.count == 1)
+        #expect(changes.adds[0].id == enhancementID)
         #expect(changes.edits.count == 1)
         #expect(changes.deleteIDs.count == 1)
         #expect(changes.orderIDs.count == 2)
+        #expect(changes.orderIDs[0] == enhancementID)
+        #expect(changes.orderIDs[1] == label1.id)
     }
 }

@@ -709,7 +709,9 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         let current = project.labels.sorted { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }
         let byID = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for id in changes.edits.map(\.id) + changes.deleteIDs + changes.orderIDs where byID[id] == nil {
+        let addedIDs = Set(changes.adds.map(\.id))
+        let knownIDs = Set(byID.keys).union(addedIDs)
+        for id in changes.edits.map(\.id) + changes.deleteIDs + changes.orderIDs where !knownIDs.contains(id) {
             throw KanbanServiceError.invariant("That label isn't on this board.")
         }
         let deleted = Set(changes.deleteIDs)
@@ -756,9 +758,13 @@ struct KanbanService {
             if let color = edit.colorHex { label.colorHex = color }
             if let symbol = edit.symbolName { label.symbolName = symbol } else if edit.clearsSymbol { label.symbolName = nil }
         }
-        for (index, id) in order.enumerated() { byID[id]?.sortIndex = Double(index) }
+        for (index, id) in order.enumerated() {
+            if let label = byID[id] {
+                label.sortIndex = Double(index)
+            }
+        }
         for (offset, add) in changes.adds.enumerated() {
-            let label = KanbanLabel(name: clean(add.name), colorHex: add.colorHex, sortIndex: Double(order.count + offset))
+            let label = KanbanLabel(id: add.id, name: clean(add.name), colorHex: add.colorHex, sortIndex: Double(order.count + offset))
             label.symbolName = add.symbolName
             context.insert(label)
             label.project = project

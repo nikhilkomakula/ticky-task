@@ -92,11 +92,12 @@ struct KanbanCardCreateTests {
         state.filter.labelIDs = [second.id]
         project.boardState = state.encoded()
         try context.save()
+        let securityID = UUID()
         var changes = KanbanLabelChanges()
-        changes.adds = [.init(name: "Security", colorHex: "#FF0000", symbolName: "flag.fill")]
+        changes.adds = [.init(id: securityID, name: "Security", colorHex: "#FF0000", symbolName: "flag.fill")]
         changes.edits = [.init(id: first.id, name: "Feature work", colorHex: "#00FF00", symbolName: "sparkles")]
         changes.deleteIDs = [second.id]
-        changes.orderIDs = labels.dropFirst(2).map(\.id) + [first.id]
+        changes.orderIDs = labels.dropFirst(2).map(\.id) + [first.id, securityID]
         try s.applyLabelChanges(changes, to: project)
         let after = project.labels.sorted { $0.sortIndex < $1.sortIndex }
         #expect(!after.contains { $0.id == second.id } && after.contains { $0.name == "Security" && $0.symbolName == "flag.fill" })
@@ -111,7 +112,7 @@ struct KanbanCardCreateTests {
         let (s, _, project, context) = try board()
         let labels = project.labels.sorted { $0.sortIndex < $1.sortIndex }
         let before = try entries(project, context).count
-        var duplicate = KanbanLabelChanges(); duplicate.adds = [.init(name: " \(labels[0].name.uppercased()) ", colorHex: "#000000")]
+        var duplicate = KanbanLabelChanges(); duplicate.adds = [.init(id: UUID(), name: " \(labels[0].name.uppercased()) ", colorHex: "#000000")]
         var blank = KanbanLabelChanges(); blank.edits = [.init(id: labels[0].id, name: "  ")]
         var foreign = KanbanLabelChanges(); foreign.deleteIDs = [UUID()]
         for changes in [duplicate, blank, foreign] {
@@ -138,5 +139,77 @@ struct KanbanCardCreateTests {
         store.set("not json", forKey: KanbanBoardDefaults.defaultLabelsKey)
         #expect(try s.createProject(name: "D", key: "D", defaults: KanbanBoardDefaults(store)).labels.count == KanbanTemplate.defaultLabels.count)
         #expect(store.string(forKey: KanbanBoardDefaults.defaultLabelsKey) == "not json", "reading doesn't overwrite")
+    }
+
+    @Test("Draft → service integration: add, then Done (new label saves in its place)")
+    func draftAddSaves() throws {
+        let (s, _, project, _) = try board()
+        let labels = project.labels.sorted { $0.sortIndex < $1.sortIndex }
+        let before = labels.count
+
+        var draft = KanbanLabelCatalogDraft(from: labels)
+        let newID = draft.add(name: "Security", colorHex: "#FF0000", symbolName: "flag.fill")
+        let changes = draft.buildChanges()
+
+        try s.applyLabelChanges(changes, to: project)
+        let after = project.labels.sorted { $0.sortIndex < $1.sortIndex }
+
+        #expect(after.count == before + 1, "new label created")
+        #expect(after.last?.name == "Security", "it's at the end")
+        #expect(after.last?.id == newID, "with the staged ID")
+        #expect(changes.orderIDs.contains(newID), "new ID in order")
+    }
+
+    @Test("Draft → service integration: add then reorder")
+    func draftAddThenReorder() throws {
+        let (s, _, project, _) = try board()
+        let labels = project.labels.sorted { $0.sortIndex < $1.sortIndex }
+        let first = labels[0]
+
+        var draft = KanbanLabelCatalogDraft(from: labels)
+        let newID = draft.add(name: "Security", colorHex: "#FF0000")
+        draft.moveUp(id: newID)  // Move new label to be second
+        let changes = draft.buildChanges()
+
+        try s.applyLabelChanges(changes, to: project)
+        let after = project.labels.sorted { $0.sortIndex < $1.sortIndex }
+
+        #expect(after[0].id == first.id, "first label unchanged")
+        #expect(after[1].id == newID, "new label is second")
+        #expect(after[1].name == "Security")
+    }
+
+    @Test("Draft → service integration: clearing a symbol")
+    func draftClearSymbol() throws {
+        let (s, _, project, _) = try board()
+        let label = try #require(project.labels.first)
+        label.symbolName = "tag"
+        try s.context.save()
+
+        var draft = KanbanLabelCatalogDraft(from: [label])
+        draft.edit(id: label.id, name: nil, colorHex: nil, symbolName: nil)
+        draft.clearSymbol(id: label.id)
+        let changes = draft.buildChanges()
+
+        try s.applyLabelChanges(changes, to: project)
+
+        let updated = try #require(project.labels.first { $0.id == label.id })
+        #expect(updated.symbolName == nil, "symbol was cleared")
+        let edit = changes.edits.first { $0.id == label.id }
+        #expect(edit?.clearsSymbol == true, "clearsSymbol flag set")
+    }
+
+    @Test("Draft → service integration: unknown id refused")
+    func draftUnknownIDRefused() throws {
+        let (s, _, project, _) = try board()
+        let labels = project.labels.sorted { $0.sortIndex < $1.sortIndex }
+
+        var changes = KanbanLabelChanges()
+        changes.orderIDs = [UUID()]  // Unknown ID
+        changes.orderIDs.append(contentsOf: labels.map(\.id))
+
+        #expect(throws: (any Error).self) {
+            try s.applyLabelChanges(changes, to: project)
+        }
     }
 }

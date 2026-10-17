@@ -168,17 +168,19 @@ struct KanbanTaskEditor: View {
                     .tag(Optional(column.id))
                 }
             }
-            .help(project?.orderedColumns.first.map { "Column: \(KanbanColumnStyle(kind: $0.kind, customColorHex: $0.colorHex).kindName)" } ?? "")
+            .help(selectedColumn.map { "Column: \(KanbanColumnStyle(kind: $0.kind, customColorHex: $0.colorHex).kindName)" } ?? "")
             .accessibilityIdentifier("kanban-editor-column")
             Picker("Assignee", selection: $row) {
                 Text("Unassigned").tag(KanbanRowKey.unassigned)
                 ForEach(activeMemberships) { Text($0.displayName).tag(KanbanRowKey.resource($0.id)) }
             }
             .accessibilityIdentifier("kanban-editor-assignee")
-            if let labels = project?.labels.sorted(by: { $0.sortIndex < $1.sortIndex }), !labels.isEmpty {
+            if let labels = project?.labels.sorted(by: { $0.sortIndex < $1.sortIndex }) {
                 LabeledContent("Labels") {
                     VStack(alignment: .leading, spacing: 8) {
-                        FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                        if !labels.isEmpty {
+                            FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                        }
                         Button("Edit labels…") { showLabelManager = true }
                             .font(.caption)
                             .accessibilityIdentifier("kanban-editor-edit-labels")
@@ -188,7 +190,12 @@ struct KanbanTaskEditor: View {
         }
         .sheet(isPresented: $showLabelManager) {
             if let project {
-                KanbanLabelManagerSheet(project: project)
+                KanbanLabelManagerSheet(project: project, fromCardEditor: true)
+                    .onDisappear {
+                        // Intersect selected label IDs with the board's current labels in case any were deleted
+                        let currentLabelIDs = Set(project.labels.map(\.id))
+                        labelIDs = labelIDs.intersection(currentLabelIDs)
+                    }
             }
         }
     }
@@ -325,6 +332,11 @@ struct KanbanTaskEditor: View {
 
     private var activeMemberships: [KanbanResource] {
         (project?.resources ?? []).filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    private var selectedColumn: KanbanColumn? {
+        guard let columnID else { return nil }
+        return project?.orderedColumns.first { $0.id == columnID }
     }
 
     /// Live cards, plus archived ones this card still depends on (so they can be removed).

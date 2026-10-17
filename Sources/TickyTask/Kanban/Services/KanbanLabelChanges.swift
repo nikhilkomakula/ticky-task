@@ -3,6 +3,7 @@ import Foundation
 /// Staged label changes for a board: adds, edits, reorder and deletes, all atomic.
 struct KanbanLabelChanges: Equatable, Sendable {
     struct Add: Equatable, Sendable {
+        var id: UUID
         var name: String
         var colorHex: String
         var symbolName: String?
