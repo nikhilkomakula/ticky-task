@@ -242,6 +242,39 @@ struct KanbanBoardTransferTests {
         #expect(Set(rows.map(\.sortIndex)).count == rows.count && rows.filter { $0.sortIndex > 2 }.count == rows.count - 2)
     }
 
+    @Test("An archived person's leftover active membership is never reused")
+    func archivedPersonWithActiveRowIsNotReused() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let ravi = try #require(project.resources.first { $0.displayName == "Ravi" && $0.archivedAt == nil })
+        ravi.person?.archivedAt = Date()   // as a restored store can leave it: the person archived, the row not
+        var plan = try T.plan(data, context: from)
+        plan.boards[0].mergeInto = project.id
+        #expect(plan.reusedMemberships(projects: [project], people: try from.fetch(FetchDescriptor<KanbanPerson>()))[project.id] == nil)
+        try T.apply(plan, fileName: "again", context: from)
+        let id = project.id
+        let rows = try from.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
+        #expect(rows.filter { $0.displayName == "Ravi" }.count == 2, "the import adds its own row")
+        let copies = try from.fetch(FetchDescriptor<KanbanTask>()).filter { $0.project?.id == id && $0.title == "Build API" }
+        #expect(copies.count == 2 && copies.contains { $0.resource == nil }, "the imported card isn't left on someone archived")
+    }
+
+    @Test("A huge stored row position doesn't stop an import, and new rows still differ")
+    func hugeRowPosition() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let s = KanbanService(to)
+        let target = try s.createProject(name: "Far", key: "FAR")
+        try s.addMembership(try s.createPerson(name: "Ana", initials: "AN"), to: target).sortIndex = 1e20
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = target.id
+        try T.apply(plan, fileName: "f", context: to)
+        let id = target.id
+        let rows = try to.fetch(FetchDescriptor<KanbanResource>(predicate: #Predicate { $0.project?.id == id }))
+        #expect(rows.count == 3 && Set(rows.map(\.sortIndex)).count == 3)
+    }
+
     @Test("Formulas behind leading whitespace or control characters are neutralised too")
     func csvControlPrefixes() {
         for field in ["\t=1+1", "\r=1+1", " =1+1", "\u{0B}@SUM(A1)", "\t"] {

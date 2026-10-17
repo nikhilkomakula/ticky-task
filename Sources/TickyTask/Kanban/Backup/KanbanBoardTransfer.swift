@@ -100,7 +100,9 @@ enum KanbanBoardTransfer {
                 let destination = board.mergeInto.map { "here:\($0)" } ?? "new:\(board.id)"
                 if taken[destination] == nil {
                     let target = board.mergeInto.flatMap { id in projects.first { $0.id == id } }
-                    taken[destination] = Set(target?.resources.filter { $0.archivedAt == nil }.compactMap { $0.person.map { "here:\($0.id)" } } ?? [])
+                    // An archived person's membership is never reused, even if a store left it active.
+                    taken[destination] = Set(target?.resources.filter { $0.archivedAt == nil }
+                        .compactMap { $0.person.flatMap { $0.archivedAt == nil ? "here:\($0.id)" : nil } } ?? [])
                 }
                 for dto in kanban.resources.filter({ $0.projectId == board.id && $0.archivedAt == nil }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
                     guard let choice = self.people.first(where: { $0.id == dto.personId }) else { continue }
@@ -230,15 +232,22 @@ enum KanbanBoardTransfer {
     /// A board receiving rows, tracked across the file's boards (two can merge into one), so
     /// reuse doesn't depend on inverse arrays catching up with unsaved inserts.
     private struct Destination {
-        /// Person id → their active membership on the board.
+        /// Person id → their active membership on the board (live people only).
         var active: [UUID: KanbanResource]
-        var rows: Int
+        var nextRow: Double
+
+        /// The next whole position after `position`, in Doubles (no Int conversion to trap on a
+        /// huge stored value); where +1 is lost to precision, the next representable value.
+        static func after(_ position: Double) -> Double {
+            let next = position.rounded(.down) + 1
+            return next > position ? next : position.nextUp
+        }
 
         init(_ project: KanbanProject) {
-            let live = project.resources.filter { $0.archivedAt == nil }
+            let live = project.resources.filter { $0.archivedAt == nil && $0.person?.archivedAt == nil }
             active = Dictionary(live.compactMap { r in r.person.map { ($0.id, r) } }, uniquingKeysWith: { a, _ in a })
             // After the last row: positions can be sparse (a reverted addition isn't renumbered).
-            rows = Int((project.resources.map(\.sortIndex).max() ?? -1).rounded(.down)) + 1
+            nextRow = Self.after(project.resources.map(\.sortIndex).max() ?? -1)
         }
     }
 
@@ -309,12 +318,12 @@ enum KanbanBoardTransfer {
         for dto in k.resources.filter({ mine($0.projectId) }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
             guard let person = dto.personId.flatMap({ people[$0] }) else { continue }
             // Reuse: one active membership per person and board.
-            if dto.archivedAt == nil, let existing = destination.active[person.id] {
+            if dto.archivedAt == nil, person.archivedAt == nil, let existing = destination.active[person.id] {
                 resources[dto.id] = existing
                 continue
             }
-            let resource = KanbanResource(person: person, sortIndex: Double(destination.rows))
-            destination.rows += 1
+            let resource = KanbanResource(person: person, sortIndex: destination.nextRow)
+            destination.nextRow = Destination.after(destination.nextRow)
             resource.role = dto.role
             resource.assignmentRaw = dto.assignmentRaw
             resource.allocationPercent = dto.allocationPercent
