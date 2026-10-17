@@ -78,13 +78,14 @@ struct KanbanResizeHandle: View {
             .accessibilityLabel("Resize \(name)")
             .accessibilityValue("\(Int(width.rounded())) points")
             .accessibilityAdjustableAction { direction in
+                guard !isDisabled else { return }
                 switch direction {
                 case .increment: onCommit(policy.clamp(Double(width) + 10))
                 case .decrement: onCommit(policy.clamp(Double(width) - 10))
                 @unknown default: break
                 }
             }
-            .accessibilityAction(named: "Reset width", onReset)
+            .accessibilityAction(named: "Reset width") { if !isDisabled { onReset() } }
             .accessibilityIdentifier("kanban-resize-\(name)")
     }
 }

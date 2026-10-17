@@ -101,36 +101,47 @@ struct KanbanRowHeader: View {
         case nil: 0
         }
         let color = KanbanUI.utilisationColor(load.utilisation)
-        return HStack(spacing: 6) {
-            if load.target != nil {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(color).frame(width: geo.size.width * fill)
-                    }
-                }
-                // Gives way first when the People column is narrowed.
-                .frame(minWidth: 24, maxWidth: 70)
-                .frame(height: 6)
+        // A narrow People column drops the bar before the numbers.
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                if load.target != nil { bar(fill: fill, color: color) }
+                loadLabel(load, hours: hours)
             }
-            if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
-                // While a drag hovers: "4 → 6/5".
-                let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
-                Text("\(projection.before.formatted(format)) → \(projection.after.formatted(format))/\(projection.target.formatted(format))\(hours ? "h" : "")")
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(KanbanUI.utilisationColor(projection.utilisation))
-                    .accessibilityIdentifier("kanban-projected-\(row.name)")
-            } else {
-                Text(shortLoad(load, hours: hours))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
+            loadLabel(load, hours: hours)
         }
         .help(text + (load.backlogCoverageWeeks.map { " · backlog covers \($0.formatted(.number.precision(.fractionLength(1)))) weeks" } ?? ""))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Load: \(text)")
         .accessibilityIdentifier("kanban-gauge-\(row.name)")
+    }
+
+    private func bar(fill: Double, color: Color) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(color).frame(width: geo.size.width * fill)
+            }
+        }
+        .frame(minWidth: 24, idealWidth: 24, maxWidth: 70)
+        .frame(height: 6)
+    }
+
+    @ViewBuilder
+    private func loadLabel(_ load: KanbanMetrics.LoadRow, hours: Bool) -> some View {
+        if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
+            // While a drag hovers: "4 → 6/5".
+            let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
+            Text("\(projection.before.formatted(format)) → \(projection.after.formatted(format))/\(projection.target.formatted(format))\(hours ? "h" : "")")
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(KanbanUI.utilisationColor(projection.utilisation))
+                .fixedSize()
+                .accessibilityIdentifier("kanban-projected-\(row.name)")
+        } else {
+            Text(shortLoad(load, hours: hours))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+        }
     }
 
     private func shortLoad(_ load: KanbanMetrics.LoadRow, hours: Bool) -> String {

@@ -290,6 +290,33 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-rowhdr-Ravi Kumar").waitForExistence(timeout: 5), "Ravi joins the Data board")
     }
 
+    /// A Done cell shows its five newest cards and tucks the rest behind "3 older"; Archive done
+    /// cards… archives them all at once.
+    func testDoneCellsShortenAndArchive() {
+        let app = launch(["-uitestKanbanDone"])
+        openPlatform(app)
+        let older = element(app, "kanban-done-older-Done-Ravi Kumar")
+        XCTAssertTrue(older.waitForExistence(timeout: 5), "the cell offers its older cards")
+        XCTAssertTrue(element(app, "kanban-card-Finished 4").exists && !element(app, "kanban-card-Finished 5").exists, "five newest shown")
+        XCTAssertTrue(element(app, "kanban-colhdr-Done").label.contains("5 shown"), "the header says how many show")
+        older.click()
+        XCTAssertTrue(element(app, "kanban-card-Finished 7").waitForExistence(timeout: 5), "opening the cell shows them all")
+        element(app, "kanban-done-fewer-Done-Ravi Kumar").click()
+        XCTAssertTrue(eventually { !element(app, "kanban-card-Finished 7").exists }, "Show fewer tucks them away again")
+
+        element(app, "kanban-board-actions").click()
+        let item = app.menuItems["Archive done cards…"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.click()
+        let all = app.radioButtons["All done cards"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5))
+        all.click()
+        app.sheets.buttons["kanban-archive-done-confirm"].firstMatch.click()
+        XCTAssertTrue(eventually { !element(app, "kanban-card-Ship v1").exists && !element(app, "kanban-card-Finished 1").exists },
+                      "every done card is archived")
+        XCTAssertFalse(element(app, "kanban-done-older-Done-Ravi Kumar").exists)
+    }
+
     func testKeyboardMovesAFocusedCard() {
         let app = launch()
         openPlatform(app)

@@ -30,7 +30,10 @@ struct KanbanColumnWidthTests {
         let clamped = decode(#"{"sort":"title","rowHeaderWidth":5000,"columnWidths":{"\#(column.uuidString)":10,"not-a-uuid":300}}"#)
         #expect(clamped.sort == .title, "other keys survive")
         #expect(clamped.rowHeaderWidth == 400 && clamped.columnWidths?[column.uuidString] == 180)
-        #expect(KanbanBoardWidths(clamped).columns.count == 1, "a key that isn't a column id is ignored")
+        #expect(clamped.columnWidths?.count == 1, "a key that isn't a column id is dropped")
+        let aliases = decode(#"{"columnWidths":{"\#(column.uuidString)":300,"\#(column.uuidString.lowercased())":320}}"#)
+        #expect(aliases.columnWidths == [column.uuidString: 320], "two spellings of one id become one width")
+        #expect(KanbanBoardWidths(aliases).column(column) == 320)
 
         let wrongTypes = decode(#"{"sort":"title","rowHeaderWidth":"wide","columnWidths":[1,2]}"#)
         #expect(wrongTypes.sort == .title && wrongTypes.rowHeaderWidth == nil && wrongTypes.columnWidths == nil)

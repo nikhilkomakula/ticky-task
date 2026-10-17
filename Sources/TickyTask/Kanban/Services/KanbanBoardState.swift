@@ -30,6 +30,8 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
     var rowHeaderWidth: Double?
     /// Column widths by column id; columns not listed take the default.
     var columnWidths: [String: Double]?
+    /// Done cells show every card rather than the most recent few.
+    var showAllDone = false
 
     init() {}
 
@@ -44,10 +46,19 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
         // Out-of-range or non-finite widths (a hand-edited or newer file) fall back to what fits.
         rowHeaderWidth = (try? c.decodeIfPresent(Double.self, forKey: .rowHeaderWidth))
             .flatMap { $0 }.flatMap { $0.isFinite ? KanbanWidthPolicy.rowHeader.clamp($0) : nil }
-        let widths = ((try? c.decodeIfPresent([String: Double].self, forKey: .columnWidths)) ?? nil)?
-            .compactMapValues { $0.isFinite ? KanbanWidthPolicy.column.clamp($0) : nil }
-        columnWidths = widths?.isEmpty == false ? widths : nil
+        // Keys are column ids in one spelling, so two spellings of an id can't both be kept.
+        let stored = ((try? c.decodeIfPresent([String: Double].self, forKey: .columnWidths)) ?? nil) ?? [:]
+        let widths = Dictionary(stored.compactMap { key, width -> (String, Double)? in
+            guard let id = UUID(uuidString: key), width.isFinite else { return nil }
+            return (id.uuidString, KanbanWidthPolicy.column.clamp(width))
+        }, uniquingKeysWith: max)
+        columnWidths = widths.isEmpty ? nil : widths
+        showAllDone = (try? c.decodeIfPresent(Bool.self, forKey: .showAllDone)) ?? false
     }
+
+    /// Done cells are shortened unless the board shows them all, or a filter or Show Archived
+    /// is deciding what's shown.
+    var compactsDone: Bool { !showAllDone && !showArchived && !filter.isActive }
 
     /// The List view's sort: its own header choice, or the board sort's equivalent.
     var effectiveListSort: (key: String, ascending: Bool) {

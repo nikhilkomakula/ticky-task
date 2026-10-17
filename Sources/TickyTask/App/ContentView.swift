@@ -343,6 +343,19 @@ private struct KanbanSummaryContainer: View {
     }
 }
 
+/// Container for archive done cards sheet.
+private struct KanbanArchiveDoneContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanArchiveDoneSheet(project: project)
+        }
+    }
+}
+
 /// A board id as a sheet item (rather than making UUID itself Identifiable app-wide).
 private struct BoardSheet: Identifiable {
     let id: UUID
@@ -383,6 +396,10 @@ private struct ContentViewSheetModifier: ViewModifier {
             }
             .sheet(item: $app.kanbanSummaryProjectID.boardSheet) { sheet in
                 KanbanSummaryContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanArchiveDoneProjectID.boardSheet) { sheet in
+                KanbanArchiveDoneContainer(projectID: sheet.id)
                     .environment(app as AppState)
             }
     }

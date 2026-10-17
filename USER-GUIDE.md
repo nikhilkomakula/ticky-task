@@ -109,6 +109,10 @@ Active filters appear as removable chips below the toolbar. Click **Clear** to r
 
 **Show Archived.** Click the archive icon to show or hide archived cards. This is remembered per board.
 
+**Finished cards.** Each Done cell shows its five most recently finished cards, plus any without a completion date. Click **n older** under them to see the rest, and **Show fewer** to tuck them away again. The column header says how many show, e.g. **17 (5 shown)**; WIP limits and hours still count every card. To always see every done card on a board, right-click a Done column header and choose **Done cards › All**. A filter or **Show Archived** also shows everything.
+
+**Archive done cards.** In the board's **⋯** menu, choose **Archive done cards…**, then either cards finished more than a number of days ago or all done cards. It covers every Done column and person on the board, including cards hidden by filters, and is one **Change Log** entry, so **⌘Z** undoes it. Nothing is deleted: **Show Archived** brings the cards back into view.
+
 **List view.** Switch to **List** in the top toolbar to see a sortable table with multi-select. Use right-click to bulk move, assign, label, or change priority.
 
 **Timeline.** Switch to **Timeline** to see dated cards as bars, grouped by person, with today marked.

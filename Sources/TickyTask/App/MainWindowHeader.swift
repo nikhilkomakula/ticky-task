@@ -253,6 +253,10 @@ private struct KanbanRow2View: View {
                         Label("Edit labels", systemImage: "tag")
                     }
                     .accessibilityIdentifier("kanban-edit-labels")
+                    Button(action: { app.kanbanArchiveDoneProjectID = project.id }) {
+                        Label("Archive done cards…", systemImage: "archivebox")
+                    }
+                    .accessibilityIdentifier("kanban-archive-done")
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

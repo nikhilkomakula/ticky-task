@@ -29,6 +29,8 @@ struct KanbanBoardView: View {
     @FocusState private var focus: KanbanBoardFocus?
     /// ⌘-click selection; a drag or the context menu then acts on all of it.
     @State private var selected: Set<UUID> = []
+    /// Shortened Done cells opened to show all their cards; forgotten when the board closes.
+    @State private var expandedDone: Set<CellKey> = []
 
     struct CellKey: Hashable {
         let column: UUID
@@ -51,12 +53,17 @@ struct KanbanBoardView: View {
         // Each cell's cards after the board's filter, in its sort order.
         let cells = Dictionary(grouping: snapshot.cards.compactMap { card in tasks[card.id].map { (CellKey(column: card.columnID, row: card.row), $0) } }
             .filter { state.filter.matches($0.1, calendar: calendar) }, by: \.0).mapValues { state.sorted($0.map(\.1)) }
+        let doneHidden = hiddenDone(cells, columns: columns, state: state)
+        // What's on screen: everything below (focus, keyboard moves, drops) works on this.
+        let shown = Dictionary(uniqueKeysWithValues: cells.map { key, cell in
+            (key, doneHidden[key] != nil && !expandedDone.contains(key) ? KanbanDoneCards.recent(cell) : cell)
+        })
         // Compute drag IDs once: only what's on screen travels (archived/filtered cards stay selected but don't drag).
         let dragIDs = selected.count > 1
             ? KanbanBulkMenu.ordered(project.tasks.filter { selected.contains($0.id) }, in: project)
                 .filter { $0.archivedAt == nil && state.filter.matches($0, calendar: calendar) }.map(\.id)
             : []
-        let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort, cells: cells)
+        let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort, cells: shown)
 
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
@@ -64,14 +71,14 @@ struct KanbanBoardView: View {
                     Section {
                         ForEach(snapshot.rows, id: \.key) { row in
                             let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
-                            boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells,
+                            boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells, shown: shown, doneHidden: doneHidden,
                                      load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
                                      collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs)
                             Divider()
                         }
                         addPersonButton
                     } header: {
-                        columnHeaders(columns, widths: widths, snapshot: snapshot, metrics: metrics)
+                        columnHeaders(columns, widths: widths, snapshot: snapshot, metrics: metrics, hidden: hiddenByColumn(doneHidden))
                     }
                 }
             }
@@ -90,7 +97,9 @@ struct KanbanBoardView: View {
                 drag.framesChanged()
             }
             .overlay { BoardDragOverlay(controller: drag, project: project) }
-            .onKeyPress(phases: .down) { press in handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks, cells: cells) }
+            .onKeyPress(phases: .down) { press in
+                handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks, cells: shown, shortened: Set(doneHidden.keys).subtracting(expandedDone))
+            }
             // Runs on appear too: Attention sets the card before this board exists.
             .task(id: app.highlightedKanbanTaskID) { await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
         }
@@ -127,7 +136,7 @@ struct KanbanBoardView: View {
     // MARK: - Rows
 
     private func boardRow(_ row: KanbanRowSnapshot, resource: KanbanResource?, columns: [KanbanColumn], widths: KanbanBoardWidths,
-                          cells: [CellKey: [KanbanTask]],
+                          cells: [CellKey: [KanbanTask]], shown: [CellKey: [KanbanTask]], doneHidden: [CellKey: Int],
                           load: KanbanMetrics.LoadRow?, person: KanbanMetrics.PersonRow?,
                           collapsed: Bool, dragIDs: [UUID]) -> some View {
         HStack(alignment: .top, spacing: 0) {
@@ -158,8 +167,11 @@ struct KanbanBoardView: View {
                     .accessibilityIdentifier("kanban-collapsed-\(row.name)")
             } else {
                 ForEach(columns) { column in
+                    let key = CellKey(column: column.id, row: row.key)
                     KanbanCell(project: project, column: column, row: row, width: widths.column(column.id), live: live,
-                               tasks: cells[CellKey(column: column.id, row: row.key)] ?? [],
+                               tasks: shown[key] ?? [],
+                               doneFooter: doneHidden[key].map { expandedDone.contains(key) ? .fewer : .older($0) },
+                               onToggleDone: { if expandedDone.remove(key) == nil { expandedDone.insert(key) } },
                                drag: drag, focus: $focus, quickLook: $quickLook, selected: selected,
                                dragIDs: dragIDs,
                                dragSource: { dragSource(for: $0, dragIDs: dragIDs) },
@@ -180,6 +192,8 @@ struct KanbanBoardView: View {
         if project.collapsedRowKeys.contains(row.storageKey) {
             app.runKanban { try app.kanbanService(context).setRowCollapsed(project, row, false) }
         }
+        // It may be one of a shortened Done cell's older cards.
+        if let column = task.column, column.kind == .done { expandedDone.insert(CellKey(column: column.id, row: row)) }
         try? await Task.sleep(for: .milliseconds(150))   // let the card render first
         withAnimation { proxy.scrollTo(id, anchor: .center) }
     }
@@ -192,6 +206,22 @@ struct KanbanBoardView: View {
         .padding(10)
         .stickyX(scroll)
         .accessibilityIdentifier("kanban-add-person")
+    }
+
+    /// How many cards each shortened Done cell leaves out (only cells that leave some out).
+    private func hiddenDone(_ cells: [CellKey: [KanbanTask]], columns: [KanbanColumn], state: KanbanBoardState) -> [CellKey: Int] {
+        guard state.compactsDone else { return [:] }
+        let done = Set(columns.filter { $0.kind == .done }.map(\.id))
+        return cells.reduce(into: [:]) { hidden, entry in
+            guard done.contains(entry.key.column) else { return }
+            let count = entry.value.count - KanbanDoneCards.recent(entry.value).count
+            if count > 0 { hidden[entry.key] = count }
+        }
+    }
+
+    /// Cards left out per column, counting only cells that are still shortened.
+    private func hiddenByColumn(_ doneHidden: [CellKey: Int]) -> [UUID: Int] {
+        doneHidden.filter { !expandedDone.contains($0.key) }.reduce(into: [:]) { $0[$1.key.column, default: 0] += $1.value }
     }
 
     /// Points the drag controller at this board (not observed state, so this redraws nothing).
@@ -229,7 +259,7 @@ struct KanbanBoardView: View {
     // MARK: - Keyboard (design 01 §4): only while a card or header on the board has focus
 
     private func handleKey(_ press: KeyPress, snapshot: BoardSnapshot, columns: [KanbanColumn], tasks: [UUID: KanbanTask],
-                           cells: [CellKey: [KanbanTask]]) -> KeyPress.Result {
+                           cells: [CellKey: [KanbanTask]], shortened: Set<CellKey>) -> KeyPress.Result {
         let command = press.modifiers.contains(.command), option = press.modifiers.contains(.option)
         if press.key == .escape, !selected.isEmpty {
             selected = []
@@ -266,11 +296,12 @@ struct KanbanBoardView: View {
             let siblings = snapshot.cards(in: card.columnID, row: card.row).filter { !$0.archived }.map(\.id)
             let shown = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).map(\.id)
             let position = siblings.firstIndex(of: id) ?? 0
-            // Under another sort, or with a filter hiding some of the cell, a keyboard reorder
-            // works on the order on screen (as a drop does), so the card visibly moves one place.
+            // Under another sort, or with a filter or a shortened Done cell hiding some of the cell,
+            // a keyboard reorder works on the order on screen (as a drop does), so the card
+            // visibly moves one place.
             let viewState = KanbanBoardState.decode(project.boardState)
             if command && option, [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(press.key),
-               viewState.sort != .manual || viewState.filter.isActive {
+               viewState.sort != .manual || viewState.filter.isActive || shortened.contains(CellKey(column: card.columnID, row: card.row)) {
                 var order = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).filter { $0.archivedAt == nil }
                 guard let from = order.firstIndex(where: { $0.id == id }) else { return .handled }
                 let to = from + ([.upArrow, .leftArrow].contains(press.key) ? -1 : 1)
@@ -371,7 +402,8 @@ struct KanbanBoardView: View {
 
     // MARK: - Column headers
 
-    private func columnHeaders(_ columns: [KanbanColumn], widths: KanbanBoardWidths, snapshot: BoardSnapshot, metrics: MetricsSnapshot) -> some View {
+    private func columnHeaders(_ columns: [KanbanColumn], widths: KanbanBoardWidths, snapshot: BoardSnapshot, metrics: MetricsSnapshot,
+                               hidden: [UUID: Int]) -> some View {
         HStack(spacing: 0) {
             Text(project.loadMeasure == .hours ? "People · hours this week" : "People · open tasks")
                 .font(.caption)
@@ -392,7 +424,8 @@ struct KanbanBoardView: View {
                 // Live cards only, as WIP is counted.
                 let cards = snapshot.cards.filter { $0.columnID == column.id && !$0.archived }
                 let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
-                KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag)
+                KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag,
+                                   shownCount: hidden[column.id].map { cards.count - $0 })
                     .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: widths.width, height: 40))
                     .opacity(drag.isDragging(column: column.id) ? 0.4 : 1)
                     .publishBoardFrame { BoardFrames(columnHeaders: [.init(id: column.id, frame: $0)]) }
@@ -458,6 +491,14 @@ struct KanbanBoardView: View {
             Button("Make this the backlog") { app.runKanban { try service.makeBacklog(column) } }
                 .disabled(column.kind == .backlog)
         }
+        if column.kind == .done {
+            let showAll = KanbanBoardState.decode(project.boardState).showAllDone
+            Picker("Done cards", selection: Binding(get: { showAll },
+                                                   set: { value in app.updateBoardState(project, context: context) { $0.showAllDone = value } })) {
+                Text("Most recent \(KanbanDoneCards.recentCount)").tag(false)
+                Text("All").tag(true)
+            }
+        }
         Divider()
         Button("Move left") { app.runKanban { try service.reorderColumn(column, to: index - 1) } }
             .disabled(index == 0)
@@ -476,6 +517,9 @@ private struct KanbanCell: View {
     let width: CGFloat
     let live: KanbanLiveWidth
     let tasks: [KanbanTask]
+    /// A shortened Done cell's "+n older", or "Show fewer" once it's opened.
+    var doneFooter: DoneFooter?
+    var onToggleDone: () -> Void = {}
     var drag: BoardDragController
     var focus: FocusState<KanbanBoardFocus?>.Binding
     @Binding var quickLook: UUID?
@@ -487,6 +531,11 @@ private struct KanbanCell: View {
     var onDelete: (KanbanTask) -> Void
     var onAdd: () -> Void
     @State private var isHovering = false
+
+    enum DoneFooter {
+        case older(Int)
+        case fewer
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -512,6 +561,7 @@ private struct KanbanCell: View {
                         }
                 }
             }
+            if let doneFooter { doneFooterButton(doneFooter) }
             Button(action: onAdd) {
                 Image(systemName: "plus")
                     .frame(maxWidth: .infinity, minHeight: 20)
@@ -534,6 +584,26 @@ private struct KanbanCell: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-cell-\(column.name)-\(row.name)")
+    }
+
+    private func doneFooterButton(_ footer: DoneFooter) -> some View {
+        let (title, symbol, label, id): (String, String, String, String) = switch footer {
+        case let .older(count):
+            ("\(count) older", "chevron.down", "Show \(count) older cards in \(column.name), \(row.name)", "kanban-done-older-\(column.name)-\(row.name)")
+        case .fewer:
+            ("Show fewer", "chevron.up", "Show only recent cards in \(column.name), \(row.name)", "kanban-done-fewer-\(column.name)-\(row.name)")
+        }
+        return Button(action: onToggleDone) {
+            Label(title, systemImage: symbol)
+                .font(.caption)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
     }
 }
 
@@ -609,6 +679,8 @@ struct KanbanColumnHeader: View {
     let count: Int
     let hours: Double?
     var drag: BoardDragController?
+    /// Set when a shortened Done column shows fewer cards than it has.
+    var shownCount: Int?
 
     var body: some View {
         let over = (column.wipLimit.map { count > $0 } ?? false) || drag?.wipNote?.columnID == column.id
@@ -628,6 +700,10 @@ struct KanbanColumnHeader: View {
                         .foregroundStyle(over ? .red : .secondary)
                 } else {
                     Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                if let shownCount {
+                    Text("(\(shownCount) shown)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .help("Older done cards are tucked away in each cell")
                 }
                 if let hours {
                     Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h")
@@ -651,7 +727,7 @@ struct KanbanColumnHeader: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(column.name), \(style.kindName), \(count) cards\(column.wipLimit.map { ", limit \($0)" } ?? "")\(over ? ", over the limit" : "")")
+        .accessibilityLabel("\(column.name), \(style.kindName), \(count) cards\(shownCount.map { ", \($0) shown" } ?? "")\(column.wipLimit.map { ", limit \($0)" } ?? "")\(over ? ", over the limit" : "")")
         .accessibilityIdentifier("kanban-colhdr-\(column.name)")
     }
 }

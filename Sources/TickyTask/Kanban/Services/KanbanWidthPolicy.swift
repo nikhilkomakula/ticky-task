@@ -21,9 +21,9 @@ struct KanbanBoardWidths: Equatable {
 
     init(_ state: KanbanBoardState) {
         rowHeader = CGFloat(state.rowHeaderWidth ?? KanbanWidthPolicy.rowHeader.defaultWidth)
-        columns = Dictionary(uniqueKeysWithValues: (state.columnWidths ?? [:]).compactMap { key, width in
+        columns = Dictionary((state.columnWidths ?? [:]).compactMap { key, width in
             UUID(uuidString: key).map { ($0, CGFloat(width)) }
-        })
+        }, uniquingKeysWith: max)
     }
 
     func column(_ id: UUID) -> CGFloat { columns[id] ?? CGFloat(KanbanWidthPolicy.column.defaultWidth) }

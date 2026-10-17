@@ -96,12 +96,9 @@ struct KanbanService {
     /// (one entry per board). Opt-in (Settings › Kanban); never deletes; skipped in a
     /// recovery session, like the planner's auto-delete.
     func autoArchive(olderThanDays days: Int, now: Date = Date()) throws {
-        guard days >= 1, !PersistenceRecovery.didRelaunch,
-              let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
+        guard days >= 1, !PersistenceRecovery.didRelaunch else { return }
         for project in try context.fetch(FetchDescriptor<KanbanProject>()) where project.archivedAt == nil {
-            let stale = project.tasks.filter { task in
-                task.archivedAt == nil && task.column?.kind == .done && (task.completedAt.map { $0 < cutoff } ?? false)
-            }
+            let stale = KanbanDoneCards.archivable(in: project, finishedMoreThan: days, now: now)
             if !stale.isEmpty { try setArchived(stale, archived: true) }
         }
     }
