@@ -23,7 +23,14 @@ struct KanbanModuleView: View {
                     KanbanAllProjectsView(projects: projects)
                 case let .project(id):
                     if let project = projects.first(where: { $0.id == id }) {
-                        KanbanBoardView(project: project, allProjects: projects)
+                        VStack(spacing: 0) {
+                            KanbanFilterChips(project: project)
+                            if KanbanBoardState.decode(project.boardState).view == .list {
+                                KanbanListView(project: project)
+                            } else {
+                                KanbanBoardView(project: project, allProjects: projects)
+                            }
+                        }
                     } else {
                         ContentUnavailableView("Board not found", systemImage: "square.grid.3x2",
                                                description: Text("It may have been deleted."))
@@ -135,6 +142,7 @@ struct KanbanToolbarTrailing: View {
 
     var body: some View {
         if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
+            KanbanViewControls(project: project)
             Button { changeLog = project } label: { Image(systemName: "clock.arrow.circlepath") }
                 .buttonStyle(.borderless)
                 .frame(width: 28, height: 28)

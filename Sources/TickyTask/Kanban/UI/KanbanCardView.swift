@@ -7,6 +7,7 @@ import AppKit
 struct KanbanCardView: View {
     let task: KanbanTask
     let project: KanbanProject
+    var isSelected = false
     var onOpen: () -> Void = {}
     @Environment(AppState.self) private var app
     @AppStorage("compactView") private var compact = false
@@ -35,7 +36,9 @@ struct KanbanCardView: View {
         .padding(.vertical, compact ? 4 : 6)
         .padding(.horizontal, 8)
         .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: highlighted ? 2 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                                                lineWidth: highlighted || isSelected ? 2 : 1))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeInOut(duration: 0.2), value: highlighted)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
