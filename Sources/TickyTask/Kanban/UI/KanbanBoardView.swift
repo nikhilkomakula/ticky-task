@@ -33,7 +33,8 @@ struct KanbanBoardView: View {
 
     var body: some View {
         let state = KanbanBoardState.decode(project.boardState)
-        let snapshot = BoardSnapshot.make(project: project, includeArchived: state.showArchived)
+        // Show Archived adds archived cards, never archived memberships' rows: rows are move targets.
+        let snapshot = BoardSnapshot.make(project: project, includeArchived: state.showArchived, includeArchivedRows: false)
         let columns = project.orderedColumns
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
@@ -314,7 +315,8 @@ struct KanbanBoardView: View {
 
     /// Dragging a selected card carries the whole selection, in board order.
     private func dragSource(for task: KanbanTask) -> BoardDragSource {
-        selected.contains(task.id) && selected.count > 1 ? .cards(selection().map(\.id)) : .cards([task.id])
+        // Archived cards in the selection stay selected (for Restore) but don't move.
+        selected.contains(task.id) && selected.count > 1 ? .cards(selection().filter { $0.archivedAt == nil }.map(\.id)) : .cards([task.id])
     }
 
     private func menuTasks(for task: KanbanTask) -> [KanbanTask] {
@@ -350,7 +352,8 @@ struct KanbanBoardView: View {
                 .stickyX(scroll)
                 .zIndex(1)
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                let cards = snapshot.cards.filter { $0.columnID == column.id }
+                // Live cards only, as WIP is counted.
+                let cards = snapshot.cards.filter { $0.columnID == column.id && !$0.archived }
                 let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
                 KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag)
                     .frame(width: KanbanUI.columnWidth, height: 40)

@@ -86,7 +86,10 @@ struct BoardSnapshot: Equatable, Sendable {
     /// Builds a snapshot from a live KanbanProject. Excludes archived cards and rows
     /// unless `includeArchived` is true.
     @MainActor
-    static func make(project: KanbanProject, includeArchived: Bool = false) -> BoardSnapshot {
+    /// `includeArchivedRows` defaults to `includeArchived`; Show Archived on a board shows
+    /// archived cards but keeps rows to active memberships (cards of archived ones show as Unassigned).
+    static func make(project: KanbanProject, includeArchived: Bool = false, includeArchivedRows: Bool? = nil) -> BoardSnapshot {
+        let includeArchivedRows = includeArchivedRows ?? includeArchived
         let columns = project.orderedColumns.map { col in
             ColumnSnapshot(
                 id: col.id,
@@ -112,7 +115,7 @@ struct BoardSnapshot: Equatable, Sendable {
         // Resource rows, sorted by sortIndex.
         let sortedResources = project.resources.sorted { $0.sortIndex < $1.sortIndex }
         for res in sortedResources {
-            let shouldInclude = includeArchived || res.archivedAt == nil
+            let shouldInclude = includeArchivedRows || res.archivedAt == nil
             if shouldInclude {
                 rows.append(KanbanRowSnapshot(
                     key: .resource(res.id),

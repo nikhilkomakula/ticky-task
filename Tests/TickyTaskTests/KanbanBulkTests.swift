@@ -125,4 +125,17 @@ struct KanbanBulkTests {
         #expect(throws: KanbanServiceError.self, "C back to 2 would share D's position") { try s.revert(arrange) }
         #expect(cards[2].sortIndex == 0 && d.sortIndex == 2)
     }
+
+    @Test("Show Archived adds archived cards but not archived memberships' rows")
+    func snapshotRowsStayActive() throws {
+        let (s, project, cards) = try board()
+        let mia = try s.addMembership(try s.createPerson(name: "Mia", initials: "MI"), to: project)
+        try s.move(.cards([cards[0].id], to: .rowHeader(.resource(mia.id))), in: project)
+        try s.setArchived([cards[0]], true)
+        try s.archiveMembership(mia)
+        let snapshot = BoardSnapshot.make(project: project, includeArchived: true, includeArchivedRows: false)
+        #expect(snapshot.rows.map(\.key) == [.unassigned])
+        #expect(snapshot.cards.contains { $0.id == cards[0].id && $0.archived && $0.row == .unassigned })
+        #expect(BoardSnapshot.make(project: project, includeArchived: true).rows.count == 2, "the default still includes them")
+    }
 }
