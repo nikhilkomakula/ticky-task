@@ -175,4 +175,59 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertTrue(cell.frame.contains(CGPoint(x: card.frame.midX, y: card.frame.midY)), "the card is in that cell")
     }
+
+    // MARK: - Increment 5: drag and drop, keyboard
+
+    private func drag(_ app: XCUIApplication, _ from: XCUIElement, to target: XCUIElement, at offset: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
+        let start = from.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        start.press(forDuration: 0.35, thenDragTo: target.coordinate(withNormalizedOffset: offset))
+        Thread.sleep(forTimeInterval: 1.2)
+    }
+
+    private func isInside(_ inner: XCUIElement, _ outer: XCUIElement) -> Bool {
+        outer.frame.contains(CGPoint(x: inner.frame.midX, y: inner.frame.midY))
+    }
+
+    func testDragACardToAnotherCell() {
+        let app = launch()
+        openPlatform(app)
+        let card = element(app, "kanban-card-Triage inbox")
+        let cell = element(app, "kanban-cell-In Progress-Ravi Kumar")
+        XCTAssertTrue(card.waitForExistence(timeout: 5) && cell.exists)
+        drag(app, card, to: cell, at: CGVector(dx: 0.5, dy: 0.9))
+        XCTAssertTrue(isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-In Progress-Ravi Kumar")),
+                      "the card moved to Ravi's In Progress cell")
+    }
+
+    func testDragACardOntoARowHeaderReassignsIt() {
+        let app = launch()
+        openPlatform(app)
+        let card = element(app, "kanban-card-Build API")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        drag(app, card, to: element(app, "kanban-rowhdr-Mia Chen"))
+        XCTAssertTrue(isInside(element(app, "kanban-card-Build API"), element(app, "kanban-cell-In Progress-Mia Chen")),
+                      "same column, Mia's row")
+    }
+
+    func testDragAColumnHeaderReordersColumns() {
+        let app = launch()
+        openPlatform(app)
+        let done = element(app, "kanban-colhdr-Done"), todo = element(app, "kanban-colhdr-To Do")
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(done.frame.minX, todo.frame.minX)
+        drag(app, done, to: todo, at: CGVector(dx: 0.1, dy: 0.5))
+        XCTAssertLessThan(element(app, "kanban-colhdr-Done").frame.minX, element(app, "kanban-colhdr-To Do").frame.minX, "Done is first now")
+    }
+
+    func testKeyboardMovesAFocusedCard() {
+        let app = launch()
+        openPlatform(app)
+        let card = element(app, "kanban-card-Write docs")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.3)).click()   // opens the editor, and focuses the card
+        if element(app, "kanban-editor-cancel").waitForExistence(timeout: 3) { element(app, "kanban-editor-cancel").click() }
+        app.typeKey(.rightArrow, modifierFlags: .command)
+        XCTAssertTrue(isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")),
+                      "⌘→ moves it to the next column")
+    }
 }

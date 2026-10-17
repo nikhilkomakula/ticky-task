@@ -33,7 +33,7 @@ struct ReorderableRow: ViewModifier {
                         controller.update(pointer: value.location)
                     }
                     .onEnded { _ in
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) { controller.end() }
+                        withAnimation(DragChrome.dropSpring) { controller.end() }
                     }
             )
     }
@@ -65,7 +65,7 @@ extension View {
                     controller.update(pointer: value.location)
                 }
                 .onEnded { _ in
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) { controller.end() }
+                    withAnimation(DragChrome.dropSpring) { controller.end() }
                 }
         )
     }

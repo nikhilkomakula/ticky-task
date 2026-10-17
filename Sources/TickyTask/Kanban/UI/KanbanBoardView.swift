@@ -18,6 +18,11 @@ struct KanbanBoardView: View {
     @State private var editingMembership: KanbanResource?
     @State private var archivingMembership: KanbanResource?
     @State private var editingTask: KanbanTask?
+    @State private var movingTask: KanbanTask?
+    @State private var quickLook: UUID?
+    @State private var drag = BoardDragController()
+    @State private var position = ScrollPosition()
+    @FocusState private var focus: KanbanBoardFocus?
 
     var body: some View {
         let snapshot = BoardSnapshot.make(project: project)
@@ -29,6 +34,7 @@ struct KanbanBoardView: View {
         let people = app.kanbanMetrics.people(allProjects, key: key, calendar: calendar)
         let tasks = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let collapsed = Set(project.collapsedRowKeys)
+        let _ = configureDrag(metrics: metrics)
 
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
@@ -48,9 +54,18 @@ struct KanbanBoardView: View {
                 }
             }
             .accessibilityIdentifier("kanban-board")
-            .onScrollGeometryChange(for: CGFloat.self) { max(0, $0.contentOffset.x + $0.contentInsets.leading) } action: { _, x in
-                scroll.x = x
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
+                scroll.x = max(0, geometry.contentOffset.x + geometry.contentInsets.leading)
+                scroll.geometry = geometry
             }
+            .publishBoardFrame { BoardFrames(viewport: $0) }
+            .onPreferenceChange(BoardFramesKey.self) { frames in
+                drag.frames = frames
+                drag.framesChanged()
+            }
+            .overlay { BoardDragOverlay(controller: drag, project: project) }
+            .onKeyPress(phases: .down) { press in handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks) }
             // Runs on appear too: Attention sets the card before this board exists.
             .task(id: app.highlightedKanbanTaskID) { await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
         }
@@ -59,6 +74,7 @@ struct KanbanBoardView: View {
         .sheet(isPresented: $isAddingPerson) { KanbanAddPersonSheet(project: project) }
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
+        .sheet(item: $movingTask) { KanbanMoveSheet(task: $0) }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {
@@ -76,7 +92,7 @@ struct KanbanBoardView: View {
                           tasks: [UUID: KanbanTask], load: KanbanMetrics.LoadRow?, person: KanbanMetrics.PersonRow?,
                           collapsed: Bool) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            KanbanRowHeader(project: project, row: row, resource: resource, load: load, person: person, collapsed: collapsed,
+            KanbanRowHeader(project: project, row: row, resource: resource, load: load, person: person, collapsed: collapsed, drag: drag,
                             onToggle: { toggle(row.key, collapsed: collapsed) },
                             onEdit: { editingMembership = resource },
                             onRemove: { archivingMembership = resource })
@@ -84,6 +100,11 @@ struct KanbanBoardView: View {
                 .frame(width: KanbanUI.rowHeaderWidth, alignment: .topLeading)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color(nsColor: .windowBackgroundColor))
+                .opacity(resource.map { drag.isDragging(row: $0.id) } == true ? 0.4 : 1)
+                .publishBoardFrame { BoardFrames(rowHeaders: [.init(row: row.key, frame: $0)]) }
+                .modifier(RowHeaderDrag(resource: resource, row: row, drag: drag))
+                .focusable(resource != nil)
+                .focused($focus, equals: .row(resource?.id ?? KanbanBoardFocus.unfocusable))
                 .stickyX(scroll)
                 .zIndex(1)
             if collapsed {
@@ -92,11 +113,14 @@ struct KanbanBoardView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .frame(width: KanbanUI.columnWidth * CGFloat(columns.count), height: 44, alignment: .leading)
+                    // Still a drop target: it reassigns the card and keeps its column.
+                    .publishBoardFrame { BoardFrames(rowHeaders: [.init(row: row.key, frame: $0, isSummary: true)]) }
                     .accessibilityIdentifier("kanban-collapsed-\(row.name)")
             } else {
                 ForEach(columns) { column in
                     KanbanCell(project: project, column: column, row: row,
                                tasks: snapshot.cards(in: column.id, row: row.key).compactMap { tasks[$0.id] },
+                               drag: drag, focus: $focus, quickLook: $quickLook,
                                onOpen: { editingTask = $0 },
                                onAdd: { addCard(in: column, row: row.key) })
                 }
@@ -124,6 +148,98 @@ struct KanbanBoardView: View {
         .padding(10)
         .stickyX(scroll)
         .accessibilityIdentifier("kanban-add-person")
+    }
+
+    /// Points the drag controller at this board (not observed state, so this redraws nothing).
+    private func configureDrag(metrics: MetricsSnapshot) {
+        drag.project = project
+        drag.metrics = metrics
+        drag.commit = { [app, context, project] op in
+            app.runKanban { _ = try app.kanbanService(context).move(op, in: project) }
+        }
+        drag.scrollBy = { [scroll, position = $position] delta in
+            guard let geometry = scroll.geometry else { return }
+            let maxX = max(0, geometry.contentSize.width - geometry.containerSize.width)
+            let maxY = max(0, geometry.contentSize.height - geometry.containerSize.height)
+            let x = min(max(geometry.contentOffset.x + delta.dx, 0), maxX)
+            let y = min(max(geometry.contentOffset.y + delta.dy, 0), maxY)
+            position.wrappedValue.scrollTo(point: CGPoint(x: x, y: y))
+        }
+    }
+
+    // MARK: - Keyboard (design 01 §4): only while a card or header on the board has focus
+
+    private func handleKey(_ press: KeyPress, snapshot: BoardSnapshot, columns: [KanbanColumn], tasks: [UUID: KanbanTask]) -> KeyPress.Result {
+        let command = press.modifiers.contains(.command), option = press.modifiers.contains(.option)
+        let service = app.kanbanService(context)
+        func run(_ op: MoveOp) -> KeyPress.Result {
+            app.runKanban { _ = try service.move(op, in: project) }
+            return .handled
+        }
+        switch focus {
+        case let .column(id)? where command && option:
+            guard let index = columns.firstIndex(where: { $0.id == id }) else { return .ignored }
+            if press.key == .leftArrow { return index > 0 ? run(.reorderColumn(id, toIndex: index - 1)) : .handled }
+            if press.key == .rightArrow { return index < columns.count - 1 ? run(.reorderColumn(id, toIndex: index + 1)) : .handled }
+            return .ignored
+        case let .row(id)? where command && option:
+            let order = snapshot.rows.compactMap(\.resourceID)
+            guard let index = order.firstIndex(of: id) else { return .ignored }
+            if press.key == .upArrow { return index > 0 ? run(.reorderRow(id, toIndex: index - 1)) : .handled }
+            if press.key == .downArrow { return index < order.count - 1 ? run(.reorderRow(id, toIndex: index + 1)) : .handled }
+            return .ignored
+        case let .card(id)?:
+            guard let task = tasks[id], let card = snapshot.cards.first(where: { $0.id == id }),
+                  let columnIndex = columns.firstIndex(where: { $0.id == card.columnID }),
+                  let rowIndex = snapshot.rows.firstIndex(where: { $0.key == card.row }) else { return .ignored }
+            let siblings = snapshot.cards(in: card.columnID, row: card.row).map(\.id)
+            let position = siblings.firstIndex(of: id) ?? 0
+            switch (press.key, command, option) {
+            case (.upArrow, true, true):
+                return position > 0 ? run(.cards([id], to: .cell(columnID: card.columnID, row: card.row, beforeCardID: siblings[position - 1]))) : .handled
+            case (.downArrow, true, true):
+                guard position < siblings.count - 1 else { return .handled }
+                let before = position + 2 < siblings.count ? siblings[position + 2] : nil
+                return run(.cards([id], to: .cell(columnID: card.columnID, row: card.row, beforeCardID: before)))
+            case (.leftArrow, true, false), (.rightArrow, true, false):
+                let next = columnIndex + (press.key == .leftArrow ? -1 : 1)
+                guard columns.indices.contains(next) else { return .handled }
+                return run(.cards([id], to: .cell(columnID: columns[next].id, row: card.row, beforeCardID: nil)))
+            case (.upArrow, true, false), (.downArrow, true, false):
+                let next = rowIndex + (press.key == .upArrow ? -1 : 1)
+                guard snapshot.rows.indices.contains(next) else { return .handled }
+                return run(.cards([id], to: .rowHeader(snapshot.rows[next].key)))
+            case (.upArrow, false, false), (.downArrow, false, false):
+                let next = position + (press.key == .upArrow ? -1 : 1)
+                if siblings.indices.contains(next) { focus = .card(siblings[next]) }
+                return .handled
+            case (.leftArrow, false, false), (.rightArrow, false, false):
+                var index = columnIndex
+                while true {
+                    index += press.key == .leftArrow ? -1 : 1
+                    guard columns.indices.contains(index) else { return .handled }
+                    let cards = snapshot.cards(in: columns[index].id, row: card.row)
+                    if !cards.isEmpty {
+                        focus = .card(cards[min(position, cards.count - 1)].id)
+                        return .handled
+                    }
+                }
+            case (.return, false, false):
+                editingTask = task
+                return .handled
+            case (.space, false, false):
+                quickLook = quickLook == id ? nil : id
+                return .handled
+            default:
+                if press.characters.lowercased() == "m", !command, !option {
+                    movingTask = task
+                    return .handled
+                }
+                return .ignored
+            }
+        default:
+            return .ignored
+        }
     }
 
     private func addCard(in column: KanbanColumn, row: KanbanRowKey) {
@@ -156,8 +272,14 @@ struct KanbanBoardView: View {
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
                 let cards = snapshot.cards.filter { $0.columnID == column.id }
                 let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
-                KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil)
+                KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag)
                     .frame(width: KanbanUI.columnWidth, height: 40)
+                    .opacity(drag.isDragging(column: column.id) ? 0.4 : 1)
+                    .publishBoardFrame { BoardFrames(columnHeaders: [.init(id: column.id, frame: $0)]) }
+                    .boardDraggable(.column(column.id), controller: drag,
+                                    frame: { drag.frames.columnHeaders.first { $0.id == column.id }?.frame }, title: column.name)
+                    .focusable()
+                    .focused($focus, equals: .column(column.id))
                     .contextMenu { columnMenu(column, index: index, count: columns.count) }
             }
             Button {
@@ -220,6 +342,9 @@ private struct KanbanCell: View {
     let column: KanbanColumn
     let row: KanbanRowSnapshot
     let tasks: [KanbanTask]
+    var drag: BoardDragController
+    var focus: FocusState<KanbanBoardFocus?>.Binding
+    @Binding var quickLook: UUID?
     var onOpen: (KanbanTask) -> Void
     var onAdd: () -> Void
     @State private var isHovering = false
@@ -227,7 +352,17 @@ private struct KanbanCell: View {
     var body: some View {
         VStack(spacing: 6) {
             ForEach(tasks) { task in
-                KanbanCardView(task: task, project: project, onOpen: { onOpen(task) }).id(task.id)
+                KanbanCardView(task: task, project: project, onOpen: { onOpen(task) })
+                    .id(task.id)
+                    .opacity(drag.isDragging(card: task.id) ? 0.001 : 1)
+                    .publishBoardFrame { BoardFrames(cards: [.init(id: task.id, columnID: column.id, row: row.key, frame: $0)]) }
+                    .boardDraggable(.cards([task.id]), controller: drag,
+                                    frame: { drag.frames.cards.first { $0.id == task.id }?.frame }, task: task)
+                    .focusable()
+                    .focused(focus, equals: .card(task.id))
+                    .popover(isPresented: Binding(get: { quickLook == task.id }, set: { if !$0 { quickLook = nil } })) {
+                        KanbanQuickLook(task: task)
+                    }
             }
             Button(action: onAdd) {
                 Image(systemName: "plus")
@@ -245,6 +380,7 @@ private struct KanbanCell: View {
         .frame(width: KanbanUI.columnWidth, alignment: .top)
         .frame(minHeight: 72, alignment: .top)
         .background((KanbanUI.color(column.colorHex) ?? .clear).opacity(0.06))
+        .publishBoardFrame { BoardFrames(cells: [.init(columnID: column.id, row: row.key, frame: $0)]) }
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
@@ -256,6 +392,34 @@ private struct KanbanCell: View {
 @MainActor @Observable
 final class KanbanScrollOffset {
     var x: CGFloat = 0
+    /// For auto-scroll; not observed.
+    @ObservationIgnored var geometry: ScrollGeometry?
+}
+
+/// What has keyboard focus on a board.
+enum KanbanBoardFocus: Hashable {
+    case card(UUID)
+    case column(UUID)
+    case row(UUID)
+
+    /// For the Unassigned header, which can't take focus.
+    static let unfocusable = UUID()
+}
+
+/// Makes a membership's row header draggable to reorder rows (Unassigned stays put).
+private struct RowHeaderDrag: ViewModifier {
+    let resource: KanbanResource?
+    let row: KanbanRowSnapshot
+    let drag: BoardDragController
+
+    func body(content: Content) -> some View {
+        if let resource {
+            content.boardDraggable(.row(resource.id), controller: drag,
+                                   frame: { drag.frames.rowHeaders.first { $0.row == row.key && !$0.isSummary }?.frame }, title: row.name)
+        } else {
+            content
+        }
+    }
 }
 
 private struct StickyX: ViewModifier {
@@ -272,9 +436,11 @@ struct KanbanColumnHeader: View {
     let column: KanbanColumn
     let count: Int
     let hours: Double?
+    var drag: BoardDragController?
 
     var body: some View {
-        let over = column.wipLimit.map { count > $0 } ?? false
+        // Red while over its limit, or while a drag would put it over.
+        let over = (column.wipLimit.map { count > $0 } ?? false) || drag?.wipNote?.columnID == column.id
         HStack(spacing: 6) {
             Circle()
                 .fill(KanbanUI.color(column.colorHex) ?? (column.kind == .done ? .green : .secondary))

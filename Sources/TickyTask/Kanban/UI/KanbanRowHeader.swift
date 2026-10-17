@@ -9,6 +9,7 @@ struct KanbanRowHeader: View {
     let load: KanbanMetrics.LoadRow?
     let person: KanbanMetrics.PersonRow?
     let collapsed: Bool
+    var drag: BoardDragController?
     var onToggle: () -> Void
     var onEdit: () -> Void
     var onRemove: () -> Void
@@ -103,9 +104,18 @@ struct KanbanRowHeader: View {
                 }
                 .frame(width: 70, height: 6)
             }
-            Text(shortLoad(load, hours: hours))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
+            if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
+                // While a drag hovers: "4 → 6/5".
+                let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
+                Text("\(projection.before.formatted(format)) → \(projection.after.formatted(format))/\(projection.target.formatted(format))\(hours ? "h" : "")")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(KanbanUI.utilisationColor(projection.utilisation))
+                    .accessibilityIdentifier("kanban-projected-\(row.name)")
+            } else {
+                Text(shortLoad(load, hours: hours))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
         }
         .help(text + (load.backlogCoverageWeeks.map { " · backlog covers \($0.formatted(.number.precision(.fractionLength(1)))) weeks" } ?? ""))
         .accessibilityElement(children: .ignore)
