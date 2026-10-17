@@ -460,4 +460,27 @@ struct KanbanRevertSafetyTests {
         #expect(restarted, "\(path): fails closed")
         #expect(try KanbanBackupDTO.snapshot(context: reopen(dir)).deterministicallySorted() == before, "\(path): disk unchanged")
     }
+
+    // MARK: - Round 5 (Codex)
+
+    @Test("Reverting a move into a column that became Done since is refused")
+    func revertMoveIntoNowDoneColumn() throws {
+        let b = try board()
+        let card = try b.service.createTask(in: b.project, title: "T", column: b.doing)
+        try b.service.move(.cards([card.id], to: .columnHeader(b.todo.id)), in: b.project)
+        let move = b.last()
+        try b.service.editColumn(b.doing, kind: .done)
+        #expect(throws: KanbanServiceError.self) { try b.service.revert(move) }
+        #expect(card.column?.id == b.todo.id && card.completedAt == nil)
+    }
+
+    @Test("A person's archive can't be undone with someone else's group")
+    func groupOwnership() throws {
+        let b = try board()
+        let mia = try #require(b.mia.person), ravi = try #require(b.ravi.person)
+        let miaGroup = try #require(try b.service.archivePerson(mia))
+        _ = try b.service.archivePerson(ravi)
+        #expect(throws: KanbanServiceError.self) { try b.service.undoPersonArchive(ravi, group: miaGroup) }
+        #expect(ravi.archivedAt != nil && mia.archivedAt != nil && b.mia.archivedAt != nil)
+    }
 }

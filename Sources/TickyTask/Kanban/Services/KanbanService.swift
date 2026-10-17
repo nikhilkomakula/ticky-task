@@ -170,6 +170,11 @@ struct KanbanService {
             throw KanbanServiceError.conflict("That archive is from before a restore, so it can't be undone.")
         }
         guard !entries.isEmpty else { throw KanbanServiceError.notFound }
+        // The group must be this person's: every membership it archived belongs to them.
+        let theirs = Set(try memberships(of: person).map(\.id))
+        guard entries.allSatisfy({ $0.1.changes.filter { $0.entity == .resource }.allSatisfy { theirs.contains($0.id) } }) else {
+            throw KanbanServiceError.invariant("That archive belongs to someone else.")
+        }
         var conflicts: [String] = []
         for (activity, payload) in entries {
             guard let project = activity.project else { continue }

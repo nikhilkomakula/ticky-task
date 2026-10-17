@@ -4,12 +4,14 @@ import Foundation
 /// applies its inverse here first and is refused if the result would break one, before
 /// anything in the store changes.
 struct KanbanInvariants {
-    struct Card { var column: UUID?; var resource: UUID?; var live: Bool }
+    struct Card { var column: UUID?; var resource: UUID?; var live: Bool; var completed: Bool }
     struct Membership { var person: UUID?; var active: Bool }
 
     private var archivedPeople: Set<UUID> = []
     /// Columns whose kind the inverse changes; they must hold no cards.
     private var kindChanged: Set<UUID> = []
+    /// Cards the inverse places or inserts; their completion must match their column.
+    private var placed: Set<UUID> = []
 
     private var columns: [UUID: String] = [:]          // id → kind
     private var memberships: [UUID: Membership] = [:]
@@ -22,7 +24,7 @@ struct KanbanInvariants {
         for column in project.columns { columns[column.id] = column.kindRaw }
         for r in project.resources { memberships[r.id] = Membership(person: r.person?.id, active: r.archivedAt == nil) }
         for t in project.tasks {
-            cards[t.id] = Card(column: t.column?.id, resource: t.resource?.id, live: t.archivedAt == nil)
+            cards[t.id] = Card(column: t.column?.id, resource: t.resource?.id, live: t.archivedAt == nil, completed: t.completedAt != nil)
             dependencies[t.id] = Set(t.dependsOn.map(\.id))
         }
     }
@@ -42,7 +44,11 @@ struct KanbanInvariants {
             graph.columns.forEach { next.columns[$0.id] = $0.kindRaw }
             graph.resources.forEach { next.memberships[$0.id] = Membership(person: $0.personId, active: $0.archivedAt == nil) }
             for t in graph.tasks {
-                next.cards[t.id] = Card(column: t.columnId, resource: t.resourceId, live: t.archivedAt == nil)
+                // A live card only goes back onto an active membership (as `reinsert` does).
+                let active = t.resourceId.map { next.memberships[$0]?.active == true } ?? false
+                let resource = t.archivedAt != nil || active ? t.resourceId : nil
+                next.cards[t.id] = Card(column: t.columnId, resource: resource, live: t.archivedAt == nil, completed: t.completedAt != nil)
+                next.placed.insert(t.id)
                 next.dependencies[t.id] = Set(t.dependsOnIds)
             }
             for edge in graph.incomingDependencies where edge.count == 2 { next.dependencies[edge[0], default: []].insert(edge[1]) }
@@ -50,6 +56,8 @@ struct KanbanInvariants {
         for t in payload.transitions where next.cards[t.taskID] != nil {
             next.cards[t.taskID]?.column = t.to.columnID
             next.cards[t.taskID]?.resource = t.to.resourceID
+            next.cards[t.taskID]?.completed = t.to.completedAt != nil
+            next.placed.insert(t.taskID)
         }
         for change in payload.changes {
             switch (change.entity, change.field) {
@@ -73,6 +81,15 @@ struct KanbanInvariants {
         for card in cards.values where card.live {
             guard let column = card.column, columns[column] != nil else { return "a card would have no column" }
             if let resource = card.resource, memberships[resource]?.active != true { return "a card would be assigned to someone not on the board" }
+        }
+        // A card is complete exactly when it sits in a Done column.
+        for id in placed {
+            guard let card = cards[id], card.live, let column = card.column, let kind = columns[column] else { continue }
+            if (kind == KanbanColumnKind.done.rawValue) != card.completed {
+                return kind == KanbanColumnKind.done.rawValue
+                    ? "a card would sit in a Done column without being complete"
+                    : "a card would be complete outside a Done column"
+            }
         }
         for column in kindChanged where cards.values.contains(where: { $0.column == column }) {
             _ = column
