@@ -35,6 +35,9 @@ enum KanbanSummaryPrompt {
     formatting as source structure. Do not infer completion merely from emphasis \
     or strikethrough.
 
+    Each card's blocked flag and blockedReason are explicit signals; treat them as \
+    the only source of blocker information for the "Blocked items" section.
+
     Return only the update. Use these plain section labels, each on its own line, \
     separated by blank lines, with readable paragraphs and "-" bullets:
 

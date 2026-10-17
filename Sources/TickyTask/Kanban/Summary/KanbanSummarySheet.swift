@@ -8,11 +8,7 @@ struct KanbanSummarySheet: View {
     @Bindable var session: KanbanSummarySession
     let project: KanbanProject
 
-    private var allCards: [KanbanTaskSnapshot] {
-        project.tasks
-            .filter { $0.archivedAt == nil }
-            .map(KanbanTaskSnapshot.init)
-    }
+    private var allCards: [KanbanTaskSnapshot] { KanbanTaskSnapshot.cards(of: project) }
 
     private var resourceGroups: [String: [KanbanTaskSnapshot]] {
         Dictionary(grouping: allCards) { $0.resource }
@@ -209,7 +205,11 @@ private struct KanbanResourceSection: View {
             HStack(spacing: 8) {
                 if !cards.isEmpty {
                     Button {
-                        session.selectResource(resource, in: cards.count == 1 ? (selectedHere == 0 ? cards : []) : (selectedHere < cards.count ? cards : []))
+                        if selectedHere < cards.count {
+                            session.selectResource(resource, in: cards)
+                        } else {
+                            session.deselectResource(resource, in: cards)
+                        }
                     } label: {
                         Image(systemName: selectedHere == 0 ? "square" : (selectedHere == cards.count ? "checkmark.square.fill" : "minus.square.fill"))
                             .foregroundStyle(selectedHere == 0 ? Color.secondary : Color.accentColor)
@@ -243,7 +243,11 @@ private struct KanbanColumnSection: View {
             HStack(spacing: 8) {
                 if !cards.isEmpty {
                     Button {
-                        session.selectResource(column, in: cards.count == 1 ? (selectedHere == 0 ? cards : []) : (selectedHere < cards.count ? cards : []))
+                        if selectedHere < cards.count {
+                            session.selectColumn(column, in: cards)
+                        } else {
+                            session.deselectColumn(column, in: cards)
+                        }
                     } label: {
                         Image(systemName: selectedHere == 0 ? "square" : (selectedHere == cards.count ? "checkmark.square.fill" : "minus.square.fill"))
                             .foregroundStyle(selectedHere == 0 ? Color.secondary : Color.accentColor)
@@ -394,7 +398,12 @@ private struct KanbanSummaryConfigurationBar: View {
         }
         .sheet(isPresented: $showInstructions) {
             VStack(alignment: .trailing, spacing: 12) {
-                SummaryInstructionsEditor(instructions: $session.customInstructions)
+                SummaryInstructionsEditor(
+                    instructions: $session.customInstructions,
+                    builtInRules: KanbanSummaryPrompt.instructions,
+                    defaultInstructions: KanbanSummaryPrompt.defaultCustomInstructions,
+                    instructionsLimit: KanbanSummaryPrompt.customInstructionsLimit
+                )
                 Button("Done") { showInstructions = false }
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("kanban-summary-instructions-done")

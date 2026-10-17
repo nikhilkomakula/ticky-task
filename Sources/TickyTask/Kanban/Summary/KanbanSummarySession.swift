@@ -203,6 +203,18 @@ final class KanbanSummarySession {
         for card in cards where card.resource == resource { selectedIDs.insert(card.id) }
     }
 
+    func deselectResource(_ resource: String, in cards: [KanbanTaskSnapshot]) {
+        for card in cards where card.resource == resource { selectedIDs.remove(card.id) }
+    }
+
+    func selectColumn(_ column: String, in cards: [KanbanTaskSnapshot]) {
+        for card in cards where card.column == column { selectedIDs.insert(card.id) }
+    }
+
+    func deselectColumn(_ column: String, in cards: [KanbanTaskSnapshot]) {
+        for card in cards where card.column == column { selectedIDs.remove(card.id) }
+    }
+
     func selectAllWithNotes(in cards: [KanbanTaskSnapshot]) {
         for card in cards where card.hasNotes { selectedIDs.insert(card.id) }
     }

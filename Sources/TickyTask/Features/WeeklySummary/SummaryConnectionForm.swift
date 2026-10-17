@@ -176,6 +176,11 @@ struct SummaryConnectionForm: View {
 /// rules), with the built-in rules viewable read-only.
 struct SummaryInstructionsEditor: View {
     @Binding var instructions: String
+    /// The built-in rules shown read-only, the defaults "Restore defaults" brings back, and
+    /// the length limit: the Weekly Summary's unless a caller (Kanban Summary) passes its own.
+    var builtInRules = SummaryPrompt.instructions
+    var defaultInstructions = SummaryPrompt.defaultCustomInstructions
+    var instructionsLimit = SummaryPrompt.customInstructionsLimit
     @State private var showBuiltIn = false
 
     var body: some View {
@@ -193,12 +198,12 @@ struct SummaryInstructionsEditor: View {
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .accessibilityIdentifier("summary-instructions")
             HStack {
-                Text("\(instructions.count) / \(SummaryPrompt.customInstructionsLimit)")
+                Text("\(instructions.count) / \(instructionsLimit)")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(instructions.count > SummaryPrompt.customInstructionsLimit ? .orange : .secondary)
+                    .foregroundStyle(instructions.count > instructionsLimit ? .orange : .secondary)
                 Spacer()
-                Button("Restore defaults") { instructions = SummaryPrompt.defaultCustomInstructions }
-                    .disabled(instructions == SummaryPrompt.defaultCustomInstructions)
+                Button("Restore defaults") { instructions = defaultInstructions }
+                    .disabled(instructions == defaultInstructions)
                     .accessibilityIdentifier("summary-instructions-restore")
                 Button("Clear") { instructions = "" }
                     .disabled(instructions.isEmpty)
@@ -206,7 +211,7 @@ struct SummaryInstructionsEditor: View {
             }
             DisclosureGroup("Built-in rules (always applied)", isExpanded: $showBuiltIn) {
                 ScrollView {
-                    Text(SummaryPrompt.instructions)
+                    Text(builtInRules)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,8 +221,8 @@ struct SummaryInstructionsEditor: View {
             .font(.callout)
         }
         .onChange(of: instructions) { _, value in
-            if value.count > SummaryPrompt.customInstructionsLimit {
-                instructions = String(value.prefix(SummaryPrompt.customInstructionsLimit))
+            if value.count > instructionsLimit {
+                instructions = String(value.prefix(instructionsLimit))
             }
         }
     }

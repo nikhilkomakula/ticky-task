@@ -13,18 +13,22 @@ struct KanbanTaskSnapshot: Sendable, Equatable, Identifiable {
     var subtasks: [Subtask]
     var notes: SummaryNotes
     var column: String
+    /// The person's label on this board, distinct from everyone else's ("Alex (2)").
     var resource: String
     var labels: [String]
     var priority: String
     var isCritical: Bool
+    var isBlocked: Bool
+    var blockedReason: String?
     var jiraKey: String?
 
     var hasNotes: Bool { notes.hasContent }
 }
 
 extension KanbanTaskSnapshot {
+    /// `resource`: the person's distinct label on the board (see `KanbanUI.uniqueNames`).
     @MainActor
-    init(_ task: KanbanTask) {
+    init(_ task: KanbanTask, resource: String? = nil) {
         self.init(
             id: task.id,
             title: task.title,
@@ -34,14 +38,28 @@ extension KanbanTaskSnapshot {
                 .map { Subtask(title: $0.title, isDone: $0.isDone) },
             notes: SummaryNotes.resolve(notesRich: task.notesRich, notes: task.notes),
             column: task.column?.name ?? "Unknown",
-            resource: task.resource?.displayName ?? "Unassigned",
+            resource: task.resource.map { resource ?? $0.displayName } ?? "Unassigned",
             labels: task.labels
                 .sorted { $0.name < $1.name }
                 .map(\.name),
             priority: ["Low", "Medium", "High"][task.priority],
             isCritical: task.isCritical,
+            isBlocked: task.isBlocked,
+            blockedReason: task.blockedReason,
             jiraKey: task.jiraKey
         )
+    }
+}
+
+extension KanbanTaskSnapshot {
+    /// The board's live cards. People who share a name stay apart in the sheet's groups and
+    /// the payload ("Alex", "Alex (2)").
+    @MainActor
+    static func cards(of project: KanbanProject) -> [KanbanTaskSnapshot] {
+        let labels = KanbanUI.uniqueNames(project.resources.sorted { $0.sortIndex < $1.sortIndex }.map { ($0.id, $0.displayName) })
+        return project.tasks
+            .filter { $0.archivedAt == nil }
+            .map { KanbanTaskSnapshot($0, resource: $0.resource.flatMap { labels[$0.id] }) }
     }
 }
 
@@ -103,6 +121,8 @@ private struct PayloadRecord: Encodable {
     let labels: String
     let priority: String
     let critical: Bool
+    let blocked: Bool
+    let blockedReason: String?
     let jiraKey: String?
 
     init(_ snapshot: KanbanTaskSnapshot, ordinal: Int) {
@@ -117,6 +137,8 @@ private struct PayloadRecord: Encodable {
         labels = snapshot.labels.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.joined(separator: ", ")
         priority = snapshot.priority
         critical = snapshot.isCritical
+        blocked = snapshot.isBlocked
+        blockedReason = snapshot.blockedReason?.isEmpty == false ? snapshot.blockedReason : nil
         jiraKey = snapshot.jiraKey
     }
 }
