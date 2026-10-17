@@ -123,9 +123,10 @@ struct KanbanService {
     }
 
     /// Archives a person and every membership, in one save across all their boards. Each
-    /// board gets an informational entry; `undoPersonArchive(group:)` reverses the group.
+    /// board gets an informational entry; `undoPersonArchive(group:)` reverses the group. Returns
+    /// nil when the person was on no board (use `unarchivePerson`).
     @discardableResult
-    func archivePerson(_ person: KanbanPerson) throws -> UUID {
+    func archivePerson(_ person: KanbanPerson) throws -> UUID? {
         try RecurrenceMaterializer.checkpoint(context)
         guard person.archivedAt == nil else { throw KanbanServiceError.invariant("\(person.name) is already archived.") }
         let group = UUID(), stamp = now()
@@ -149,7 +150,7 @@ struct KanbanService {
         }
         person.archivedAt = stamp
         try saveOrUndo()
-        return group
+        return entries.isEmpty ? nil : group
     }
 
     /// Reverses `archivePerson` for one group, atomically: refuses as a whole if any card,
@@ -168,10 +169,7 @@ struct KanbanService {
         guard entries.allSatisfy({ ($0.0.project?.historyBoundarySeq ?? 0) < $0.0.seq }) else {
             throw KanbanServiceError.conflict("That archive is from before a restore, so it can't be undone.")
         }
-        if entries.isEmpty, try memberships(of: person).contains(where: { $0.archivedAt == person.archivedAt }) {
-            // An empty group can only undo the archive it made, not a later one that archived boards.
-            throw KanbanServiceError.conflict("A later archive of \(person.name) has to be undone instead.")
-        }
+        guard !entries.isEmpty else { throw KanbanServiceError.notFound }
         var conflicts: [String] = []
         for (activity, payload) in entries {
             guard let project = activity.project else { continue }
@@ -205,6 +203,17 @@ struct KanbanService {
                                        summary: "\(person.name) restored", payload: data)
             entry.revertsActivityID = activity.id
             activity.revertedByActivityID = entry.id
+        }
+        person.archivedAt = nil
+        try saveOrUndo()
+    }
+
+    /// Un-archives a person who was on no board when archived (so there's no group to undo).
+    func unarchivePerson(_ person: KanbanPerson) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let stamp = person.archivedAt else { return }
+        guard !(try memberships(of: person).contains { $0.archivedAt == stamp }) else {
+            throw KanbanServiceError.invariant("Undo the archive of \(person.name) to put them back on their boards.")
         }
         person.archivedAt = nil
         try saveOrUndo()
@@ -530,13 +539,10 @@ struct KanbanService {
             throw KanbanServiceError.conflict("Reverting that would leave the board invalid: \(problem).")
         }
         let data = try inverse.payload.encoded()
-        // An entry that was itself an inverse: undoing it makes the original live again.
-        let original = try activity.revertsActivityID.flatMap { try self.activity($0) }
         inverse.apply()
         let entry = appendActivity(project, kind: inverse.kind, taskIDs: activity.taskIDs, summary: "Reverted: \(activity.summary)", payload: data)
         entry.revertsActivityID = activity.id
-        activity.revertedByActivityID = entry.id
-        if let original, original.revertedByActivityID == activity.id { original.revertedByActivityID = nil }
+        markChain(below: entry, in: project)
         try saveOrUndo()
         if recordAsUserOperation { history?.recordUserOperation(entry.id, project: project.id) }
         return entry
@@ -891,6 +897,21 @@ struct KanbanService {
         var apply: () -> Void
     }
 
+    /// Down a revert chain from its newest entry, each entry is in effect or not in turn: the
+    /// newest is, the one it reverts isn't, the one that reverted isn't… so after undo,
+    /// redo and undo again, every entry's `revertedByActivityID` says exactly whether its
+    /// effect is in place.
+    private func markChain(below top: KanbanActivity, in project: KanbanProject) {
+        let byID = Dictionary(project.activities.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var node = top, inEffect = true
+        top.revertedByActivityID = nil
+        while let targetID = node.revertsActivityID, let target = byID[targetID] {
+            target.revertedByActivityID = inEffect ? node.id : nil
+            inEffect.toggle()
+            node = target
+        }
+    }
+
     /// Refuses a revert while a newer entry that is still in effect changed something this
     /// entry depends on. Entries in its own revert chain (its inverse, the inverse of that…)
     /// don't count.
@@ -912,38 +933,51 @@ struct KanbanService {
             guard let laterPayload = try? KanbanActivityPayload.decode(later.payload) else {
                 throw KanbanServiceError.conflict("A newer entry can't be read, so this one can't be reverted safely.")
             }
-            if !Self.writes(later, laterPayload).isDisjoint(with: footprint) {
+            if Self.overlaps(footprint, Self.writes(later, laterPayload)) {
                 throw KanbanServiceError.conflict("“\(later.summary)” changed this afterwards. Revert the newer changes first.")
             }
         }
     }
 
-    /// Everything an entry's revert depends on: its rows, and the columns and memberships
-    /// its cards move between.
-    private static func footprint(_ activity: KanbanActivity, _ p: KanbanActivityPayload) -> Set<UUID> {
-        var ids = writes(activity, p)
-        for t in p.transitions {
-            ids.formUnion([t.from.columnID, t.to.columnID])
-            ids.formUnion([t.from.resourceID, t.to.resourceID].compactMap { $0 })
+    /// What an entry touched, per row: the fields it changed ("placement" for moves), or
+    /// "*" for a whole row it added or removed. "exists" (footprint only) means it needs the
+    /// row to still be there, which only a whole-row change contradicts.
+    typealias Touches = [UUID: Set<String>]
+
+    /// Everything an entry's revert depends on.
+    private static func footprint(_ activity: KanbanActivity, _ p: KanbanActivityPayload) -> Touches {
+        var touches = writes(activity, p)
+        func need(_ id: UUID?) { if let id { touches[id, default: []].insert("exists") } }
+        for t in p.transitions { need(t.from.columnID); need(t.to.columnID); need(t.from.resourceID); need(t.to.resourceID) }
+        for task in p.graph?.tasks ?? [] { need(task.columnId); need(task.resourceId) }
+        for change in p.changes {
+            for value in [change.old, change.new] { if case let .uuids(list)? = value { list.forEach { need($0) } } }
         }
-        for task in p.graph?.tasks ?? [] { ids.formUnion([task.columnId, task.resourceId].compactMap { $0 }) }
-        return ids
+        return touches
     }
 
-    /// The rows an entry changed (moving cards into a column doesn't change the column).
-    private static func writes(_ activity: KanbanActivity, _ p: KanbanActivityPayload) -> Set<UUID> {
-        var ids = Set(activity.taskIDs)
-        ids.formUnion(p.transitions.map(\.taskID))
-        for change in p.changes {
-            ids.insert(change.id)
-            for value in [change.old, change.new] { if case let .uuids(list)? = value { ids.formUnion(list) } }
-        }
+    /// What an entry changed.
+    private static func writes(_ activity: KanbanActivity, _ p: KanbanActivityPayload) -> Touches {
+        var touches: Touches = [:]
+        for t in p.transitions { touches[t.taskID, default: []].insert("placement") }
+        for change in p.changes { touches[change.id, default: []].insert(change.field) }
         if let g = p.graph {
-            ids.formUnion(g.columns.map(\.id) + g.resources.map(\.id) + g.labels.map(\.id) + g.tasks.map(\.id) + g.subtasks.map(\.id))
-            ids.formUnion(g.subtasks.compactMap(\.taskId))
-            ids.formUnion(g.incomingDependencies.flatMap { $0 })
+            for id in g.columns.map(\.id) + g.resources.map(\.id) + g.labels.map(\.id) + g.tasks.map(\.id) + g.subtasks.map(\.id) {
+                touches[id, default: []].insert("*")
+            }
+            for parent in g.subtasks.compactMap(\.taskId) { touches[parent, default: []].insert("subtasks") }
+            for edge in g.incomingDependencies where edge.count == 2 { touches[edge[0], default: []].insert("dependsOn") }
         }
-        return ids
+        return touches
+    }
+
+    private static func overlaps(_ footprint: Touches, _ writes: Touches) -> Bool {
+        for (id, written) in writes {
+            guard let needed = footprint[id] else { continue }
+            if written.contains("*") || needed.contains("*") { return true }
+            if !needed.subtracting(["exists"]).isDisjoint(with: written) { return true }
+        }
+        return false
     }
 
     /// The inverse of an entry, after checking every row still holds the values it left.
@@ -1095,7 +1129,10 @@ struct KanbanService {
                 context.insert(task)
                 task.project = project
                 task.column = dto.columnId.flatMap { columns[$0] }
-                task.resource = dto.resourceId.flatMap { id in project.resources.first { $0.id == id && $0.archivedAt == nil } }
+                // A live card only goes back onto an active membership; an archived card keeps its own.
+                task.resource = dto.resourceId.flatMap { id in
+                    project.resources.first { $0.id == id && ($0.archivedAt == nil || dto.archivedAt != nil) }
+                }
                 task.labels = project.labels.filter { dto.labelIds.contains($0.id) }
                 inserted[task.id] = task
             }

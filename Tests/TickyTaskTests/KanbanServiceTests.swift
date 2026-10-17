@@ -213,7 +213,7 @@ struct KanbanServiceTests {
         let miaOnData = try b.service.addMembership(mia, to: other, allocationPercent: 50)
         let here = try b.service.createTask(in: b.project, title: "Here", row: .resource(b.mia.id))
         let there = try b.service.createTask(in: other, title: "There", row: .resource(miaOnData.id))
-        let group = try b.service.archivePerson(mia)
+        let group = try #require(try b.service.archivePerson(mia))
         #expect(here.resource == nil && there.resource == nil && mia.archivedAt != nil)
         #expect(b.project.activities.contains { $0.kindRaw == "memberArchived" } && other.activities.contains { $0.kindRaw == "memberArchived" })
         #expect(throws: KanbanServiceError.self, "a per-board entry has no Revert") {

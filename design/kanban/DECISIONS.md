@@ -20,7 +20,9 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | R6 | Confirm the R5 fixes | **DESIGN: APPROVED** | The design is final; Phase 2 begins |
 | I1-a | Increment 1, partial (models, backup, moves, gate) | **CHANGES REQUIRED** — 4 blockers: duplicate ids, live card on an archived membership crashing planning, gate missing projects and reverse relations, gate baseline taken after migration | Fixed in e881e11c |
 | I1-b | Increment 1, full (adds the service, change log, undo) | **CHANGES REQUIRED** — 12 blockers, mostly reverting old entries | Fixed in d582877d (I-D1 to I-D4 below) |
-| I1-c | Increment 1 re-review | *pending* | — |
+| I1-c | Increment 1 re-review | **CHANGES REQUIRED** — 7 blockers: redo of an added column; dependencies restored by undo; a kind-change revert on a filled column; reactivating a membership of an archived person; the ⌘Z exemption; recurrence and timestamps missing from the gate; fault-injection gaps | Fixed in 7a6a5a3e |
+| I1-d | Round 3 | **CHANGES REQUIRED** — 4 blockers: an ⌘Z after an undo/redo cycle wrongly refused (stale markers); undoing a title edit after a person restore wrongly refused (row-level); recurrence weekdays, month days and end not in the gate; an archived card's archived assignment dropped on put-back | Fixed: chain markers, field-level conflicts, recurrence rules checked against each fixture's own backup, reinsertion keeps archived assignments. A plain `unarchivePerson` replaces empty archive groups |
+| I1-e | Round 4 | *pending* | — |
 
 ### R2 issues and how they were resolved
 
@@ -110,7 +112,7 @@ Codex's non-blocking R1 points were also applied:
 
 | ID | Decision | Why | Codex |
 |---|---|---|---|
-| I-D1 | A Change Log revert is refused while a newer entry that's still in effect changed something the reverted entry depends on. Entries in its own revert chain don't count, and neither do odd-depth chains whose original is newer (an undone pair has no net effect). ⌘Z and ⇧⌘Z skip this rule: they replay their stacks last-in-first-out, so every newer user operation is already undone, and the value checks still apply. | Arbitrary historical reverts otherwise drop later work (I1-b #3, #6, #7) | I1-b → *I1-c* |
+| I-D1 | Every revert — ⌘Z, ⇧⌘Z and Change Log alike — is refused while a newer entry that's still in effect changed a field this entry depends on. The comparison is per field: a title edit and a reassignment of the same card don't conflict; adding or removing a whole row conflicts with everything about it. A newer entry that reverts another newer entry is a cancelled pair and doesn't count, and neither do entries in this entry's own revert chain. On every revert, the "reverted by" markers are recomputed down the whole chain, so after any undo/redo sequence they say exactly which entries are in effect. | Reverting old entries otherwise drops later work (I1-b #3, #6, #7). Exempting ⌘Z was unsound because cross-board person archives aren't on a board's undo stack (I1-c #5). Row-level conflicts were too coarse (I1-d #2). | I1-b, I1-c, I1-d → *I1-e* |
 | I-D2 | Every revert's inverse is simulated on `KanbanInvariants` first: one backlog, ≥ 1 Done, every live card in an existing column on an active membership, no person twice on a board, acyclic dependencies. | Historical inverses bypassed the service invariants (I1-b #6) | I1-b → *I1-c* |
 | I-D3 | `KanbanProject.historyBoundarySeq` (additive, default 0) is set on restore; entries at or below it can't be reverted. | Restored rows are rebuilt from the backup, at millisecond precision (I1-b #10) | I1-b → *I1-c* |
 | I-D4 | The service reads column cards, step assignments and memberships through forward links (`task.column`, `step.assignee`, `resource.person`), never through the inverse arrays. | SwiftData's in-memory inverse arrays can lag after a change in the same context (seen in tests) | — |

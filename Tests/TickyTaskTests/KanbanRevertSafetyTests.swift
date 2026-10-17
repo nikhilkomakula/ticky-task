@@ -198,8 +198,8 @@ struct KanbanRevertSafetyTests {
     func personArchiveEdges() throws {
         let b = try board()
         let loner = try b.service.createPerson(name: "Loner", initials: "LO")
-        let group = try b.service.archivePerson(loner)
-        try b.service.undoPersonArchive(loner, group: group)
+        #expect(try b.service.archivePerson(loner) == nil, "no boards, so no group to undo")
+        try b.service.unarchivePerson(loner)
         #expect(loner.archivedAt == nil)
 
         let mia = try #require(b.mia.person)
@@ -207,7 +207,7 @@ struct KanbanRevertSafetyTests {
         let step = try b.service.addSubtask(to: card, title: "Step")
         step.assignee = b.mia
         try b.context.save()
-        let miaGroup = try b.service.archivePerson(mia)
+        let miaGroup = try #require(try b.service.archivePerson(mia))
         try b.service.undoPersonArchive(mia, group: miaGroup, membershipsOnly: true)
         let restored = try #require(b.project.activities.filter { $0.kindRaw == "restored" }.max { $0.seq < $1.seq })
         let payload = try KanbanActivityPayload.decode(restored.payload)
@@ -350,23 +350,73 @@ struct KanbanRevertSafetyTests {
         let b = try board()
         let zoe = try b.service.createPerson(name: "Zoe", initials: "ZO")
         let membership = try b.service.addMembership(zoe, to: b.project)
-        let group = try b.service.archivePerson(zoe)
+        let group = try #require(try b.service.archivePerson(zoe))
         #expect(throws: KanbanServiceError.self) { try b.service.undo(in: b.project) }
         #expect(b.project.resources.contains { $0.id == membership.id })
         try b.service.undoPersonArchive(zoe, group: group)
         #expect(zoe.archivedAt == nil && membership.archivedAt == nil)
     }
 
-    @Test("An empty archive group can't undo a later archive")
-    func emptyGroupIsConsumed() throws {
+    @Test("A plain un-archive can't undo an archive that took someone off their boards")
+    func unarchiveVersusGroup() throws {
         let b = try board()
         let zoe = try b.service.createPerson(name: "Zoe", initials: "ZO")
-        let empty = try b.service.archivePerson(zoe)
-        try b.service.undoPersonArchive(zoe, group: empty)
-        let membership = try b.service.addMembership(zoe, to: b.project)
         _ = try b.service.archivePerson(zoe)
-        #expect(throws: KanbanServiceError.self) { try b.service.undoPersonArchive(zoe, group: empty) }
+        try b.service.unarchivePerson(zoe)
+        let membership = try b.service.addMembership(zoe, to: b.project)
+        let group = try #require(try b.service.archivePerson(zoe))
+        #expect(throws: KanbanServiceError.self) { try b.service.unarchivePerson(zoe) }
         #expect(zoe.archivedAt != nil && membership.archivedAt != nil)
+        try b.service.undoPersonArchive(zoe, group: group)
+        #expect(zoe.archivedAt == nil && membership.archivedAt == nil)
+    }
+
+    // MARK: - Round 4 (Codex)
+
+    @Test("create → edit → ⌘Z → ⇧⌘Z → ⌘Z → ⌘Z removes the card")
+    func undoAfterRedoCycle() throws {
+        let b = try board()
+        let card = try b.service.createTask(in: b.project, title: "A")
+        try b.service.edit(card, [.title: .string("B")])
+        try b.service.undo(in: b.project)
+        try b.service.redo(in: b.project)
+        #expect(card.title == "B")
+        try b.service.undo(in: b.project)
+        #expect(card.title == "A")
+        try b.service.undo(in: b.project)
+        #expect(!b.project.tasks.contains { $0.title == "A" }, "the creation is undone")
+        try b.service.redo(in: b.project)
+        try b.service.redo(in: b.project)
+        #expect(b.project.tasks.first?.title == "B", "and both redo again")
+    }
+
+    @Test("Restoring a person archive doesn't block undoing an unrelated title edit")
+    func titleUndoAfterPersonRestore() throws {
+        let b = try board()
+        let mia = try #require(b.mia.person)
+        let card = try b.service.createTask(in: b.project, title: "Old", row: .resource(b.mia.id))
+        let group = try #require(try b.service.archivePerson(mia))
+        b.history.clear()
+        try b.service.edit(card, [.title: .string("New")])
+        try b.service.undoPersonArchive(mia, group: group)
+        try b.service.undo(in: b.project)
+        #expect(card.title == "Old" && card.resource?.id == b.mia.id, "the edit is undone and the restored assignment kept")
+    }
+
+    @Test("Putting back an archived card keeps its archived membership; a live card's goes to Unassigned")
+    func archivedCardKeepsArchivedAssignment() throws {
+        let b = try board()
+        let card = try b.service.createTask(in: b.project, title: "Card", row: .resource(b.mia.id))
+        try b.service.archiveTask(card)
+        card.resource = b.mia   // an archived card keeps its row, as a backup can record it
+        try b.service.archiveMembership(b.mia)
+        card.resource = b.mia
+        try b.context.save()
+        let id = card.id
+        try b.service.deleteTask(card)
+        try b.service.undo(in: b.project)
+        let back = try #require(b.project.tasks.first { $0.id == id })
+        #expect(back.archivedAt != nil && back.resource?.id == b.mia.id)
     }
 
     @Test("After branching reverts that net out, the earlier edit can still be reverted")

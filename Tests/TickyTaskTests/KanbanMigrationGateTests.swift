@@ -411,6 +411,25 @@ struct KanbanMigrationGateTests {
             #expect(Set(migrated.tasks.keys) == Set(pristine.tasks.keys), "\(tag): the same task ids")
             #expect(migrated.subtasks == pristine.subtasks, "\(tag): every subtask, with its parent")
             #expect(migrated.tagLinks == pristine.tagLinks && !pristine.tasks.isEmpty, "\(tag): every tag link")
+            // Recurrence rules in full (weekdays, month days, end), against the backup that
+            // the fixture's own release wrote alongside the store.
+            let backupURL = Self.fixtures.appendingPathComponent("\(tag)/backup-plain.tickytask")
+            let backup = try BackupService().readFile(Data(contentsOf: backupURL), passphrase: nil)
+            let models = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<TaskItem>()).map { ($0.id, $0) })
+            func rule(_ r: RecurrenceRule?) -> String {
+                guard let r else { return "∅" }
+                let end: String
+                switch r.end {
+                case .never: end = "never"
+                case let .afterCount(n): end = "after \(n)"
+                case let .until(date): end = "until \(Int(date.timeIntervalSinceReferenceDate.rounded()))"
+                }
+                return "\(r.frequency.rawValue)/\(r.interval)/\(r.weekdays.sorted())/\(r.monthDays)/\(end)"
+            }
+            for dto in backup.data.taskItems {
+                #expect(rule(models[dto.id]?.recurrence) == rule(dto.recurrence), "\(tag) \(dto.title): the whole recurrence rule")
+            }
+            #expect(backup.data.taskItems.contains { $0.recurrence != nil }, "\(tag): the fixture has series to check")
             for (id, row) in pristine.tasks where migrated.tasks[id] != row {
                 let fields = row.keys.filter { row[$0] != migrated.tasks[id]?[$0] }.sorted()
                 Issue.record("\(tag) \(id): \(fields.map { "\($0) stored \(row[$0] ?? "") ≠ migrated \(migrated.tasks[id]?[$0] ?? "")" })")
