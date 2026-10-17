@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A board row's header (design 01 §5): avatar, name, employment and assignment icons,
-/// the load gauge, a roll-off badge, a cross-board badge and the collapse chevron.
+/// the load gauge, a roll-off badge, a cross-board badge, the collapse chevron and the priority
+/// sort (click to sort once; its menu keeps the row sorted).
 struct KanbanRowHeader: View {
     let project: KanbanProject
     let row: KanbanRowSnapshot
@@ -10,6 +11,9 @@ struct KanbanRowHeader: View {
     let person: KanbanMetrics.PersonRow?
     let collapsed: Bool
     var drag: BoardDragController?
+    var keepsSorted = false
+    var onSortOnce: () -> Void = {}
+    var onKeepSorted: (Bool) -> Void = { _ in }
     var onToggle: () -> Void
     var onEdit: () -> Void
     var onRemove: () -> Void
@@ -39,16 +43,41 @@ struct KanbanRowHeader: View {
                 badges
             }
             Spacer(minLength: 0)
+            sortControl
         }
         .padding(8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-rowhdr-\(row.name)")
         .contextMenu {
+            Button("Sort by priority", action: onSortOnce)
+            Toggle("Keep sorted by priority", isOn: Binding(get: { keepsSorted }, set: onKeepSorted))
             if resource != nil {
+                Divider()
                 Button("Edit membership…", action: onEdit)
                 Button("Remove from board…", role: .destructive, action: onRemove)
             }
         }
+    }
+
+    /// Click: this person's cards highest priority first, once. Menu: keep them that way.
+    private var sortControl: some View {
+        Menu {
+            Button("Sort by priority now", action: onSortOnce)
+            Toggle("Keep sorted by priority", isOn: Binding(get: { keepsSorted }, set: onKeepSorted))
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(keepsSorted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+        } primaryAction: {
+            onSortOnce()
+        }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .help(keepsSorted ? "Kept sorted by priority (click to sort, or use the menu to stop)" : "Sort by priority (the menu can keep it sorted)")
+        .accessibilityLabel("Sort \(row.name)’s cards by priority")
+        .accessibilityValue(keepsSorted ? "Kept sorted by priority" : "")
+        .accessibilityIdentifier("kanban-row-sort-\(row.name)")
     }
 
     @ViewBuilder

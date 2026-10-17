@@ -20,7 +20,7 @@ struct ShortcutsSheet: View {
             ]))
             groups.append(("Focused card", [
                 ("↑ ↓ ← →", "Move between cards"), ("⌘← / ⌘→", "Previous / next column"), ("⌘↑ / ⌘↓", "Previous / next person"),
-                ("⌥⌘ arrows", "Reorder within the cell"), ("Return", "Open"), ("Space", "Quick look"), ("M", "Move…"),
+                ("⌥⌘ arrows", "Reorder within the cell"), ("Return", "Open"), ("Space", "Quick look"), ("M", "Move…"), ("⌘D", "Duplicate"),
             ]))
             groups.append(("Focused column or row header", [("⌥⌘ arrows", "Reorder columns or rows")]))
         }

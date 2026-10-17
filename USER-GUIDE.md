@@ -65,6 +65,10 @@ The load target for each person—how many cards they should have open—is calc
 
 **Schedule to the planner.** Click **Schedule to day…** in the editor. Pick a day and confirm. The card creates or updates a planner task with the same title, priority, Critical flag, and notes (notes are copied once only; later reschedules just move the day). The editor shows a short confirmation ("On the planner for…"); there's no persistent link displayed. Scheduling cannot be undone.
 
+**Duplicate a card.** Right-click it and choose **Duplicate**, or focus it and press **⌘D**. The copy (titled "… copy") lands right after it with the same fields, labels, dependencies and steps (steps start not done). It's one **Change Log** entry, so **⌘Z** removes it.
+
+**Sort someone's cards by priority.** Click the sort icon (↑↓) on a person's row header to put their cards in every column in priority order: Critical, High, Medium, then Low, keeping the current order among equals. **⌘Z** undoes it. To keep that row sorted as cards change, open the icon's menu (or right-click the row header) and turn on **Keep sorted by priority**; the icon turns blue. It applies to that row only, over the board's **Sort**, and turns off when you reorder that row's cards by hand.
+
 **Archive a card.** Click **Archive** in the editor. Archived cards can be shown with **Show Archived** on the board toolbar.
 
 **Delete a card.** Click **Delete…** for confirmation. Deletion is permanent but can be undone from the **Change Log** for as long as the entry is there.

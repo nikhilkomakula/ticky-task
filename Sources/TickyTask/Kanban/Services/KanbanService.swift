@@ -565,11 +565,41 @@ struct KanbanService {
         return task
     }
 
+    /// A copy of `task` right after it in its cell, as one new card (one entry; undo removes it).
+    /// It keeps the card's fields, labels, what it depends on and its steps (not done); not its
+    /// history, completion, planner link or the cards that depend on it.
+    @discardableResult
+    func duplicateCard(_ task: KanbanTask) throws -> KanbanTask {
+        guard let project = task.project, task.archivedAt == nil else { throw KanbanServiceError.invariant("Only a card on the board can be duplicated.") }
+        var draft = KanbanCardDraft()
+        draft.title = "\(task.title) copy"
+        draft.notes = task.notes
+        draft.notesRich = task.notesRich
+        draft.priority = task.priority
+        draft.isCritical = task.isCritical
+        draft.columnID = task.column?.id
+        draft.row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+        draft.dueDate = task.dueDate
+        draft.startDate = task.startDate
+        draft.estimateHours = task.estimateHours
+        draft.jiraURL = task.jiraURL
+        draft.isBlocked = task.isBlocked
+        draft.blockedReason = task.blockedReason
+        draft.labelIDs = task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.id)
+        draft.dependencyIDs = task.dependsOn.map(\.id)
+        // A step's assignee who has left the board isn't carried over.
+        draft.steps = task.subtasks.sorted { $0.sortIndex < $1.sortIndex }.map { step in
+            .init(title: step.title, assigneeID: step.assignee.flatMap { $0.archivedAt == nil ? $0.id : nil })
+        }
+        return try createCard(draft, in: project, after: task.id)
+    }
+
     /// Creates a card from a complete draft in one transaction. Validates everything
     /// first; on failure, no model is inserted. Records one `.created` entry with the
-    /// complete graph and sibling shifts; undo removes the whole card.
+    /// complete graph and sibling shifts; undo removes the whole card. `after` places it right
+    /// after that card in its cell (otherwise last).
     @discardableResult
-    func createCard(_ draft: KanbanCardDraft, in project: KanbanProject) throws -> KanbanTask {
+    func createCard(_ draft: KanbanCardDraft, in project: KanbanProject, after anchor: UUID? = nil) throws -> KanbanTask {
         try RecurrenceMaterializer.checkpoint(context)
 
         // Refuse archived board
@@ -652,9 +682,12 @@ struct KanbanService {
         if column.kind == .done { task.completedAt = now() }
 
         // Place in cell and calculate shifts
-        let siblings = project.tasks.filter { $0.archivedAt == nil && $0.column?.id == column.id && $0.resource?.id == resource?.id }
+        // By the row a card shows in: an archived member's cards show as Unassigned.
+        let siblings = project.tasks.filter { card in
+            card.archivedAt == nil && card.column?.id == column.id && card.resource.flatMap { $0.archivedAt == nil ? $0.id : nil } == resource?.id
+        }
             .sorted { $0.sortIndex < $1.sortIndex }
-        let position = siblings.count
+        let position = anchor.flatMap { id in siblings.firstIndex { $0.id == id }.map { $0 + 1 } } ?? siblings.count
         var shifts: [KanbanTransition] = []
         for (index, card) in siblings.enumerated() {
             let newIndex = Double(index < position ? index : index + 1)
@@ -923,6 +956,32 @@ struct KanbanService {
     /// Puts these cards of one cell in this order (a reorder under a non-manual sort, from
     /// the order on screen). Cards the view hides keep their places; the whole cell is then
     /// renumbered densely, so no two share a position. One entry.
+    /// Puts every live card in one person's row (Unassigned too) in priority order, cell by cell,
+    /// as their manual order: one entry for the whole row, none when it's already in order.
+    /// Cards a filter or a shortened Done cell hides are sorted too.
+    @discardableResult
+    func sortRowByPriority(_ row: KanbanRowKey, in project: KanbanProject) throws -> Bool {
+        try RecurrenceMaterializer.checkpoint(context)
+        let rowCards = project.tasks.filter { card in
+            card.archivedAt == nil && (card.resource.flatMap { $0.archivedAt == nil ? KanbanRowKey.resource($0.id) : nil } ?? .unassigned) == row
+        }
+        var transitions: [KanbanTransition] = []
+        for (_, cell) in Dictionary(grouping: rowCards, by: { $0.column?.id }) {
+            for (index, task) in cell.sorted(by: KanbanBoardState.byPriority).enumerated() where task.sortIndex != Double(index) {
+                var to = placement(task)
+                to.sortIndex = Double(index)
+                transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to))
+            }
+        }
+        guard !transitions.isEmpty else { return false }
+        var name = "Unassigned"
+        if case let .resource(id) = row, let resource = project.resources.first(where: { $0.id == id }) { name = resource.displayName }
+        let data = try KanbanActivityPayload(transitions: transitions).encoded()
+        applyTransitions(transitions, in: project)
+        try save(project, kind: .moved, taskIDs: transitions.map(\.taskID), summary: "Sorted \(name)’s cards by priority", encodedPayload: data)
+        return true
+    }
+
     func arrange(_ ordered: [KanbanTask]) throws {
         try RecurrenceMaterializer.checkpoint(context)
         let project = try sameProject(ordered)
