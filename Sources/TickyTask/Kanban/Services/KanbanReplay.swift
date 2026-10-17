@@ -158,6 +158,17 @@ enum KanbanReplay {
         var day = cal.startOfDay(for: from)
         let last = cal.startOfDay(for: through)
         var index = 0, syntheticIndex = 0, hiddenIndex = 0
+        // Inferred archives take their place among the logged events, so a later logged
+        // restore still wins.
+        func hideLegacy(while isDue: (Date) -> Bool) {
+            while hiddenIndex < hidden.count, isDue(hidden[hiddenIndex].at) {
+                if var state = cards[hidden[hiddenIndex].id] {
+                    state.visible = false
+                    set(hidden[hiddenIndex].id, state)
+                }
+                hiddenIndex += 1
+            }
+        }
         while day <= last {
             guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
             while syntheticIndex < synthesized.count, synthesized[syntheticIndex].at < next {
@@ -166,16 +177,12 @@ enum KanbanReplay {
                 syntheticIndex += 1
             }
             while index < events.count, effective[index] < next {
+                let eventAt = effective[index]
+                hideLegacy { $0 <= eventAt }
                 apply(events[index])
                 index += 1
             }
-            while hiddenIndex < hidden.count, hidden[hiddenIndex].at < next {
-                if var state = cards[hidden[hiddenIndex].id] {
-                    state.visible = false
-                    set(hidden[hiddenIndex].id, state)
-                }
-                hiddenIndex += 1
-            }
+            hideLegacy { $0 < next }
             var bands: [Band] = []
             // Live columns always appear (zero when empty), so bands line up from day to day.
             for column in Set(live).union(count.filter { $0.value > 0 }.keys) {

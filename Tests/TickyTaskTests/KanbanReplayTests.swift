@@ -391,23 +391,42 @@ struct KanbanReplayTests {
         #expect(countsOn(days.last)["To Do"] == 0)
     }
 
-    @Test func aLegacyCardArchivedBeforeTheLogThenRestoredIsHiddenUntilTheRestore() throws {
+    /// A card archived before the log existed, then restored with a logged entry that carries
+    /// the old archive date.
+    private func legacyRestore(archived: Date, restored: Date) throws -> Board {
         let b = try Board()
         let a = try b.card("A", on: F.date(10, 1))
         try b.service.archiveTask(a)
-        b.forget(a)                      // archived before the log existed
-        a.archivedAt = F.date(10, 4)
-        // The restore is logged with the old archive date.
-        let stamp = F.date(10, 4)
-        let payload = KanbanActivityPayload(changes: [KanbanFieldChange(entity: .task, id: a.id, field: "archivedAt", old: .date(stamp), new: nil)])
-        let entry = KanbanActivity(seq: b.project.nextActivitySeq, at: F.date(10, 7), kind: KanbanActivityKind.restored.rawValue,
+        b.forget(a)
+        let payload = KanbanActivityPayload(changes: [KanbanFieldChange(entity: .task, id: a.id, field: "archivedAt", old: .date(archived), new: nil)])
+        let entry = KanbanActivity(seq: b.project.nextActivitySeq, at: restored, kind: KanbanActivityKind.restored.rawValue,
                                    taskIDs: [a.id], payload: try payload.encoded())
         b.project.modelContext?.insert(entry)
         entry.project = b.project
         a.archivedAt = nil
+        return b
+    }
+
+    @Test func aLegacyCardArchivedBeforeTheLogThenRestoredIsHiddenUntilTheRestore() throws {
+        let b = try legacyRestore(archived: F.date(10, 4), restored: F.date(10, 7))
         let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
         #expect(countsOn(day(days, F.date(10, 3)))["To Do"] == 1)
         #expect(countsOn(day(days, F.date(10, 5)))["To Do"] == 0, "archived from the 4th")
         #expect(countsOn(day(days, F.date(10, 8)))["To Do"] == 1, "back after the restore on the 7th")
+    }
+
+    @Test func aLegacyRestoreBeforeThePlottedWindowKeepsTheCardVisible() throws {
+        let b = try legacyRestore(archived: F.date(10, 4), restored: F.date(10, 7))
+        let snapshot = b.snapshot()
+        let days = R.replay(snapshot, activities: b.activities, from: F.date(10, 8), through: snapshot.now)
+        #expect(countsOn(days.first)["To Do"] == 1, "the restore on the 7th outranks the archive on the 4th")
+        #expect(countsOn(days.last)["To Do"] == 1)
+    }
+
+    @Test func aLegacyCardRestoredOnItsArchiveDayIsVisibleThatDay() throws {
+        let b = try legacyRestore(archived: F.date(10, 4, 9), restored: F.date(10, 4, 15))
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        #expect(countsOn(day(days, F.date(10, 4)))["To Do"] == 1, "archived at 9, restored at 15")
+        #expect(countsOn(days.last)["To Do"] == 1)
     }
 }

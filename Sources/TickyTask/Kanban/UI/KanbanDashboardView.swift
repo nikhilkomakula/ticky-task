@@ -407,7 +407,7 @@ private struct LabelMixChart: View {
     var body: some View {
         let mix = KanbanMetrics.labelMix(s)
         let columnNames = KanbanUI.uniqueNames(s.columns.map { ($0.id, $0.name) }, reserved: [])
-        let labelNames = KanbanUI.uniqueNames(labels.sorted { $0.value < $1.value }.map { ($0.key, $0.value) })
+        let labelNames = KanbanUI.uniqueNames(labels.sorted { $0.value < $1.value }.map { ($0.key, $0.value) }, reserved: ["No label"])
         let bars: [Bar] = s.columns.flatMap { column in
             (mix[column.id] ?? [:]).map { label, value in
                 Bar(id: "\(column.id)-\(label?.uuidString ?? "none")", column: columnNames[column.id] ?? column.name,
