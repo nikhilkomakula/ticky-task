@@ -31,6 +31,8 @@ struct KanbanBoardView: View {
     @State private var selected: Set<UUID> = []
     /// Shortened Done cells opened to show all their cards; forgotten when the board closes.
     @State private var expandedDone: Set<CellKey> = []
+    /// The column whose Appearance popover is open.
+    @State private var appearanceColumn: UUID?
 
     struct CellKey: Hashable {
         let column: UUID
@@ -455,21 +457,7 @@ struct KanbanBoardView: View {
                 .stickyX(scroll)
                 .zIndex(1)
             ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
-                // Live cards only, as WIP is counted.
-                let cards = snapshot.cards.filter { $0.columnID == column.id && !$0.archived }
-                let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
-                KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag,
-                                   shownCount: hidden[column.id].map { cards.count - $0 })
-                    .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: widths.width, height: 40))
-                    .opacity(drag.isDragging(column: column.id) ? 0.4 : 1)
-                    .publishBoardFrame { BoardFrames(columnHeaders: [.init(id: column.id, frame: $0)]) }
-                    .boardDraggable(.column(column.id), controller: drag,
-                                    frame: { drag.frames.columnHeaders.first { $0.id == column.id }?.frame }, title: column.name)
-                    .focusable()
-                    .focused($focus, equals: .column(column.id))
-                    .contextMenu { columnMenu(column, index: index, count: columns.count) }
-                    // After the header's drag gesture, so resizing never starts a column drag.
-                    .overlay(alignment: .trailing) { columnResizeHandle(column, widths: widths, columns: columns) }
+                columnHeader(column, index: index, columns: columns, widths: widths, snapshot: snapshot, metrics: metrics, hidden: hidden)
             }
             Button {
                 prompt = .init(title: "New column", placeholder: "Name") { name in
@@ -488,6 +476,50 @@ struct KanbanBoardView: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
+    private func columnHeader(_ column: KanbanColumn, index: Int, columns: [KanbanColumn], widths: KanbanBoardWidths,
+                              snapshot: BoardSnapshot, metrics: MetricsSnapshot, hidden: [UUID: Int]) -> some View {
+        // Live cards only, as WIP is counted.
+        let cards = snapshot.cards.filter { $0.columnID == column.id && !$0.archived }
+        let hours = metrics.cards.filter { $0.column == column.id && !$0.archived }.reduce(0) { $0 + KanbanMetrics.measure(metrics, $1) }
+        let header = KanbanColumnHeader(column: column, count: cards.count, hours: project.loadMeasure == .hours ? hours : nil, drag: drag,
+                                        shownCount: hidden[column.id].map { cards.count - $0 }, trailingInset: 28)
+        return header
+            .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: widths.width, height: 40))
+            .opacity(drag.isDragging(column: column.id) ? 0.4 : 1)
+            .publishBoardFrame { BoardFrames(columnHeaders: [.init(id: column.id, frame: $0)]) }
+            .boardDraggable(.column(column.id), controller: drag,
+                            frame: { drag.frames.columnHeaders.first { $0.id == column.id }?.frame }, title: column.name)
+            .focusable()
+            .focused($focus, equals: .column(column.id))
+            .contextMenu { columnMenu(column, index: index, count: columns.count) }
+            // A visible way to the same menu, outside the drag gesture like the resize handle.
+            .overlay(alignment: .trailing) { columnMenuButton(column, index: index, count: columns.count) }
+            .popover(isPresented: appearanceBinding(column.id), arrowEdge: .bottom) {
+                KanbanColumnAppearancePopover(column: column, count: cards.count)
+            }
+            // After the header's drag gesture, so resizing never starts a column drag.
+            .overlay(alignment: .trailing) { columnResizeHandle(column, widths: widths, columns: columns) }
+    }
+
+    private func columnMenuButton(_ column: KanbanColumn, index: Int, count: Int) -> some View {
+        Menu { columnMenu(column, index: index, count: count) } label: {
+            Image(systemName: "ellipsis").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                .frame(width: 20, height: 20).contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .padding(.trailing, 10)
+        .help("Column options")
+        .accessibilityLabel("\(column.name) column options")
+        .accessibilityIdentifier("kanban-column-menu-\(column.name)")
+    }
+
+    private func appearanceBinding(_ id: UUID) -> Binding<Bool> {
+        Binding(get: { appearanceColumn == id }, set: { if !$0 { appearanceColumn = nil } })
+    }
+
     private func columnResizeHandle(_ column: KanbanColumn, widths: KanbanBoardWidths, columns: [KanbanColumn]) -> some View {
         let ids = columns.map(\.id)
         return KanbanResizeHandle(name: "\(column.name) column", slot: .column(column.id), width: widths.column(column.id), policy: .column,
@@ -503,12 +535,7 @@ struct KanbanBoardView: View {
         Button("Rename…") {
             prompt = .init(title: "Rename column", initial: column.name) { try service.editColumn(column, name: $0) }
         }
-        Menu("Colour") {
-            Button("Stage default") { app.runKanban { try service.editColumn(column, colorHex: .some(nil)) } }
-            ForEach(TaskColor.allCases) { color in
-                Button(String(describing: color).capitalized) { app.runKanban { try service.editColumn(column, colorHex: .some(color.hex)) } }
-            }
-        }
+        Button("Appearance…") { appearanceColumn = column.id }
         Button("WIP limit…") {
             prompt = .init(title: "WIP limit for \(column.name)", initial: column.wipLimit.map(String.init) ?? "",
                            placeholder: "No limit", allowsEmpty: true) { text in
@@ -614,7 +641,7 @@ private struct KanbanCell: View {
         .modifier(KanbanLiveWidthFrame(live: live, slots: [.column(column.id)], base: { _ in width }, alignment: .top))
         // The full row height, so the blank space under short cells is a drop target too.
         .frame(minHeight: 72, maxHeight: .infinity, alignment: .top)
-        .background(KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent.opacity(0.06))
+        .background(KanbanColumnStyle(column).effectiveAccent.opacity(0.06))
         .publishBoardFrame { BoardFrames(cells: [.init(columnID: column.id, row: row.key, frame: $0)]) }
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
@@ -717,10 +744,12 @@ struct KanbanColumnHeader: View {
     var drag: BoardDragController?
     /// Set when a shortened Done column shows fewer cards than it has.
     var shownCount: Int?
+    /// Room kept clear at the trailing edge for the board's column menu button.
+    var trailingInset: CGFloat = 0
 
     var body: some View {
         let over = (column.wipLimit.map { count > $0 } ?? false) || drag?.wipNote?.columnID == column.id
-        let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+        let style = KanbanColumnStyle(column)
 
         VStack(spacing: 0) {
             HStack(spacing: 6) {
@@ -748,7 +777,8 @@ struct KanbanColumnHeader: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
+            .padding(.leading, 10)
+            .padding(.trailing, 10 + trailingInset)
             // 3pt accent rule at bottom
             .frame(height: 40)
             .frame(maxWidth: .infinity)

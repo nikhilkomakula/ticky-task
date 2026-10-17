@@ -45,4 +45,36 @@ struct KanbanCardSnapshotTests {
             }
         }
     }
+
+    @Test("Column headers (automatic and chosen) and the Appearance popover render in light and dark")
+    func renderColumns() throws {
+        guard let dir = ProcessInfo.processInfo.environment["CARD_SNAPSHOT_DIR"] else { return }
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context)
+        let project = try s.createProject(name: "Platform", key: "PLAT")
+        let blocked = try s.addColumn(to: project, name: "Blocked", at: 2)
+        let custom = try s.addColumn(to: project, name: "Design", at: 3)
+        try s.editColumn(custom, colorHex: .some(TaskColor.violet.hex), symbolName: .some("sparkles"))
+        _ = blocked
+        let app = AppState()
+        for scheme in [ColorScheme.light, .dark] {
+            let headers = VStack(spacing: 8) {
+                ForEach(project.orderedColumns) { column in
+                    KanbanColumnHeader(column: column, count: 3, hours: nil, trailingInset: 28).frame(width: 250, height: 40)
+                }
+                KanbanColumnAppearancePopover(column: project.orderedColumns[1], count: 3)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+            .padding(8)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(app)
+            .modelContext(context)
+            .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: headers)
+            renderer.scale = 2
+            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("columns-\(scheme == .dark ? "dark" : "light").png"))
+        }
+    }
 }

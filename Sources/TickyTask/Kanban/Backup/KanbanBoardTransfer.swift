@@ -302,6 +302,7 @@ enum KanbanBoardTransfer {
             }
             let column = KanbanColumn(name: dto.name, kind: KanbanColumnKind(rawValue: dto.kindRaw) ?? .active)
             column.colorHex = dto.colorHex
+            column.symbolName = dto.symbolName
             column.wipLimit = dto.wipLimit
             context.insert(column)
             column.project = project

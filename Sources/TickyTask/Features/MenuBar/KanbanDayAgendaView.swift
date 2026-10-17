@@ -161,7 +161,7 @@ private struct KanbanPopoverRow: View {
                 .help(task.project?.name ?? "")
                 .accessibilityHidden(true)   // the hint names the board
             if let column = task.column {
-                let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                let style = KanbanColumnStyle(column)
                 Image(systemName: style.symbol)
                     .font(.system(size: 10))
                     .foregroundStyle(style.effectiveAccent)

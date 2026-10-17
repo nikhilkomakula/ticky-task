@@ -63,6 +63,7 @@ struct KanbanService {
         for (index, column) in template.columns.enumerated() {
             let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
             model.colorHex = column.colorHex
+            model.symbolName = column.symbolName
             model.wipLimit = column.wipLimit
             context.insert(model)
             model.project = project
@@ -438,7 +439,7 @@ struct KanbanService {
     /// Edits a column's name, colour or WIP limit. A kind change is allowed only on an
     /// empty column and can't remove the board's backlog or last Done column.
     func editColumn(_ column: KanbanColumn, name: String? = nil, colorHex: String?? = nil,
-                    wipLimit: Int?? = nil, kind: KanbanColumnKind? = nil) throws {
+                    wipLimit: Int?? = nil, kind: KanbanColumnKind? = nil, symbolName: String?? = nil) throws {
         try RecurrenceMaterializer.checkpoint(context)
         guard let project = column.project else { throw KanbanServiceError.notFound }
         if let kind, kind != column.kind {
@@ -453,13 +454,25 @@ struct KanbanService {
         var changes: [KanbanFieldChange] = []
         if let name, name != column.name { changes.append(.init(entity: .column, id: column.id, field: "name", old: .string(column.name), new: .string(name))) }
         if let colorHex, colorHex != column.colorHex { changes.append(.init(entity: .column, id: column.id, field: "colorHex", old: column.colorHex.map(KanbanValue.string), new: colorHex.map(KanbanValue.string))) }
+        if let symbolName, symbolName != column.symbolName { changes.append(.init(entity: .column, id: column.id, field: "symbolName", old: column.symbolName.map(KanbanValue.string), new: symbolName.map(KanbanValue.string))) }
         if let wipLimit, wipLimit != column.wipLimit { changes.append(.init(entity: .column, id: column.id, field: "wipLimit", old: column.wipLimit.map(KanbanValue.int), new: wipLimit.map(KanbanValue.int))) }
         if let kind, kind != column.kind { changes.append(.init(entity: .column, id: column.id, field: "kind", old: .string(column.kindRaw), new: .string(kind.rawValue))) }
         guard !changes.isEmpty else { return }
         let payload = KanbanActivityPayload(changes: changes)
         let data = try payload.encoded()
         changes.forEach { setColumn($0, in: project) }
-        try save(project, kind: .structure, taskIDs: [], summary: "Edited column \(column.name)", encodedPayload: data)
+        try save(project, kind: .structure, taskIDs: [], summary: Self.columnEditSummary(changes, name: column.name), encodedPayload: data)
+    }
+
+    /// "Changed Review icon", "Reset Review appearance", …; other edits stay "Edited column".
+    static func columnEditSummary(_ changes: [KanbanFieldChange], name: String) -> String {
+        let fields = Set(changes.map(\.field))
+        if fields == ["colorHex"] { return "Changed \(name) colour" }
+        if fields == ["symbolName"] { return "Changed \(name) icon" }
+        if fields == ["colorHex", "symbolName"] {
+            return changes.allSatisfy { $0.new == nil } ? "Reset \(name) appearance" : "Changed \(name) appearance"
+        }
+        return "Edited column \(name)"
     }
 
     /// Moves the backlog role to `column`; both columns must be empty.
@@ -1461,6 +1474,7 @@ struct KanbanService {
         switch field {
         case "name": return .string(column.name)
         case "colorHex": return column.colorHex.map(KanbanValue.string)
+        case "symbolName": return column.symbolName.map(KanbanValue.string)
         case "wipLimit": return column.wipLimit.map(KanbanValue.int)
         case "kind": return .string(column.kindRaw)
         case "sortIndex": return .double(column.sortIndex)
@@ -1474,6 +1488,8 @@ struct KanbanService {
         case let ("name", .string(s)?): column.name = s
         case let ("colorHex", .string(s)?): column.colorHex = s
         case ("colorHex", nil): column.colorHex = nil
+        case let ("symbolName", .string(s)?): column.symbolName = s
+        case ("symbolName", nil): column.symbolName = nil
         case let ("wipLimit", .int(i)?): column.wipLimit = i
         case ("wipLimit", nil): column.wipLimit = nil
         case let ("kind", .string(s)?): column.kindRaw = s
@@ -1837,7 +1853,7 @@ struct KanbanService {
             var columns = Dictionary(uniqueKeysWithValues: project.columns.map { ($0.id, $0) })
             for dto in graph.columns {
                 let column = KanbanColumn(id: dto.id, name: dto.name, kind: KanbanColumnKind(rawValue: dto.kindRaw) ?? .active, sortIndex: dto.sortIndex)
-                column.colorHex = dto.colorHex; column.wipLimit = dto.wipLimit
+                column.colorHex = dto.colorHex; column.symbolName = dto.symbolName; column.wipLimit = dto.wipLimit
                 context.insert(column); column.project = project
                 columns[column.id] = column
             }

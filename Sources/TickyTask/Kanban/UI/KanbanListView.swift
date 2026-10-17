@@ -109,7 +109,7 @@ struct KanbanListView: View {
             }
             TableColumn("Column", value: \Row.columnIndex) { (row: Row) in
                 if let column = row.task.column {
-                    let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                    let style = KanbanColumnStyle(column)
                     HStack(spacing: 3) {
                         Image(systemName: style.symbol)
                             .font(.system(size: 11))

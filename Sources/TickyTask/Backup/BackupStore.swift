@@ -371,6 +371,7 @@ enum BackupStore {
         for dto in kanban.columns {
             let column = KanbanColumn(id: dto.id, name: dto.name, sortIndex: dto.sortIndex)
             column.colorHex = dto.colorHex
+            column.symbolName = dto.symbolName
             column.wipLimit = dto.wipLimit
             column.kindRaw = dto.kindRaw
             column.project = dto.projectId.flatMap { projectMap[$0] }

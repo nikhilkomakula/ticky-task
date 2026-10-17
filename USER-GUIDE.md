@@ -16,7 +16,7 @@ TickyTask's **Kanban** module helps you track work across teams with visibility 
 
 Or load a saved template.
 
-**Set it up.** Right-click a column header to rename it, change its color, set a WIP limit, or move it left or right. Add resources using the **Add resource** button below the board's rows (see Resources and memberships below). Every new board starts with an **Unassigned** row pinned at the top.
+**Set it up.** Right-click a column header (or click its **⋯**) to rename it, set a WIP limit, or move it left or right. Choose **Appearance…** to pick its colour and icon: by default (**Automatic**, marked A) the colour follows its stage (to do red, in progress orange, done green) and the icon its name (an eye for "In Review", a hand for "Blocked", an hourglass for "Waiting") or its stage. Each pick applies at once and **⌘Z** undoes it; **Reset to automatic** goes back. Add resources using the **Add resource** button below the board's rows (see Resources and memberships below). Every new board starts with an **Unassigned** row pinned at the top.
 
 ---
 

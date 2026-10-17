@@ -171,7 +171,7 @@ struct KanbanTaskEditor: View {
         Section("On the board") {
             Picker("Column", selection: $columnID) {
                 ForEach(project?.orderedColumns ?? []) { column in
-                    let style = KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex)
+                    let style = KanbanColumnStyle(column)
                     HStack(spacing: 4) {
                         Image(systemName: style.symbol)
                             .font(.system(size: 11))
@@ -181,7 +181,7 @@ struct KanbanTaskEditor: View {
                     .tag(Optional(column.id))
                 }
             }
-            .help(selectedColumn.map { "Column: \(KanbanColumnStyle(kind: $0.kind, customColorHex: $0.colorHex).kindName)" } ?? "")
+            .help(selectedColumn.map { "Column: \(KanbanColumnStyle($0).kindName)" } ?? "")
             .accessibilityIdentifier("kanban-editor-column")
             Picker("Assignee", selection: $row) {
                 Text("Unassigned").tag(KanbanRowKey.unassigned)

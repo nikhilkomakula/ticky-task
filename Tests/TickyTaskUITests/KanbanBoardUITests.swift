@@ -341,6 +341,30 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertFalse(element(app, "kanban-done-older-Done-Ravi Kumar").exists)
     }
 
+    /// A column's ⋯ › Appearance… picks an icon and a colour (each shown as selected), and Reset
+    /// goes back to Automatic.
+    func testColumnAppearance() {
+        let app = launch()
+        openPlatform(app)
+        let menu = element(app, "kanban-column-menu-In Progress")
+        XCTAssertTrue(menu.waitForExistence(timeout: 5), "the header has a visible menu button")
+        menu.click()
+        let item = app.menuItems["Appearance…"].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        item.click()
+        let bolt = element(app, "kanban-appearance-icon-bolt")
+        XCTAssertTrue(bolt.waitForExistence(timeout: 5), "the Appearance popover opens")
+        bolt.click()
+        XCTAssertTrue(eventually { element(app, "kanban-appearance-icon-bolt").isSelected }, "the chosen icon shows as selected")
+        element(app, "kanban-appearance-colour-Violet").click()
+        XCTAssertTrue(eventually { element(app, "kanban-appearance-colour-Violet").isSelected })
+        element(app, "kanban-appearance-reset").click()
+        XCTAssertTrue(eventually { !element(app, "kanban-appearance-icon-bolt").isSelected && !element(app, "kanban-appearance-colour-Violet").isSelected },
+                      "Reset goes back to Automatic")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(eventually { !element(app, "kanban-appearance-icon-bolt").exists }, "Esc closes it")
+    }
+
     func testKeyboardMovesAFocusedCard() {
         let app = launch()
         openPlatform(app)

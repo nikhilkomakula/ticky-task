@@ -44,7 +44,7 @@ struct KanbanTimelineView: View {
         // Build column style map for colouring bars.
         // By column id: two columns may share a name.
         let columnStyleMap = Dictionary(project.orderedColumns.map { column in
-            (column.id, KanbanColumnStyle(kind: column.kind, customColorHex: column.colorHex).effectiveAccent)
+            (column.id, KanbanColumnStyle(column).effectiveAccent)
         }, uniquingKeysWith: { a, _ in a })
 
         VStack(alignment: .leading, spacing: 8) {

@@ -80,7 +80,8 @@ struct KanbanDashboardView: View {
         for column in snapshot.columns {
             let displayName = names[column.id] ?? column.name
             let liveColumn = liveColumns[column.id]
-            let style = KanbanColumnStyle(kind: column.kind, customColorHex: liveColumn?.colorHex)
+            let style = KanbanColumnStyle(kind: column.kind, customColorHex: liveColumn?.colorHex, customSymbol: liveColumn?.symbolName,
+                                          name: liveColumn?.name ?? column.name)
             map[displayName] = style.effectiveAccent
         }
         return map
@@ -548,7 +549,8 @@ private struct FlowChart: View {
                 let liveColumn = liveColumns[column.id]
                 let metricColumn = metricColumns[column.id]
                 let kind = metricColumn?.kind ?? .backlog
-                let style = KanbanColumnStyle(kind: kind, customColorHex: liveColumn?.colorHex)
+                let style = KanbanColumnStyle(kind: kind, customColorHex: liveColumn?.colorHex, customSymbol: liveColumn?.symbolName,
+                                              name: liveColumn?.name ?? "")
                 return style.effectiveAccent
             }
         }

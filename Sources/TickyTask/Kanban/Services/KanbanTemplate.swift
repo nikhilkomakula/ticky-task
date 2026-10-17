@@ -8,6 +8,7 @@ struct KanbanTemplate: Codable, Equatable, Identifiable, Sendable {
         var kind: KanbanColumnKind
         var colorHex: String?
         var wipLimit: Int?
+        var symbolName: String? = nil
     }
 
     struct Label: Codable, Equatable, Sendable {
@@ -54,7 +55,7 @@ struct KanbanTemplate: Codable, Equatable, Identifiable, Sendable {
     init(from project: KanbanProject, name: String) {
         self.id = UUID()
         self.name = name
-        self.columns = project.orderedColumns.map { Column(name: $0.name, kind: $0.kind, colorHex: $0.colorHex, wipLimit: $0.wipLimit) }
+        self.columns = project.orderedColumns.map { Column(name: $0.name, kind: $0.kind, colorHex: $0.colorHex, wipLimit: $0.wipLimit, symbolName: $0.symbolName) }
         self.labels = project.labels.sorted { $0.sortIndex < $1.sortIndex }
             .map { Label(name: $0.name, colorHex: $0.colorHex, symbolName: $0.symbolName) }
     }

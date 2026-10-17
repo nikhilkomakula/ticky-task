@@ -143,6 +143,8 @@ struct KanbanColumnDTO: Codable, Equatable, Sendable {
     var name: String
     var sortIndex: Double
     var colorHex: String?
+    /// Added after 0.2.0's first builds; older files simply don't have it.
+    var symbolName: String?
     var wipLimit: Int?
     var kindRaw: String
     var projectId: UUID?
@@ -152,6 +154,7 @@ struct KanbanColumnDTO: Codable, Equatable, Sendable {
         self.name = model.name
         self.sortIndex = model.sortIndex
         self.colorHex = model.colorHex
+        self.symbolName = model.symbolName
         self.wipLimit = model.wipLimit
         self.kindRaw = model.kindRaw
         self.projectId = model.project?.id
