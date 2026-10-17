@@ -269,12 +269,12 @@ final class KanbanBoardUITests: XCTestCase {
         let mia = app.menuItems["Mia Chen"].firstMatch
         XCTAssertTrue(mia.waitForExistence(timeout: 5))
         mia.click()
+        let table = element(app, "kanban-list")
+        XCTAssertTrue(eventually { table.staticTexts["Mia Chen"].exists }, "assigned to Mia")
+        app.typeKey("z", modifierFlags: .command)   // in the List view
         app.radioButtons["Board"].firstMatch.click()
-        XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-To Do-Mia Chen")) },
-                      "assigned to Mia")
-        app.typeKey("z", modifierFlags: .command)
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-To Do-Unassigned")) },
-                      "⌘Z undoes it")
+                      "⌘Z in the List view undoes it")
     }
 
     func testChangeLogRevertsACreatedCard() {

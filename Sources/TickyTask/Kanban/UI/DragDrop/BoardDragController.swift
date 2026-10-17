@@ -157,14 +157,24 @@ final class BoardDragController {
         }
 
         guard let metrics else { return }
-        let affected = Set(dragged.compactMap { $0.resource?.id } + [resource ?? nil].compactMap { $0 })
+        // Each card lands somewhere of its own (a column header keeps each card's person, a
+        // row header each card's column), so group the cards by where they'd land.
+        let groups = Dictionary(grouping: dragged) { task -> [UUID?] in
+            let (column, row) = destination(of: task)
+            return [column ?? task.column?.id, row ?? task.resource?.id]
+        }
+        let affected = Set(dragged.compactMap { $0.resource?.id } + groups.keys.compactMap { $0[1] })
         for member in metrics.members where affected.contains(member.id) {
-            let now = KanbanMetrics.projectedLoad(metrics, member: member, dragged: [], toColumn: columnID ?? UUID(), toResource: nil)
-            let toColumn = columnID ?? first.column?.id ?? UUID()
-            let toResource = resource ?? first.resource?.id
-            let after = KanbanMetrics.projectedLoad(metrics, member: member, dragged: Set(ids), toColumn: toColumn, toResource: toResource)
-            if after.load != now.load {
-                projected[member.id] = Projection(before: now.load, after: after.load, target: after.target, utilisation: after.utilisation)
+            let now = KanbanMetrics.projectedLoad(metrics, member: member, dragged: [], toColumn: UUID(), toResource: nil)
+            let delta = groups.reduce(0.0) { sum, group in
+                let moved = KanbanMetrics.projectedLoad(metrics, member: member, dragged: Set(group.value.map(\.id)),
+                                                        toColumn: group.key[0] ?? UUID(), toResource: group.key[1])
+                return sum + moved.load - now.load
+            }
+            if delta != 0 {
+                let after = now.load + delta
+                projected[member.id] = Projection(before: now.load, after: after, target: now.target,
+                                                  utilisation: KanbanMetrics.utilisation(load: after, target: now.target))
             }
         }
     }

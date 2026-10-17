@@ -41,7 +41,9 @@ struct KanbanViewControls: View {
             .popover(isPresented: $showFilter, arrowEdge: .bottom) { KanbanFilterPopover(project: project) }
 
             Menu {
-                Picker("Sort", selection: Binding(get: { state.sort }, set: { sort in app.updateBoardState(project, context: context) { $0.sort = sort } })) {
+                Picker("Sort", selection: Binding(get: { state.sort }, set: { sort in
+                    app.updateBoardState(project, context: context) { $0.sort = sort; $0.listSortKey = nil }
+                })) {
                     ForEach(KanbanBoardState.Sort.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.inline)

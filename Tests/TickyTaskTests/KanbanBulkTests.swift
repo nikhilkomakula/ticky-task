@@ -65,4 +65,29 @@ struct KanbanBulkTests {
         #expect(throws: KanbanServiceError.self) { try s.editMany(cards + [foreign], [.priority: .int(1)]) }
         #expect(throws: KanbanServiceError.self) { try s.setArchived(cards + [foreign], true) }
     }
+
+    @Test("A bulk restore never puts two cards at one position in Unassigned")
+    func restoreReservesPositions() throws {
+        let (s, project, cards) = try board()
+        let mia = try s.addMembership(try s.createPerson(name: "Mia", initials: "MI"), to: project)
+        try s.move(.cards([cards[1].id], to: .rowHeader(.resource(mia.id))), in: project)
+        try s.setArchived([cards[0], cards[1], cards[2]], true)
+        try s.archiveMembership(mia)
+        try s.setArchived([cards[0], cards[1], cards[2]], false)
+        let unassigned = project.tasks.filter { $0.resource == nil && $0.column?.id == project.orderedColumns[0].id }
+        #expect(unassigned.count == 3)
+        #expect(Set(unassigned.map(\.sortIndex)).count == 3, "\(unassigned.map(\.sortIndex))")
+    }
+
+    @Test("Arranging a cell is one entry and undoable")
+    func arrange() throws {
+        let (s, project, cards) = try board()
+        try s.arrange([cards[2], cards[0], cards[1]])
+        #expect([cards[2], cards[0], cards[1]].map(\.sortIndex) == [0, 1, 2])
+        try s.undo(in: project)
+        #expect(cards.map(\.sortIndex) == [0, 1, 2])
+        let mia = try s.addMembership(try s.createPerson(name: "Mia", initials: "MI"), to: project)
+        try s.move(.cards([cards[0].id], to: .rowHeader(.resource(mia.id))), in: project)
+        #expect(throws: KanbanServiceError.self, "one cell only") { try s.arrange([cards[0], cards[1]]) }
+    }
 }

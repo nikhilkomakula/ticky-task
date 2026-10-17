@@ -99,8 +99,15 @@ struct KanbanUndoCommands: View {
     }
 
     private func route(undo: Bool) {
-        let editingText = NSApp.keyWindow?.firstResponder is NSText
-        if !editingText, appState.module == .kanban, let actions = appState.kanbanBoardActions {
+        // The board's history only when nothing else owns ⌘Z: no text field, no sheet (an
+        // editor's draft), Kanban showing (as resolved: a hidden planner means Kanban) and
+        // the registered board still the one open.
+        let window = NSApp.keyWindow
+        let editingText = window?.firstResponder is NSText
+        let inSheet = window?.sheetParent != nil || window?.attachedSheet != nil
+        let module = ModulePolicy(UserDefaults.standard).resolve(appState.module)
+        if !editingText, !inSheet, module == .kanban, let actions = appState.kanbanBoardActions,
+           appState.kanban.selection == .project(actions.projectID) {
             undo ? actions.undo() : actions.redo()
         } else {
             NSApp.sendAction(Selector(undo ? "undo:" : "redo:"), to: nil, from: nil)

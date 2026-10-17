@@ -693,6 +693,25 @@ struct KanbanService {
                  summary: "\(present ? "Labelled" : "Unlabelled") \(changed.count) cards \(label.name)", encodedPayload: data)
     }
 
+    /// Puts one cell's cards in exactly this order (a reorder under a non-manual sort, from
+    /// the order on screen). One entry.
+    func arrange(_ ordered: [KanbanTask]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        let project = try sameProject(ordered)
+        guard let first = ordered.first, ordered.allSatisfy({ $0.archivedAt == nil && $0.column?.id == first.column?.id && $0.resource?.id == first.resource?.id })
+        else { throw KanbanServiceError.invariant("Those cards aren't in one cell.") }
+        let transitions = ordered.enumerated().compactMap { index, task -> KanbanTransition? in
+            guard task.sortIndex != Double(index) else { return nil }
+            var to = placement(task)
+            to.sortIndex = Double(index)
+            return KanbanTransition(taskID: task.id, from: placement(task), to: to)
+        }
+        guard !transitions.isEmpty else { return }
+        let data = try KanbanActivityPayload(transitions: transitions).encoded()
+        applyTransitions(transitions, in: project)
+        try save(project, kind: .moved, taskIDs: transitions.map(\.taskID), summary: "Reordered \(transitions.count) cards", encodedPayload: data)
+    }
+
     private func sameProject(_ tasks: [KanbanTask]) throws -> KanbanProject {
         guard let project = tasks.first?.project, tasks.allSatisfy({ $0.project?.id == project.id }) else {
             throw KanbanServiceError.invariant("Pick cards on one board.")
@@ -1012,8 +1031,10 @@ struct KanbanService {
             var to = placement(task)
             if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
             if let resource = task.resource, resource.archivedAt != nil, let column = task.column?.id {
-                let next = nextUnassigned[column] ?? (project.tasks.filter {
-                    $0.archivedAt == nil && $0.column?.id == column && $0.resource == nil
+                // After every card that will be in this Unassigned cell: the live ones and those
+                // coming back to it in place, so no two share a position.
+                let next = nextUnassigned[column] ?? (project.tasks.filter { card in
+                    card.column?.id == column && card.resource == nil && (card.archivedAt == nil || affected.contains { $0.id == card.id })
                 }.map(\.sortIndex).max() ?? -1) + 1
                 to.resourceID = nil
                 to.sortIndex = next

@@ -31,6 +31,7 @@ struct KanbanModuleView: View {
                                 KanbanBoardView(project: project, allProjects: projects)
                             }
                         }
+                        .modifier(KanbanProjectScope(project: project))
                     } else {
                         ContentUnavailableView("Board not found", systemImage: "square.grid.3x2",
                                                description: Text("It may have been deleted."))
@@ -43,6 +44,41 @@ struct KanbanModuleView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(app.kanbanError ?? "")
+        }
+    }
+}
+
+/// What applies to an open board in either view: ⌘Z / ⇧⌘Z for this project, and a reveal
+/// (Attention, search) that switches to Board and lifts whatever would hide the card.
+private struct KanbanProjectScope: ViewModifier {
+    let project: KanbanProject
+    @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear(perform: register)
+            .onChange(of: project.id) { _, _ in register() }
+            .onDisappear { if app.kanbanBoardActions?.projectID == project.id { app.kanbanBoardActions = nil } }
+            .task(id: app.highlightedKanbanTaskID) { expose(app.highlightedKanbanTaskID) }
+    }
+
+    private func register() {
+        let service = app.kanbanService(context)
+        app.kanbanBoardActions = KanbanBoardActions(projectID: project.id,
+            undo: { [app, project] in app.runKanban { try service.undo(in: project) } },
+            redo: { [app, project] in app.runKanban { try service.redo(in: project) } })
+    }
+
+    private func expose(_ id: UUID?) {
+        guard let id, let task = project.tasks.first(where: { $0.id == id }) else { return }
+        let state = KanbanBoardState.decode(project.boardState)
+        let hidden = state.view != .board || !state.filter.matches(task) || (task.archivedAt != nil && !state.showArchived)
+        guard hidden else { return }
+        app.updateBoardState(project, context: context) { state in
+            state.view = .board
+            if !state.filter.matches(task) { state.filter = KanbanCardFilter() }
+            if task.archivedAt != nil { state.showArchived = true }
         }
     }
 }

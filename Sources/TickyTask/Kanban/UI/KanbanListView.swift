@@ -5,9 +5,42 @@ import SwiftData
 struct KanbanListView: View {
     let project: KanbanProject
     @Environment(AppState.self) private var app
+    @Environment(\.modelContext) private var context
+    @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @State private var selection: Set<UUID> = []
-    @State private var sortOrder = [KeyPathComparator(\Row.column)]
     @State private var editingTask: KanbanTask?
+
+    /// The header sort lives in the board state, so it's remembered and follows the toolbar's Sort.
+    private static let keys: [(String, PartialKeyPath<Row>)] = [
+        ("title", \Row.title), ("column", \Row.columnIndex), ("assignee", \Row.assignee), ("priority", \Row.priority),
+        ("due", \Row.due), ("labels", \Row.labels), ("estimate", \Row.estimate),
+    ]
+
+    private static func comparator(_ key: String, ascending: Bool) -> KeyPathComparator<Row> {
+        let order: SortOrder = ascending ? .forward : .reverse
+        switch key {
+        case "title": return KeyPathComparator(\Row.title, order: order)
+        case "assignee": return KeyPathComparator(\Row.assignee, order: order)
+        case "priority": return KeyPathComparator(\Row.priority, order: order)
+        case "due": return KeyPathComparator(\Row.due, order: order)
+        case "labels": return KeyPathComparator(\Row.labels, order: order)
+        case "estimate": return KeyPathComparator(\Row.estimate, order: order)
+        default: return KeyPathComparator(\Row.columnIndex, order: order)
+        }
+    }
+
+    private func sortOrder(_ state: KanbanBoardState) -> Binding<[KeyPathComparator<Row>]> {
+        Binding(get: {
+            let (key, ascending) = state.effectiveListSort
+            return [Self.comparator(key, ascending: ascending)]
+        }, set: { comparators in
+            guard let first = comparators.first, let key = Self.keys.first(where: { $0.1 == first.keyPath })?.0 else { return }
+            app.updateBoardState(project, context: context) {
+                $0.listSortKey = key
+                $0.listSortAscending = first.order == .forward
+            }
+        })
+    }
 
     struct Row: Identifiable {
         let id: UUID
@@ -28,8 +61,10 @@ struct KanbanListView: View {
     var body: some View {
         let state = KanbanBoardState.decode(project.boardState)
         let columns = project.orderedColumns
+        let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
+        let order = sortOrder(state)
         let rows = project.tasks
-            .filter { (state.showArchived || $0.archivedAt == nil) && state.filter.matches($0) }
+            .filter { (state.showArchived || $0.archivedAt == nil) && state.filter.matches($0, calendar: calendar) }
             .map { task in
                 let priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
                 return Row(id: task.id, task: task, title: task.title, column: task.column?.name ?? "",
@@ -40,9 +75,9 @@ struct KanbanListView: View {
                            labels: task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name).joined(separator: ", "),
                            estimate: task.estimateHours ?? -1, archived: task.archivedAt != nil)
             }
-            .sorted(using: sortOrder)
+            .sorted(using: order.wrappedValue)
         let byID = Dictionary(rows.map { ($0.id, $0.task) }, uniquingKeysWith: { a, _ in a })
-        Table(rows, selection: $selection, sortOrder: $sortOrder) {
+        Table(rows, selection: $selection, sortOrder: order) {
             TableColumn("Title", value: \.title) { row in
                 Text(row.title).foregroundStyle(row.archived ? .secondary : .primary)
                     .accessibilityIdentifier("kanban-list-row-\(row.title)")

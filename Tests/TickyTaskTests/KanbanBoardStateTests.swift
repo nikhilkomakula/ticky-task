@@ -82,4 +82,35 @@ struct KanbanBoardStateTests {
         state.sort = .title
         #expect(state.sorted(all).map(\.title) == ["Build API", "Fix login", "Plan", "Write docs"])
     }
+
+    @Test("Due ranges follow the week start the app uses")
+    func dueWeekStart() throws {
+        let (s, project, _, cards) = try board()
+        var monday = Calendar(identifier: .gregorian), sunday = Calendar(identifier: .gregorian)
+        monday.timeZone = TimeZone(identifier: "Europe/London")!
+        sunday.timeZone = monday.timeZone
+        monday.firstWeekday = 2
+        sunday.firstWeekday = 1
+        let saturday = monday.date(from: DateComponents(year: 2026, month: 10, day: 17, hour: 12))!
+        let nextSunday = monday.date(from: DateComponents(year: 2026, month: 10, day: 18, hour: 9))!
+        let card = try #require(cards["Plan"])
+        try s.edit(card, [.dueDate: .date(nextSunday)])
+        var f = KanbanCardFilter()
+        f.due = .thisWeek
+        #expect(f.matches(card, now: saturday, calendar: monday), "Monday weeks: Sunday the 18th is this week")
+        #expect(!f.matches(card, now: saturday, calendar: sunday), "Sunday weeks: it starts the next one")
+        _ = project
+    }
+
+    @Test("The List sort follows the board's Sort unless a header was chosen")
+    func listSort() {
+        var state = KanbanBoardState()
+        #expect(state.effectiveListSort == ("column", true))
+        state.sort = .priority
+        #expect(state.effectiveListSort == ("priority", false))
+        state.listSortKey = "title"
+        state.listSortAscending = false
+        #expect(state.effectiveListSort == ("title", false))
+        #expect(KanbanBoardState.decode(state.encoded()).effectiveListSort == ("title", false))
+    }
 }

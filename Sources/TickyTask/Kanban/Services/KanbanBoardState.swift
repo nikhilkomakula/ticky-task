@@ -21,6 +21,10 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
     var filter = KanbanCardFilter()
     var sort: Sort = .manual
     var showArchived = false
+    /// The List view's sorted column ("title", "column", "assignee", "priority", "due",
+    /// "labels", "estimate"); nil follows `sort`.
+    var listSortKey: String?
+    var listSortAscending = true
 
     init() {}
 
@@ -30,6 +34,19 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
         filter = (try? c.decodeIfPresent(KanbanCardFilter.self, forKey: .filter)) ?? KanbanCardFilter()
         sort = (try? c.decodeIfPresent(Sort.self, forKey: .sort)) ?? .manual
         showArchived = (try? c.decodeIfPresent(Bool.self, forKey: .showArchived)) ?? false
+        listSortKey = try? c.decodeIfPresent(String.self, forKey: .listSortKey)
+        listSortAscending = (try? c.decodeIfPresent(Bool.self, forKey: .listSortAscending)) ?? true
+    }
+
+    /// The List view's sort: its own header choice, or the board sort's equivalent.
+    var effectiveListSort: (key: String, ascending: Bool) {
+        if let listSortKey { return (listSortKey, listSortAscending) }
+        switch sort {
+        case .manual: return ("column", true)
+        case .priority: return ("priority", false)
+        case .dueDate: return ("due", true)
+        case .title: return ("title", true)
+        }
     }
 
     static func decode(_ data: Data?) -> KanbanBoardState {

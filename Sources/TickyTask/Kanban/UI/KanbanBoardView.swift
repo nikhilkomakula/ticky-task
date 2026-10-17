@@ -44,8 +44,8 @@ struct KanbanBoardView: View {
         let collapsed = Set(project.collapsedRowKeys)
         // Each cell's cards after the board's filter, in its sort order.
         let cells = Dictionary(grouping: snapshot.cards.compactMap { card in tasks[card.id].map { (CellKey(column: card.columnID, row: card.row), $0) } }
-            .filter { state.filter.matches($0.1) }, by: \.0).mapValues { state.sorted($0.map(\.1)) }
-        let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort)
+            .filter { state.filter.matches($0.1, calendar: calendar) }, by: \.0).mapValues { state.sorted($0.map(\.1)) }
+        let _ = configureDrag(metrics: metrics, rowOrder: snapshot.rows.compactMap(\.resourceID), sort: state.sort, cells: cells)
 
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
@@ -89,15 +89,7 @@ struct KanbanBoardView: View {
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
         .sheet(item: $movingTask) { KanbanMoveSheet(task: $0) }
-        .onAppear {
-            app.kanbanBoardActions = KanbanBoardActions(projectID: project.id,
-                undo: { [app, context, project] in app.runKanban { try app.kanbanService(context).undo(in: project) } },
-                redo: { [app, context, project] in app.runKanban { try app.kanbanService(context).redo(in: project) } })
-        }
-        .onDisappear {
-            drag.cancel()
-            if app.kanbanBoardActions?.projectID == project.id { app.kanbanBoardActions = nil }
-        }
+        .onDisappear { drag.cancel() }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
             Button("Remove", role: .destructive) {
@@ -176,20 +168,25 @@ struct KanbanBoardView: View {
     }
 
     /// Points the drag controller at this board (not observed state, so this redraws nothing).
-    private func configureDrag(metrics: MetricsSnapshot, rowOrder: [UUID], sort: KanbanBoardState.Sort) {
+    private func configureDrag(metrics: MetricsSnapshot, rowOrder: [UUID], sort: KanbanBoardState.Sort, cells: [CellKey: [KanbanTask]]) {
         drag.project = project
         drag.metrics = metrics
         if drag.rowOrder != rowOrder { drag.rowOrder = rowOrder }
         drag.commit = { [app, context, project] op in
-            // Reordering within a cell is a manual-order action: switch to manual so the new
-            // position survives the sort (as the planner does).
-            if sort != .manual, case let .cards(ids, .cell(column, row, _)) = op,
-               project.tasks.filter({ ids.contains($0.id) }).allSatisfy({ card in
-                   card.column?.id == column && (card.resource.flatMap { $0.archivedAt == nil ? KanbanRowKey.resource($0.id) : nil } ?? .unassigned) == row
-               }) {
+            // Reordering within a cell under another sort is a manual-order action: the cell
+            // takes the order on screen with the drop applied, and the board switches to
+            // manual so it stays (as the planner does).
+            if sort != .manual, case let .cards(ids, .cell(column, row, before)) = op,
+               project.tasks.filter({ ids.contains($0.id) }).allSatisfy({ $0.column?.id == column && Self.rowKey($0) == row }) {
+                let shown = (cells[CellKey(column: column, row: row)] ?? []).filter { $0.archivedAt == nil }
+                let moving = shown.filter { ids.contains($0.id) }
+                var order = shown.filter { !ids.contains($0.id) }
+                order.insert(contentsOf: moving, at: before.flatMap { id in order.firstIndex { $0.id == id } } ?? order.count)
+                app.runKanban { try app.kanbanService(context).arrange(order) }
                 app.updateBoardState(project, context: context) { $0.sort = .manual }
+            } else {
+                app.runKanban { _ = try app.kanbanService(context).move(op, in: project) }
             }
-            app.runKanban { _ = try app.kanbanService(context).move(op, in: project) }
             selected = []
         }
         drag.scrollBy = { [scroll, position = $position] delta in
@@ -236,6 +233,18 @@ struct KanbanBoardView: View {
             let siblings = snapshot.cards(in: card.columnID, row: card.row).map(\.id)
             let shown = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).map(\.id)
             let position = siblings.firstIndex(of: id) ?? 0
+            // Under another sort, a keyboard reorder works on the order on screen (as a drop does).
+            if command && option, [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(press.key),
+               KanbanBoardState.decode(project.boardState).sort != .manual {
+                var order = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).filter { $0.archivedAt == nil }
+                guard let from = order.firstIndex(where: { $0.id == id }) else { return .handled }
+                let to = from + ([.upArrow, .leftArrow].contains(press.key) ? -1 : 1)
+                guard order.indices.contains(to) else { return .handled }
+                order.swapAt(from, to)
+                app.runKanban { try service.arrange(order) }
+                app.updateBoardState(project, context: context) { $0.sort = .manual }
+                return .handled
+            }
             switch (press.key, command, option) {
             case (.upArrow, true, true), (.leftArrow, true, true):
                 return position > 0 ? run(.cards([id], to: .cell(columnID: card.columnID, row: card.row, beforeCardID: siblings[position - 1]))) : .handled
@@ -282,6 +291,10 @@ struct KanbanBoardView: View {
         default:
             return .ignored
         }
+    }
+
+    static func rowKey(_ task: KanbanTask) -> KanbanRowKey {
+        task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
     }
 
     /// A click opens the card; ⌘-click adds it to (or removes it from) the selection.
@@ -425,9 +438,7 @@ private struct KanbanCell: View {
                     .id(task.id)
                     .opacity(drag.isDragging(card: task.id) ? 0.001 : task.archivedAt != nil ? 0.5 : 1)
                     .contextMenu { KanbanBulkMenu(project: project, tasks: menuTasks(task), onOpen: onOpen) }
-                    .publishBoardFrame { BoardFrames(cards: [.init(id: task.id, columnID: column.id, row: row.key, frame: $0)]) }
-                    .boardDraggable(dragSource(task), controller: drag,
-                                    frame: { drag.frames.cards.first { $0.id == task.id }?.frame }, task: task)
+                    .modifier(CardDrag(task: task, column: column, row: row, drag: drag, source: dragSource))
                     .focusable()
                     .focused(focus, equals: .card(task.id))
                     .popover(isPresented: Binding(get: { quickLook == task.id }, set: { if !$0 { quickLook = nil } })) {
@@ -456,6 +467,26 @@ private struct KanbanCell: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-cell-\(column.name)-\(row.name)")
+    }
+}
+
+/// A live card publishes its frame and drags; an archived one (Show Archived) does neither,
+/// since moves skip archived cards and it mustn't be a drop anchor.
+private struct CardDrag: ViewModifier {
+    let task: KanbanTask
+    let column: KanbanColumn
+    let row: KanbanRowSnapshot
+    let drag: BoardDragController
+    let source: (KanbanTask) -> BoardDragSource
+
+    func body(content: Content) -> some View {
+        if task.archivedAt == nil {
+            content
+                .publishBoardFrame { BoardFrames(cards: [.init(id: task.id, columnID: column.id, row: row.key, frame: $0)]) }
+                .boardDraggable(source(task), controller: drag, frame: { drag.frames.cards.first { $0.id == task.id }?.frame }, task: task)
+        } else {
+            content
+        }
     }
 }
 
