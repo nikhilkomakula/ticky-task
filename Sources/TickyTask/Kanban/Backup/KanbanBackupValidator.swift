@@ -9,6 +9,8 @@ struct KanbanImportReport: Equatable, Sendable {
     var droppedPlannerLinks: Int = 0
     /// Live cards on an archived membership, sent to Unassigned.
     var unassignedFromArchivedMemberships: Int = 0
+    /// Live cards whose completion didn't match their column (Done ⇔ completed), repaired.
+    var repairedCompletions: Int = 0
 }
 
 /// Validates a decoded Kanban backup before restore or import, checking version,
@@ -241,7 +243,8 @@ enum KanbanBackupValidator {
         // A live card can't sit on an archived membership (archiving unassigns its cards);
         // repair rather than reject, sending it to Unassigned and counting it.
         let archivedResources = Set(kanban.resources.filter { $0.archivedAt != nil }.map(\.id))
-        var unassigned = 0
+        let doneColumns = Set(kanban.columns.filter { $0.kindRaw == KanbanColumnKind.done.rawValue }.map(\.id))
+        var unassigned = 0, completions = 0
         var cleaned = kanban
         cleaned.tasks = kanban.tasks.map { task in
             var task = task
@@ -250,8 +253,15 @@ enum KanbanBackupValidator {
                 task.resourceId = nil
                 unassigned += 1
             }
+            // A live card is complete exactly when it's in a Done column; repair (deterministically)
+            // rather than reject.
+            if task.archivedAt == nil, let column = task.columnId {
+                if doneColumns.contains(column), task.completedAt == nil { task.completedAt = task.updatedAt; completions += 1 }
+                if !doneColumns.contains(column), task.completedAt != nil { task.completedAt = nil; completions += 1 }
+            }
             return task
         }
-        return (cleaned, KanbanImportReport(droppedDependencyEdges: dropped, unassignedFromArchivedMemberships: unassigned))
+        return (cleaned, KanbanImportReport(droppedDependencyEdges: dropped, unassignedFromArchivedMemberships: unassigned,
+                                            repairedCompletions: completions))
     }
 }

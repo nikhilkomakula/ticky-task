@@ -327,4 +327,28 @@ struct KanbanBackupIntegrityTests {
         #expect(board.cards.first { $0.id == card.id }?.row == .unassigned)
         _ = KanbanMoves.plan(.cards([card.id], to: .rowHeader(.unassigned)), in: board, now: Date())
     }
+
+    @Test("A backup whose live card's completion doesn't match its column is repaired on restore")
+    func completionMismatchIsRepaired() throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let context = try open(dir)
+        let service = KanbanService(context)
+        let project = try service.createProject(name: "P", key: "P")
+        let done = try #require(project.orderedColumns.last), todo = try #require(project.orderedColumns.first)
+        let finished = try service.createTask(in: project, title: "Finished", column: done)
+        let unfinished = try service.createTask(in: project, title: "Open", column: todo)
+        var snapshot = try BackupStore.makeSnapshot(context: context)
+        var section = try #require(snapshot.kanban)
+        for i in section.tasks.indices {
+            if section.tasks[i].id == finished.id { section.tasks[i].completedAt = nil }
+            if section.tasks[i].id == unfinished.id { section.tasks[i].completedAt = Date(timeIntervalSinceReferenceDate: 1) }
+        }
+        snapshot.kanban = section
+        #expect(try KanbanBackupValidator.sanitized(section).report.repairedCompletions == 2)
+        try BackupStore.restore(snapshot, context: context)
+        let tasks = try open(dir).fetch(FetchDescriptor<KanbanTask>())
+        #expect(tasks.first { $0.id == finished.id }?.completedAt != nil)
+        #expect(tasks.first { $0.id == unfinished.id }?.completedAt == nil)
+    }
 }
