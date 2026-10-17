@@ -15,6 +15,7 @@ struct KanbanCardView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @AppStorage("compactView") private var compact = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var priority: TaskPriority { TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low }
 
@@ -48,64 +49,75 @@ struct KanbanCardView: View {
     private var cardContent: some View {
         let highlighted = app.highlightedKanbanTaskID == task.id
 
-        return VStack(alignment: .leading, spacing: compact ? 3 : 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if task.isCritical {
-                    Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(.red)
-                        .help("Critical")
-                        .accessibilityLabel("Critical")
-                }
-                // Low is the default, so it shows nothing (it's still in the spoken summary).
-                if priority != .low {
-                    Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(priority.tint)
-                        .help("\(priority.label) priority")
-                        .accessibilityLabel("\(priority.label) priority")
-                }
-                Text(task.title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)   // the full title, wrapped
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(minHeight: 22, alignment: .leading)
+        // One spacing scale (4 / 6 / 8): 8 around the content, 6 between title, tags and
+        // markers (4 in compact view); empty sections take no space.
+        return VStack(alignment: .leading, spacing: compact ? 4 : 6) {
+            title
             if !task.labels.isEmpty { labels }
             metadata
         }
-        .padding(.vertical, compact ? 4 : 6)
         .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
+        .padding(.vertical, compact ? 4 : 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(KanbanCardFill(highlighted: highlighted, shape: RoundedRectangle(cornerRadius: 6)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color(nsColor: .separatorColor),
                                                                 lineWidth: highlighted || isSelected ? 2 : 1))
         .onTapGesture(perform: onOpen)
     }
 
+    /// Critical and Medium/High glyphs sit on the title's first line; Low shows nothing.
+    private var title: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if task.isCritical {
+                Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(KanbanCardPalette.red)
+                    .help("Critical")
+                    .accessibilityLabel("Critical")
+            }
+            if priority != .low {
+                Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(priority.tint)
+                    .help("\(priority.label) priority")
+                    .accessibilityLabel("\(priority.label) priority")
+            }
+            Text(task.title)
+                .font(.system(size: 13, weight: .medium))
+                .lineSpacing(2)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)   // the full title, wrapped
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(task.title)   // what the hover buttons cover, while they show
+        }
+        // As tall as the hover buttons, so they line up with a one-line title.
+        .frame(minHeight: 24, alignment: .leading)
+    }
+
     /// Every label as a small tag in its colour, wrapping onto more lines as needed.
     private var labels: some View {
-        FlowLayout(spacing: 4) {
+        let dark = colorScheme == .dark
+        return FlowLayout(spacing: 4) {
             ForEach(task.labels.sorted { $0.sortIndex < $1.sortIndex }) { label in
                 let color = KanbanUI.color(label.colorHex) ?? .gray
                 Text(label.name)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)   // a very long name wraps inside its tag
                     .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(color.opacity(0.2)))
-                    .overlay(Capsule().strokeBorder(color.opacity(0.45), lineWidth: 0.5))
+                    .padding(.vertical, 2)   // off the 4 / 6 / 8 scale on purpose: tags read smaller than the title
+                    .background(Capsule().fill(color.opacity(dark ? 0.2 : 0.12)))
+                    .overlay(Capsule().strokeBorder(color.opacity(dark ? 0.4 : 0.3), lineWidth: 0.5))
                     .help("Label")
             }
         }
     }
 
-    /// One quiet row, only what's set: due, estimate, Jira, blocked, dependencies, notes, steps.
+    /// Only what's set, right-aligned below the title and tags: due, estimate, Jira, blocked,
+    /// dependencies, notes, steps. A marker that doesn't fit moves to the next line whole.
     @ViewBuilder
     private var metadata: some View {
         let subtasks = task.subtasks
         let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
             || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
-            // Right-aligned lines; a marker that doesn't fit moves to the next line whole.
-            FlowLayout(spacing: 4, trailing: true) {
+            FlowLayout(spacing: 8, lineSpacing: 4, trailing: true) {
                 if let due = task.dueDate { dueLabel(due) }
                 if project.loadMeasure == .hours, let hours = task.estimateHours {
                     Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h").monospacedDigit()
@@ -113,7 +125,7 @@ struct KanbanCardView: View {
                 }
                 if let key = task.jiraKey { jiraChip(key) }
                 if task.isBlocked {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(.red)
+                    Image(systemName: "hand.raised.fill").foregroundStyle(KanbanCardPalette.red)
                         .help("Blocked")
                         .accessibilityLabel("Blocked")
                         .accessibilityValue(task.blockedReason ?? "")
@@ -131,7 +143,7 @@ struct KanbanCardView: View {
                         .accessibilityIdentifier("kanban-notes-\(task.id)")
                 }
                 if !subtasks.isEmpty {
-                    HStack(spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "checklist")
                         Text("\(subtasks.filter(\.isDone).count)/\(subtasks.count)").monospacedDigit()
                     }
@@ -153,11 +165,11 @@ struct KanbanCardView: View {
         let open = task.column?.kind != .done
         let isOverdue = open && days < 0
         let isDueSoon = open && days >= 0 && days <= project.dueSoonThresholdDays
-        let color: Color = isOverdue ? .red : isDueSoon ? .orange : .secondary
+        let color: Color = isOverdue ? KanbanCardPalette.red : isDueSoon ? KanbanCardPalette.amber : .secondary
         let helpText = isOverdue ? "Overdue" : isDueSoon ? "Due soon" : "Due date"
         let icon = isOverdue ? "exclamationmark.circle.fill" : isDueSoon ? "clock.fill" : "calendar"
         // The date stays primary; only the glyph carries the warning colour.
-        return HStack(spacing: 3) {
+        return HStack(alignment: .firstTextBaseline, spacing: 4) {
             Image(systemName: icon).foregroundStyle(color)
             Text(due.formatted(.dateTime.month(.abbreviated).day())).foregroundStyle(.primary)
         }
@@ -186,6 +198,7 @@ struct KanbanCardView: View {
 /// after its drag gesture, so pressing them never starts a drag.
 struct KanbanCardHoverActions: View {
     let task: KanbanTask
+    var highlighted = false
     let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var target: Target?
@@ -197,15 +210,16 @@ struct KanbanCardHoverActions: View {
             button("pencil", .edit, help: "Edit card", id: "kanban-card-edit-\(task.id)", action: onEdit)
             button("trash", .delete, help: "Delete card", id: "kanban-card-delete-\(task.id)", action: onDelete)
         }
-        .padding(.horizontal, 2)
         .background(alignment: .leading) {
             // Native backing with a short leading fade, so a long title fades out under the buttons.
-            HStack(spacing: 0) {
-                LinearGradient(colors: [Color(nsColor: .controlBackgroundColor).opacity(0), Color(nsColor: .controlBackgroundColor)],
-                               startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 12)
-                RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor))
-            }
+            // The card's own fill (highlight included), so the backing never shows as a patch.
+            KanbanCardFill(highlighted: highlighted, shape: RoundedRectangle(cornerRadius: 4))
+                .mask {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 12)
+                        Color.black
+                    }
+                }
             .padding(.leading, -12)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -217,7 +231,7 @@ struct KanbanCardHoverActions: View {
             Image(systemName: symbol)
                 .font(.system(size: 11))
                 .foregroundStyle(target == kind ? (kind == .delete ? AnyShapeStyle(.red) : AnyShapeStyle(.primary)) : AnyShapeStyle(.secondary))
-                .frame(width: 22, height: 22)
+                .frame(width: 24, height: 24)
                 .background(RoundedRectangle(cornerRadius: 4).fill(target == kind ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear)))
                 .contentShape(Rectangle())
         }
@@ -226,5 +240,27 @@ struct KanbanCardHoverActions: View {
         .help(help)
         .accessibilityLabel(help)
         .accessibilityIdentifier(id)
+    }
+}
+
+/// Warning colours that keep their contrast on the card in light and dark appearance.
+enum KanbanCardPalette {
+    static let red = adaptive(light: "#B42318", dark: "#FF8A80")
+    static let amber = adaptive(light: "#8A4B00", dark: "#F6C66A")
+
+    private static func adaptive(light: String, dark: String) -> Color {
+        let light = NSColor(Color(hex: light) ?? .red), dark = NSColor(Color(hex: dark) ?? .red)
+        return Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light })
+    }
+}
+
+/// A card's background: the native control colour, tinted while a reveal highlights it.
+struct KanbanCardFill<S: Shape>: View {
+    let highlighted: Bool
+    let shape: S
+
+    var body: some View {
+        shape.fill(Color(nsColor: .controlBackgroundColor))
+            .overlay { if highlighted { shape.fill(Color.accentColor.opacity(0.18)) } }
     }
 }

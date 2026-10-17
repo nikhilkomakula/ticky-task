@@ -808,6 +808,10 @@ private struct KanbanCardSlot<Card: View>: View {
     @FocusState private var actionsFocused: Bool
     @AccessibilityFocusState private var actionsAXFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("compactView") private var compact = false
+    @Environment(AppState.self) private var app
+
+    private var compactInset: CGFloat { compact ? 4 : 8 }
 
     var body: some View {
         let available = !isDragging && task.archivedAt == nil
@@ -817,11 +821,13 @@ private struct KanbanCardSlot<Card: View>: View {
             .onHover { overCard = $0 }
             .overlay(alignment: .topTrailing) {
                 if available {
-                    KanbanCardHoverActions(task: task, onEdit: onEdit, onDelete: onDelete)
+                    KanbanCardHoverActions(task: task, highlighted: app.highlightedKanbanTaskID == task.id, onEdit: onEdit, onDelete: onDelete)
                         .onHover { overButtons = $0 }
                         .focused($actionsFocused)
                         .accessibilityFocused($actionsAXFocused)
-                        .padding(4)
+                        // On the card's content grid: 8 in from the top and trailing edges.
+                        .padding(.top, compactInset)
+                        .padding(.trailing, 8)
                         .opacity(shown ? 1 : 0)
                         .allowsHitTesting(shown)
                 }

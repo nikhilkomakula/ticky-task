@@ -679,27 +679,55 @@ struct FlowChips: View {
 
 /// A simple wrapping row layout; `trailing` right-aligns each line (the card's markers).
 struct FlowLayout: Layout {
+    /// Between items on a line.
     var spacing: CGFloat = 4
+    /// Between lines; the same as `spacing` unless set.
+    var lineSpacing: CGFloat?
     var trailing = false
 
-    /// The subviews' sizes, broken into lines that fit `width`.
-    private func lines(_ subviews: Subviews, width: CGFloat) -> [[(index: Int, size: CGSize)]] {
-        var lines: [[(index: Int, size: CGSize)]] = [[]]
+    private struct Item {
+        let index: Int
+        let size: CGSize
+        /// From the item's top to its first text baseline, so mixed items line up on it.
+        let baseline: CGFloat
+    }
+
+    private var rowGap: CGFloat { lineSpacing ?? spacing }
+
+    /// The subviews broken into lines that fit `width`, measured as they'll be placed.
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [[Item]] {
+        var lines: [[Item]] = [[]]
         var x: CGFloat = 0
         for (index, view) in subviews.enumerated() {
-            var size = view.sizeThatFits(.unspecified)
-            size.width = min(size.width, width)   // an oversized item wraps inside itself
+            var proposal = ProposedViewSize.unspecified
+            var size = view.sizeThatFits(proposal)
+            if size.width > width {
+                // An oversized item wraps inside itself; measure its height at the width it gets.
+                proposal = ProposedViewSize(width: width, height: nil)
+                size = view.sizeThatFits(proposal)
+            }
+            let baseline = view.dimensions(in: ProposedViewSize(size))[VerticalAlignment.firstTextBaseline]
             if x > 0, x + size.width > width { lines.append([]); x = 0 }
-            lines[lines.count - 1].append((index, size))
+            lines[lines.count - 1].append(Item(index: index, size: size, baseline: baseline))
             x += size.width + spacing
         }
         return lines.filter { !$0.isEmpty }
     }
 
-    private func lineWidth(_ line: [(index: Int, size: CGSize)]) -> CGFloat {
+    private func lineWidth(_ line: [Item]) -> CGFloat {
         var total: CGFloat = 0
         for item in line { total += item.size.width }
         return total + spacing * CGFloat(max(line.count - 1, 0))
+    }
+
+    /// The line's tallest part above and below the shared baseline.
+    private func metrics(_ line: [Item]) -> (ascent: CGFloat, height: CGFloat) {
+        var ascent: CGFloat = 0, descent: CGFloat = 0
+        for item in line {
+            ascent = max(ascent, item.baseline)
+            descent = max(descent, item.size.height - item.baseline)
+        }
+        return (ascent, ascent + descent)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -708,23 +736,22 @@ struct FlowLayout: Layout {
         var widest: CGFloat = 0, height: CGFloat = 0
         for line in all {
             widest = max(widest, lineWidth(line))
-            height += line.map(\.size.height).max() ?? 0
+            height += metrics(line).height
         }
-        height += spacing * CGFloat(max(all.count - 1, 0))
+        height += rowGap * CGFloat(max(all.count - 1, 0))
         return CGSize(width: trailing && width.isFinite ? width : min(widest, width), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for line in lines(subviews, width: bounds.width) {
-            let used = lineWidth(line)
-            var x = trailing ? bounds.maxX - used : bounds.minX
-            let height = line.map(\.size.height).max() ?? 0
+            let (ascent, height) = metrics(line)
+            var x = trailing ? bounds.maxX - lineWidth(line) : bounds.minX
             for item in line {
-                subviews[item.index].place(at: CGPoint(x: x, y: y + (height - item.size.height) / 2), proposal: ProposedViewSize(item.size))
+                subviews[item.index].place(at: CGPoint(x: x, y: y + ascent - item.baseline), proposal: ProposedViewSize(item.size))
                 x += item.size.width + spacing
             }
-            y += height + spacing
+            y += height + rowGap
         }
     }
 }
