@@ -122,5 +122,7 @@ struct KanbanCardView: View {
         }
         .buttonStyle(.plain)
         .help("Open \(key) in Jira")
+        .accessibilityLabel("Jira issue \(key)")
+        .accessibilityAddTraits(.isButton)
     }
 }

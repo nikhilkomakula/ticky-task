@@ -46,6 +46,7 @@ struct KanbanAllProjectsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: project.symbolName).foregroundStyle(KanbanUI.color(project.colorHex) ?? .accentColor)
+                                    .accessibilityHidden(true)
                                 Text(project.name).font(.headline)
                                 Spacer()
                             }
@@ -88,6 +89,7 @@ struct KanbanAllProjectsView: View {
                 HStack(spacing: 8) {
                     Circle().fill(KanbanUI.utilisationColor(person.headline))
                         .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                     Text(person.name).font(.headline)
                     Text("\(person.totalAllocation)% allocated").foregroundStyle(person.overAllocated ? .red : .secondary)
                     if person.overAllocated {

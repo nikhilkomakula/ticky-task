@@ -39,6 +39,7 @@ struct KanbanViewControls: View {
             .foregroundStyle(state.filter.isActive ? Color.accentColor : .primary)
             .frame(width: 28, height: 28)
             .help("Filter cards")
+            .accessibilityLabel("Filter cards")
             .accessibilityIdentifier("kanban-filter")
             .popover(isPresented: $showFilter, arrowEdge: .bottom) { KanbanFilterPopover(project: project) }
 
@@ -57,6 +58,7 @@ struct KanbanViewControls: View {
             .foregroundStyle(state.sort == .manual ? Color.primary : Color.accentColor)
             .fixedSize()
             .help("Sort cards: \(state.sort.label)")
+            .accessibilityLabel("Sort cards")
             .accessibilityIdentifier("kanban-sort")
 
             Button {

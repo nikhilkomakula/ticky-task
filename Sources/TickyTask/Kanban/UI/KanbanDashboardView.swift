@@ -164,6 +164,7 @@ private struct LoadChart: View {
                 Button { open(row.memberID) } label: {
                     HStack {
                         Circle().fill(KanbanUI.utilisationColor(row.utilisation)).frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
                         Text(label(row))
                         Spacer()
                         Text(KanbanUI.loadText(load: row.load, target: row.target, utilisation: row.utilisation, hours: s.loadMeasure == .hours))
@@ -178,6 +179,7 @@ private struct LoadChart: View {
                 .buttonStyle(.plain)
                 .font(.caption)
                 .help("Show \(label(row))'s open cards")
+                .accessibilityLabel("\(label(row)), load \(KanbanUI.loadText(load: row.load, target: row.target, utilisation: row.utilisation, hours: s.loadMeasure == .hours))")
             }
         }
     }
@@ -478,6 +480,7 @@ private struct HygieneList: View {
             HStack {
                 Image(systemName: check.count == 0 ? "checkmark.circle.fill" : "exclamationmark.circle")
                     .foregroundStyle(check.count == 0 ? Color.green : Color.orange)
+                    .accessibilityLabel(check.count == 0 ? "Passed" : "Warning")
                 if let filter = check.filter, check.count > 0 {
                     Button(check.id) { open(filter) }.buttonStyle(.link)
                 } else {
@@ -487,6 +490,8 @@ private struct HygieneList: View {
                 Text("\(check.count)").monospacedDigit()
             }
             .font(.caption)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(check.count == 0 ? "Passed" : "Warning") - \(check.id): \(check.count)")
         }
     }
 }

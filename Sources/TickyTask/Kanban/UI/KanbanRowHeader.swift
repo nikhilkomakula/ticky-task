@@ -57,6 +57,7 @@ struct KanbanRowHeader: View {
             Image(systemName: "tray")
                 .frame(width: 28, height: 28)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         } else {
             Text(resource?.initials.isEmpty == false ? resource!.initials : String(row.name.prefix(2)).uppercased())
                 .font(.caption.weight(.bold))
@@ -69,19 +70,23 @@ struct KanbanRowHeader: View {
     private func icons(_ resource: KanbanResource) -> some View {
         let contractor = resource.person?.employment == .contractor
         let partTime = resource.assignment == .partTime
+        let employment = contractor ? "Contractor" : "Employee"
+        let assignment = partTime ? "Part-time" : "Full-time"
+        let allocation = resource.allocationPercent < 100 ? ", \(resource.allocationPercent)%" : ""
         return HStack(spacing: 3) {
             Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark")
-                .help(contractor ? "Contractor" : "Employee")
-                .accessibilityLabel(contractor ? "Contractor" : "Employee")
+                .accessibilityHidden(true)
             Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
-                .help(partTime ? "Part-time" : "Full-time")
-                .accessibilityLabel(partTime ? "Part-time" : "Full-time")
+                .accessibilityHidden(true)
             if resource.allocationPercent < 100 {
                 Text("\(resource.allocationPercent)%").monospacedDigit()
+                    .accessibilityHidden(true)
             }
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(employment), \(assignment)\(allocation)")
     }
 
     /// A bar filled to the utilisation (capped at the bar's end), coloured by band.

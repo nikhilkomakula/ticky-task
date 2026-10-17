@@ -381,6 +381,7 @@ struct KanbanBoardView: View {
             .buttonStyle(.borderless)
             .frame(width: 40, height: 40)
             .help("Add column")
+            .accessibilityLabel("Add column")
             .accessibilityIdentifier("kanban-add-column")
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -557,6 +558,7 @@ struct KanbanColumnHeader: View {
             Circle()
                 .fill(KanbanUI.color(column.colorHex) ?? (column.kind == .done ? .green : .secondary))
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
             Text(column.name).font(.subheadline.weight(.semibold)).lineLimit(1)
             if let limit = column.wipLimit {
                 Text("\(count)/\(limit)")

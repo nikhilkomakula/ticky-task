@@ -68,6 +68,7 @@ struct KanbanSidebar: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Import a board…")
+                .accessibilityLabel("Import a board")
                 .accessibilityIdentifier("kanban-import-board")
             }
             .padding(10)
@@ -90,6 +91,7 @@ struct KanbanSidebar: View {
         HStack(spacing: 6) {
             Image(systemName: project.symbolName)
                 .foregroundStyle(KanbanUI.color(project.colorHex) ?? .accentColor)
+                .accessibilityHidden(true)
             Text(project.name).lineLimit(1)
             Spacer(minLength: 4)
             if let summary {
