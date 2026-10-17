@@ -6,6 +6,13 @@ import SwiftData
 /// The dashboard formulas (design 02-metrics.md), on a fixed calendar: Europe/London, weeks
 /// starting Monday, now = Wed 2026-10-14 12:00, so week 0 is Mon 12 – Sun 18 October.
 enum MetricsFixture {
+    /// Timing budgets hold on a developer's Mac; a shared CI runner sets
+    /// `TEST_RUNNER_PERF_BUDGET_SCALE` (xcodebuild passes it on without the prefix) to stretch them.
+    static func budget(_ milliseconds: Int) -> Duration {
+        let scale = ProcessInfo.processInfo.environment["PERF_BUDGET_SCALE"].flatMap(Double.init) ?? 1
+        return .milliseconds(Int(Double(milliseconds) * max(scale, 1)))
+    }
+
     static func calendar(firstWeekday: Int = 2, zone: String = "Europe/London") -> Calendar {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: zone)!
@@ -748,9 +755,9 @@ struct KanbanMetricsTests {
             _ = M.summary(s)
         }
         #if DEBUG
-        #expect(elapsed < .milliseconds(300), "Debug canary: \(elapsed)")
+        #expect(elapsed < MetricsFixture.budget(300), "Debug canary: \(elapsed)")
         #else
-        #expect(elapsed < .milliseconds(100), "\(elapsed)")
+        #expect(elapsed < MetricsFixture.budget(100), "\(elapsed)")
         #endif
     }
 }

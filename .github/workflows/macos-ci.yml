@@ -23,6 +23,10 @@ jobs:
       - name: Test (unsigned)
         # Unit tests only; the UI tests (TickyTaskUITests) run in their own
         # workflow, ui-tests.yml, on pushes to feature branches.
+        env:
+          # A shared runner is several times slower than a developer's Mac: stretch the
+          # performance budgets (they still catch an accidental O(n²)).
+          TEST_RUNNER_PERF_BUDGET_SCALE: "4"
         run: |
           xcodebuild test \
             -project TickyTask.xcodeproj \

@@ -232,7 +232,7 @@ struct KanbanReplayTests {
         for (i, card) in cards.enumerated() where i % 2 == 0 { try b.move(card, to: b.doing, on: F.date(10, 1 + i % 13)) }
         let s = b.snapshot(), activities = b.activities
         let elapsed = ContinuousClock().measure { _ = R.cfd(s, activities: activities, days: 90) }
-        #expect(elapsed < .milliseconds(300), "\(elapsed)")
+        #expect(elapsed < F.budget(300), "\(elapsed)")
     }
 
     /// The design's budget (02 §5) on a real store: 500 cards, 20 people, 10 columns and 5,000
@@ -309,9 +309,9 @@ struct KanbanReplayTests {
         }
         #expect(!phases.isEmpty, "the board was read")
         #if DEBUG
-        #expect(elapsed < .milliseconds(300), "Debug canary: \(elapsed) (\(phases.joined(separator: ", ")))")
+        #expect(elapsed < F.budget(300), "Debug canary: \(elapsed) (\(phases.joined(separator: ", ")))")
         #else
-        #expect(elapsed < .milliseconds(100), "\(elapsed) (\(phases.joined(separator: ", ")))")
+        #expect(elapsed < F.budget(100), "\(elapsed) (\(phases.joined(separator: ", ")))")
         #endif
     }
 
