@@ -322,7 +322,11 @@ final class KanbanBoardUITests: XCTestCase {
         let older = element(app, "kanban-done-older-Done-Ravi Kumar")
         XCTAssertTrue(older.waitForExistence(timeout: 5), "the cell offers its older cards")
         XCTAssertTrue(element(app, "kanban-card-Finished 4").exists && !element(app, "kanban-card-Finished 5").exists, "five newest shown")
-        XCTAssertTrue(element(app, "kanban-colhdr-Done").label.contains("5 shown"), "the header says how many show")
+        // The Done column is partly off a 1024 pt screen, so accept the header's label, its value or the visible text.
+        XCTAssertTrue(eventually {
+            let header = element(app, "kanban-colhdr-Done")
+            return header.label.contains("5 shown") || (header.value as? String ?? "").contains("5 shown") || app.staticTexts["(5 shown)"].exists
+        }, "the header says how many show")
         older.click()
         XCTAssertTrue(element(app, "kanban-card-Finished 7").waitForExistence(timeout: 5), "opening the cell shows them all")
         element(app, "kanban-done-fewer-Done-Ravi Kumar").click()

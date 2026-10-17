@@ -51,6 +51,23 @@ struct KanbanColumnAppearanceTests {
             }
         }
         #expect(KanbanColumnStyle(kind: .active, customColorHex: TaskColor.yellow.hex).baseHex == TaskColor.yellow.hex)
+        // The letter and check on each swatch read in both appearances.
+        for hex in TaskColor.allCases.map(\.hex) + KanbanColumnKind.allCases.map(KanbanColumnStyle.stageHex) {
+            let base = try #require(KanbanContrast.rgb(hex))
+            for dark in [false, true] {
+                let fill = KanbanContrast.adjusted(base, dark: dark)
+                let best = max(KanbanContrast.contrast(fill, (1, 1, 1)), KanbanContrast.contrast(fill, (0, 0, 0)))
+                #expect(best >= 4.5, "\(hex) badge in \(dark ? "dark" : "light"): \(best)")
+            }
+        }
+        // The card's priority colours (the planner's green, orange, red) reach 3:1 too.
+        for hex in ["#34C759", "#FF9500", "#FF3B30"] {
+            let base = try #require(KanbanContrast.rgb(hex))
+            for dark in [false, true] {
+                let drawn = KanbanContrast.adjusted(base, dark: dark)
+                #expect(KanbanContrast.contrast(drawn, KanbanContrast.surface(for: drawn, dark: dark)) >= 3)
+            }
+        }
     }
 
     @Test("Choosing a colour or icon is one entry with a clear name; picking it again writes nothing; undo and Reset work")

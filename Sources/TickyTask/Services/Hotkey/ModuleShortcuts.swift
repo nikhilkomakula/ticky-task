@@ -154,6 +154,9 @@ final class ModuleShortcuts {
         if candidate == shortcut(for: module) { return nil }
         let other: AppModule = module == .planner ? .kanban : .planner
         if candidate == shortcut(for: other) { return "\(other.label) already uses \(candidate.description). Clear it there first." }
+        if let command = Self.boardCommands.first(where: { $0.keyCode == candidate.keyCode && $0.flags == candidate.flags }) {
+            return "The board uses \(candidate.description) to \(command.action)."
+        }
         let globals: [KeyboardShortcuts.Name] = [.openApp, .newTaskToday, .toggleMenuBar]
         if globals.contains(where: { name in
             KeyboardShortcuts.getShortcut(for: name).map { $0.carbonKeyCode == candidate.keyCode && $0.modifiers.intersection([.command, .option, .control, .shift]) == candidate.flags } ?? false
@@ -165,6 +168,17 @@ final class ModuleShortcuts {
         }
         return nil
     }
+
+    /// The board's own keys (handled on the board, not in a menu), so a module can't take them.
+    static let boardCommands: [(keyCode: Int, flags: NSEvent.ModifierFlags, action: String)] = {
+        var commands: [(Int, NSEvent.ModifierFlags, String)] = [(2, .command, "duplicate a card")]
+        for arrow in [123, 124, 125, 126] {
+            commands.append((arrow, .command, "move a card"))
+            commands.append((arrow, [.command, .option], "reorder"))
+        }
+        for arrow in [125, 126] { commands.append((arrow, [.command, .control], "collapse or expand rows")) }
+        return commands.map { (keyCode: $0.0, flags: $0.1, action: $0.2) }
+    }()
 
     /// A main-menu item using `shortcut`, other than View › Planner / Kanban themselves.
     private static func menuItem(matching shortcut: ModuleShortcut, in menu: NSMenu) -> NSMenuItem? {
@@ -185,6 +199,9 @@ struct ModuleShortcutRecorder: View {
     @State private var monitor: Any?
     @State private var message: String?
     private let store = ModuleShortcuts.shared
+    /// Ends whichever recorder is listening, so only one ever is.
+    @MainActor private static var stopActive: (() -> Void)?
+    @State private var resignObserver: Any?
 
     var body: some View {
         LabeledContent("Show \(module.label):") {
@@ -217,9 +234,20 @@ struct ModuleShortcutRecorder: View {
     }
 
     private func start() {
+        Self.stopActive?()
         message = nil
         recording = true
+        // Keys typed in another window aren't for this recorder; leaving the window ends recording.
+        let window = NSApp.keyWindow
+        Self.stopActive = { stop() }
+        resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { _ in
+            MainActor.assumeIsolated { stop() }
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.window === window else {
+                stop()
+                return event
+            }
             if event.keyCode == 53, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
                 stop()
                 return nil
@@ -244,5 +272,8 @@ struct ModuleShortcutRecorder: View {
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        Self.stopActive = nil
     }
 }

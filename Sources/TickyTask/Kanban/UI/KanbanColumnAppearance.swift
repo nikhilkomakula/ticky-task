@@ -18,7 +18,7 @@ struct KanbanColumnAppearancePopover: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 4), count: 6), alignment: .leading, spacing: 4) {
                     automaticColour(style)
                     ForEach(TaskColor.allCases) { colour in
-                        swatch(KanbanContrast.accent(colour.hex), name: colour.name, selected: column.colorHex?.lowercased() == colour.hex) {
+                        swatch(colour.hex, name: colour.name, selected: column.colorHex?.lowercased() == colour.hex) {
                             apply(colorHex: .some(colour.hex))
                         }
                     }
@@ -26,10 +26,10 @@ struct KanbanColumnAppearancePopover: View {
             }
             section("Icon") {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(34), spacing: 4), count: 6), alignment: .leading, spacing: 4) {
-                    tile(style.automaticSymbol, name: "Automatic: \(KanbanColumnStyle.iconName(style.automaticSymbol))", accent: style.effectiveAccent,
+                    tile(style.automaticSymbol, name: "Automatic: \(KanbanColumnStyle.iconName(style.automaticSymbol))", style: style,
                          selected: column.symbolName == nil, badge: "A") { apply(symbolName: .some(nil)) }
                     ForEach(KanbanColumnStyle.iconChoices, id: \.symbol) { choice in
-                        tile(choice.symbol, name: choice.name, accent: style.effectiveAccent, selected: column.symbolName == choice.symbol) {
+                        tile(choice.symbol, name: choice.name, style: style, selected: column.symbolName == choice.symbol) {
                             apply(symbolName: .some(choice.symbol))
                         }
                     }
@@ -77,22 +77,24 @@ struct KanbanColumnAppearancePopover: View {
 
     private func automaticColour(_ style: KanbanColumnStyle) -> some View {
         let stage = KanbanColumnStyle(kind: column.kind, customColorHex: nil)
-        return swatch(stage.effectiveAccent, name: "Automatic: \(stage.colorName)", selected: column.colorHex == nil, badge: "A") {
+        return swatch(stage.baseHex, name: "Automatic: \(stage.colorName)", selected: column.colorHex == nil, badge: "A") {
             apply(colorHex: .some(nil))
         }
     }
 
     /// A 22 pt colour in a 30 pt target; the chosen one has a ring and a check.
-    private func swatch(_ colour: Color, name: String, selected: Bool, badge: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func swatch(_ hex: String, name: String, selected: Bool, badge: String? = nil, action: @escaping () -> Void) -> some View {
+        // The letter and check take black or white, whichever reads on this colour.
+        let mark = KanbanContrast.foreground(on: hex)
+        return Button(action: action) {
             ZStack {
-                Circle().fill(colour).frame(width: 22, height: 22)
+                Circle().fill(KanbanContrast.accent(hex)).frame(width: 22, height: 22)
                 if let badge, !selected {
-                    Text(badge).font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                    Text(badge).font(.system(size: 10, weight: .bold)).foregroundStyle(mark)
                 }
                 if selected {
                     Circle().strokeBorder(Color.primary, lineWidth: 2).frame(width: 28, height: 28)
-                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(mark)
                 }
             }
             .frame(width: 30, height: 30)
@@ -106,9 +108,10 @@ struct KanbanColumnAppearancePopover: View {
     }
 
     /// A 28 pt icon tile in a 34 pt target; the chosen one has an outline and a check.
-    private func tile(_ symbol: String, name: String, accent: Color, selected: Bool, badge: String? = nil,
+    private func tile(_ symbol: String, name: String, style: KanbanColumnStyle, selected: Bool, badge: String? = nil,
                       action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let accent = style.effectiveAccent
+        return Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: symbol)
                     .font(.system(size: 13))
@@ -117,7 +120,8 @@ struct KanbanColumnAppearancePopover: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(selected ? AnyShapeStyle(accent.opacity(0.12)) : AnyShapeStyle(.quaternary.opacity(0.5))))
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? accent : .clear, lineWidth: 2))
                 if selected {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(.white, accent).offset(x: 3, y: -3)
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 10))
+                        .foregroundStyle(KanbanContrast.foreground(on: style.baseHex), accent).offset(x: 3, y: -3)
                 } else if let badge {
                     Text(badge).font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary).offset(x: -2, y: 1)
                 }

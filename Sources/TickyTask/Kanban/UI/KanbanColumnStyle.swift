@@ -162,6 +162,18 @@ enum KanbanContrast {
         return (Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255)
     }
 
+    /// Black or white, whichever stands out more on `hex` as drawn in each appearance (for the
+    /// letters and checks on swatches).
+    static func foreground(on hex: String) -> Color {
+        guard let base = rgb(hex) else { return .primary }
+        func pick(_ dark: Bool) -> NSColor {
+            let fill = adjusted(base, dark: dark)
+            return contrast(fill, (1, 1, 1)) >= contrast(fill, (0, 0, 0)) ? .white : .black
+        }
+        let (light, dark) = (pick(false), pick(true))
+        return Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light })
+    }
+
     private static func nsColor(_ c: RGB) -> NSColor { NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1) }
 }
 

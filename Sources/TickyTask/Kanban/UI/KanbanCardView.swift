@@ -72,7 +72,7 @@ struct KanbanCardView: View {
                     .help("Critical")
                     .accessibilityLabel("Critical")
             }
-            Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(priority.tint)
+            Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(KanbanCardPalette.priority(priority))
                 .help("\(priority.label) priority")
                 .accessibilityLabel("\(priority.label) priority")
             Text(task.title)
@@ -244,6 +244,18 @@ struct KanbanCardHoverActions: View {
 enum KanbanCardPalette {
     static let red = adaptive(light: "#B42318", dark: "#FF8A80")
     static let amber = adaptive(light: "#8A4B00", dark: "#F6C66A")
+
+    /// The planner's priority colours, adjusted to 3:1 or more on the card in either appearance.
+    static func priority(_ priority: TaskPriority) -> Color {
+        switch priority {
+        case .low: lowPriority
+        case .medium: mediumPriority
+        case .high: highPriority
+        }
+    }
+    private static let lowPriority = KanbanContrast.accent("#34C759")
+    private static let mediumPriority = KanbanContrast.accent("#FF9500")
+    private static let highPriority = KanbanContrast.accent("#FF3B30")
 
     private static func adaptive(light: String, dark: String) -> Color {
         let light = NSColor(Color(hex: light) ?? .red), dark = NSColor(Color(hex: dark) ?? .red)

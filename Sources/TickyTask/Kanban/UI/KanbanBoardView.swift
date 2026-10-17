@@ -149,7 +149,7 @@ struct KanbanBoardView: View {
         HStack(alignment: .top, spacing: 0) {
             KanbanRowHeader(project: project, row: row, resource: resource, load: load, person: person, collapsed: collapsed, drag: drag,
                             keepsSorted: KanbanBoardState.decode(project.boardState).keepsSortedByPriority(row.key),
-                            onSortOnce: { app.runKanban { try app.kanbanService(context).sortRowByPriority(row.key, in: project) } },
+                            onSortOnce: { sortOnce(row.key) },
                             onKeepSorted: { on in app.updateBoardState(project, context: context) { $0.setKeepsSortedByPriority(row.key, on) } },
                             onToggle: { toggle(row.key, collapsed: collapsed) },
                             onEdit: { editingMembership = resource },
@@ -413,6 +413,17 @@ struct KanbanBoardView: View {
 
     private func menuTasks(for task: KanbanTask) -> [KanbanTask] {
         selected.contains(task.id) ? selection() : [task]
+    }
+
+    /// Puts the row in priority order as its manual order. Under another board Sort that order
+    /// wouldn't show, so the board goes to Manual, as it does after any hand reorder.
+    private func sortOnce(_ row: KanbanRowKey) {
+        app.runKanban {
+            try app.kanbanService(context).sortRowByPriority(row, in: project)
+            if KanbanBoardState.decode(project.boardState).sort != .manual {
+                app.updateBoardState(project, context: context) { $0.sort = .manual }
+            }
+        }
     }
 
     /// Adds a copy right after the card and shows it highlighted.

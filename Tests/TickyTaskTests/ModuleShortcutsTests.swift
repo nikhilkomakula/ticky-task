@@ -74,6 +74,10 @@ struct ModuleShortcutsTests {
         #expect(shortcuts.conflict(.kanbanDefault, for: .planner, menu: menu)?.contains("Kanban already uses ⌘2") == true)
         let n = ModuleShortcut(keyCode: 45, key: "n", modifiers: NSEvent.ModifierFlags.command.rawValue)
         #expect(shortcuts.conflict(n, for: .kanban, menu: menu)?.contains("New Card") == true)
+        let duplicate = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags.command.rawValue)
+        #expect(shortcuts.conflict(duplicate, for: .planner, menu: menu)?.contains("duplicate a card") == true, "the board's own keys are refused")
+        let reorder = ModuleShortcut(keyCode: 126, key: "upArrow", modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
+        #expect(shortcuts.conflict(reorder, for: .kanban, menu: menu) != nil)
         let free = ModuleShortcut(keyCode: 40, key: "k", modifiers: NSEvent.ModifierFlags([.command, .control]).rawValue)
         #expect(shortcuts.conflict(free, for: .kanban, menu: menu) == nil)
     }
