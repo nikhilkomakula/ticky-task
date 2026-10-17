@@ -69,6 +69,84 @@ enum NotificationService {
         }
     }
 
+    /// Reconcile Kanban due-date reminders with the store. Never runs under tests.
+    @MainActor
+    static func syncKanbanReminders(context: ModelContext) async {
+        guard !UITestSupport.isRunning, !UITestSupport.isHostingUnitTests else { return }
+        await syncKanbanReminders(context: context, client: SystemNotificationClient())
+    }
+
+    @MainActor
+    static func syncKanbanReminders(context: ModelContext, client: some NotificationScheduling,
+                                    now: Date? = nil) async {
+        let previous = latestKanbanSync
+        let sync = Task { @MainActor in
+            await previous?.value
+            await reconcileKanban(context: context, client: client, now: now ?? Date())
+        }
+        latestKanbanSync = sync
+        await sync.value
+    }
+
+    /// The latest Kanban reminder reconciliation; each sync waits for the previous one.
+    @MainActor private static var latestKanbanSync: Task<Void, Never>?
+
+    @MainActor
+    private static func reconcileKanban(context: ModelContext, client: some NotificationScheduling, now: Date) async {
+        guard await client.isAuthorized(),
+              (try? PersistenceFaults.check(.reminderFetch)) != nil else { return }
+
+        let enabled = UserDefaults.standard.bool(forKey: "kanban.notifyDueDates", default: false)
+        let minutes = UserDefaults.standard.integer(forKey: "kanban.notifyDueMinutes", default: 9 * 60)
+
+        let desired = KanbanReminderPlanner.reminders(
+            for: fetchKanbanCards(context: context),
+            enabled: enabled,
+            minutes: minutes,
+            now: now
+        )
+
+        let desiredIDs = Set(desired.map(\.identifier))
+        let pending = await client.pendingIdentifiers()
+        let staleKanban = pending
+            .filter { $0.hasPrefix(KanbanReminderPlanner.identifierPrefix) && !desiredIDs.contains($0) }
+
+        client.remove(staleKanban)
+
+        for reminder in desired {
+            do {
+                try await client.add(reminder)
+            } catch {
+                NSLog("TickyTask: scheduling Kanban reminder \(reminder.identifier) failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @MainActor
+    private static func fetchKanbanCards(context: ModelContext) -> [KanbanReminderPlanner.CardSnapshot] {
+        do {
+            let cards = try context.fetch(FetchDescriptor<KanbanTask>())
+            return cards.compactMap { card in
+                guard let column = card.column, let project = card.project else { return nil }
+                let isDone = column.kind == .done
+                let isArchivedCard = card.archivedAt != nil
+                let isArchivedProject = project.archivedAt != nil
+
+                return KanbanReminderPlanner.CardSnapshot(
+                    id: card.id,
+                    title: card.title,
+                    projectName: project.name,
+                    dueDate: card.dueDate,
+                    isDone: isDone,
+                    isArchivedCard: isArchivedCard,
+                    isArchivedProject: isArchivedProject
+                )
+            }
+        } catch {
+            return []
+        }
+    }
+
     /// Schedule (or clear) the daily end-of-day unfinished-tasks reminder.
     static func scheduleEndOfDayReminder(enabled: Bool, minutes: Int) async {
         guard !UITestSupport.isRunning, !UITestSupport.isHostingUnitTests else { return }
