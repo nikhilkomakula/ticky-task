@@ -167,15 +167,21 @@ final class ModuleShortcuts {
         return nil
     }
 
-    /// What the board itself does with `shortcut`, matched as loosely as the board reads keys
-    /// (it looks for ⌘, and ⌥ for reordering, and ignores ⌃ and ⇧), so a module can't take them.
+    /// What the board itself does with `shortcut`, matched as loosely as `KanbanBoardView.handleKey`
+    /// reads keys (it checks only ⌘ and ⌥), so a module can't take a chord the board answers.
     static func boardAction(_ shortcut: ModuleShortcut) -> String? {
         let flags = shortcut.flags
-        guard flags.contains(.command) else { return nil }
-        if shortcut.keyCode == 2, !flags.contains(.option) { return "duplicate a card" }
-        guard [123, 124, 125, 126].contains(shortcut.keyCode) else { return nil }
-        if flags.contains(.option) { return "reorder" }
-        return flags.contains(.control) ? "collapse rows or move a card" : "move a card"
+        let plain = !flags.contains(.command) && !flags.contains(.option)
+        switch shortcut.keyCode {
+        case 123, 124, 125, 126: return "move between, move or reorder cards"
+        case 53: return "clear the selection"
+        case 2 where flags.contains(.command) && !flags.contains(.option): return "duplicate a card"
+        case 51, 117 where plain: return "delete a card"
+        case 36 where plain: return "open a card"
+        case 49 where plain: return "preview a card"
+        case 46 where plain: return "move a card"
+        default: return nil
+        }
     }
 
     /// A main-menu item using `shortcut`, other than View › Planner / Kanban themselves.

@@ -85,6 +85,18 @@ struct ModuleShortcutsTests {
         }
         let shiftD = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue)
         #expect(shortcuts.conflict(shiftD, for: .planner, menu: menu) != nil)
+        // Every chord the board answers (it reads only ⌘ and ⌥) is refused, ⌃ and ⇧ variants included.
+        let board: [(Int, String, NSEvent.ModifierFlags)] = [
+            (123, "leftArrow", .control), (125, "downArrow", [.control, .shift]), (53, "escape", .control),
+            (36, "return", .control), (49, "space", [.control, .shift]), (51, "delete", .control),
+            (117, "deleteForward", .control), (46, "m", .control),
+        ]
+        for (code, key, flags) in board {
+            let chord = ModuleShortcut(keyCode: code, key: key, modifiers: flags.rawValue)
+            #expect(shortcuts.conflict(chord, for: .kanban, menu: menu) != nil, "\(chord.description)")
+        }
+        let commandReturn = ModuleShortcut(keyCode: 36, key: "return", modifiers: NSEvent.ModifierFlags.command.rawValue)
+        #expect(shortcuts.conflict(commandReturn, for: .kanban, menu: menu) == nil, "⌘↩ isn't the board's")
         let optionD = ModuleShortcut(keyCode: 2, key: "d", modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
         #expect(shortcuts.conflict(optionD, for: .planner, menu: menu) == nil, "⌥⌘D isn't the board's")
         let free = ModuleShortcut(keyCode: 40, key: "k", modifiers: NSEvent.ModifierFlags([.command, .control]).rawValue)
