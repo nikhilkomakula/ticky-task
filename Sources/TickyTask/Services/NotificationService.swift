@@ -93,14 +93,16 @@ enum NotificationService {
 
     @MainActor
     private static func reconcileKanban(context: ModelContext, client: some NotificationScheduling, now: Date) async {
+        // A failed fetch returns before anything is removed, so pending reminders stay.
         guard await client.isAuthorized(),
-              (try? PersistenceFaults.check(.reminderFetch)) != nil else { return }
+              (try? PersistenceFaults.check(.reminderFetch)) != nil,
+              let cards = fetchKanbanCards(context: context) else { return }
 
         let enabled = UserDefaults.standard.bool(forKey: "kanban.notifyDueDates", default: false)
         let minutes = UserDefaults.standard.integer(forKey: "kanban.notifyDueMinutes", default: 9 * 60)
 
         let desired = KanbanReminderPlanner.reminders(
-            for: fetchKanbanCards(context: context),
+            for: cards,
             enabled: enabled,
             minutes: minutes,
             now: now
@@ -123,7 +125,7 @@ enum NotificationService {
     }
 
     @MainActor
-    private static func fetchKanbanCards(context: ModelContext) -> [KanbanReminderPlanner.CardSnapshot] {
+    private static func fetchKanbanCards(context: ModelContext) -> [KanbanReminderPlanner.CardSnapshot]? {
         do {
             let cards = try context.fetch(FetchDescriptor<KanbanTask>())
             return cards.compactMap { card in
@@ -143,7 +145,7 @@ enum NotificationService {
                 )
             }
         } catch {
-            return []
+            return nil
         }
     }
 
