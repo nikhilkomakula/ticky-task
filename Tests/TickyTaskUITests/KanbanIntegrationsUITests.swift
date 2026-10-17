@@ -7,8 +7,10 @@ final class KanbanIntegrationsUITests: XCTestCase {
 
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
+        // Both modules shown and the planner first, whatever this Mac's settings say.
         app.launchArguments = ["-uitest", "-uitestKanbanSeed", "-calendarColumns", "7", "-weekStartsMonday", "YES",
-                               "-showWeekends", "YES"]
+                               "-showWeekends", "YES", "-showPlannerModule", "YES", "-showKanbanModule", "YES",
+                               "-defaultModule", "planner"]
         app.launchWithMainWindow()
         XCTAssertTrue(app.staticTexts["Alpha"].waitForExistence(timeout: 20), "the planner opens first")
         return app

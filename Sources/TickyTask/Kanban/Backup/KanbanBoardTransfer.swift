@@ -86,12 +86,19 @@ enum KanbanBoardTransfer {
             a.kanban == b.kanban && a.boards == b.boards && a.people == b.people && a.report == b.report
         }
 
-        /// The file's people with an active membership on `board` whose linked person already
-        /// has one on `project`: merging reuses that membership instead of adding a row.
-        func reusedMemberships(_ board: BoardChoice, into project: KanbanProject) -> [String] {
-            let incoming = Set(kanban.resources.filter { $0.projectId == board.id && $0.archivedAt == nil }.compactMap(\.personId))
-            let here = Set(project.resources.filter { $0.archivedAt == nil }.compactMap { $0.person?.id })
-            return people.filter { incoming.contains($0.id) && $0.linkTo.map(here.contains) == true }.map(\.name)
+        /// The file's people whose active membership on `board` won't get a row of its own,
+        /// because a board has one active membership per person: their linked person already has
+        /// one on `project` (a merge), or an earlier person in the file is linked to the same one.
+        /// Theirs is dropped for the one that's kept (its allocation, role and dates).
+        func reusedMemberships(_ board: BoardChoice, into project: KanbanProject?) -> [String] {
+            var taken = Set(project?.resources.filter { $0.archivedAt == nil }.compactMap { $0.person?.id } ?? [])
+            var reused: [String] = []
+            for dto in kanban.resources.filter({ $0.projectId == board.id && $0.archivedAt == nil }).sorted(by: { $0.sortIndex < $1.sortIndex }) {
+                guard let choice = people.first(where: { $0.id == dto.personId }) else { continue }
+                let local = choice.linkTo ?? choice.id   // unlinked people are created, so they're their own
+                if !taken.insert(local).inserted { reused.append(choice.name) }
+            }
+            return reused
         }
     }
 
@@ -136,10 +143,10 @@ enum KanbanBoardTransfer {
 
     // MARK: - Apply
 
-    /// Imports the plan's boards. Returns the ids of the boards that received cards.
+    /// Imports the plan's boards. Returns the boards that received cards.
     @MainActor
     @discardableResult
-    static func apply(_ plan: Plan, fileName: String, context: ModelContext, now: Date = Date()) throws -> [UUID] {
+    static func apply(_ plan: Plan, fileName: String, context: ModelContext, now: Date = Date()) throws -> [KanbanProject] {
         try RecurrenceMaterializer.checkpoint(context)
         let existingProjects = Dictionary(try context.fetch(FetchDescriptor<KanbanProject>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let existingPeople = Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -167,7 +174,7 @@ enum KanbanBoardTransfer {
             people[dto.id] = person
         }
 
-        var touched: [UUID] = []
+        var touched: [KanbanProject] = []
         var nextSort = (existingProjects.values.map(\.sortIndex).max() ?? -1) + 1
         for board in plan.boards {
             guard let dto = k.projects.first(where: { $0.id == board.id }) else { continue }
@@ -191,7 +198,7 @@ enum KanbanBoardTransfer {
             context.insert(entry)
             entry.project = project
             project.nextActivitySeq += 1
-            touched.append(project.id)
+            touched.append(project)
         }
 
         do {

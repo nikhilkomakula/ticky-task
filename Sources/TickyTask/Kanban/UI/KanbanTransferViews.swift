@@ -81,12 +81,11 @@ struct KanbanImportSheet: View {
                             ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
                         }
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
-                        if let target = board.mergeInto.flatMap({ id in projects.first { $0.id == id } }) {
-                            let reused = request.plan.reusedMemberships(board, into: target)
-                            if !reused.isEmpty {
-                                Text("Already on \(target.name), so their membership is reused: \(reused.joined(separator: ", ")).")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                        let target = board.mergeInto.flatMap { id in projects.first { $0.id == id } }
+                        let reused = request.plan.reusedMemberships(board, into: target)
+                        if !reused.isEmpty {
+                            Text("One membership per person on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -124,7 +123,7 @@ struct KanbanImportSheet: View {
                         app.kanbanGeneration.bump()
                         if let first = boards.first {
                             app.module = .kanban
-                            app.kanban.selection = .project(first)
+                            app.kanban.selection = .project(first.id)
                         }
                         dismiss()
                     } catch {

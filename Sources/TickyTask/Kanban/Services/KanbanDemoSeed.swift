@@ -13,8 +13,8 @@ enum KanbanDemoSeed {
         let scratch = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let board = try build(KanbanService(scratch), now: now, calendar: calendar)
         let plan = try KanbanBoardTransfer.plan(try KanbanBoardTransfer.export([board], context: scratch), context: context)
-        guard let id = try KanbanBoardTransfer.apply(plan, fileName: "the demo board", context: context, now: now).first,
-              let project = try context.fetch(FetchDescriptor<KanbanProject>(predicate: #Predicate { $0.id == id })).first
+        // Nothing fallible after the save: the imported board comes straight back.
+        guard let project = try KanbanBoardTransfer.apply(plan, fileName: "the demo board", context: context, now: now).first
         else { throw KanbanServiceError.notFound }
         return project
     }

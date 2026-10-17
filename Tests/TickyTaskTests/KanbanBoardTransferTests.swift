@@ -127,7 +127,7 @@ struct KanbanBoardTransferTests {
         let plan = try T.plan(data, context: from)
         #expect(plan.people.first { $0.name == "Ravi" }?.linkTo == ravi.id, "still the same person, by id")
         let boards = try T.apply(plan, fileName: "old", context: from)
-        let imported = try #require(try from.fetch(FetchDescriptor<KanbanProject>()).first { $0.id == boards.first })
+        let imported = try #require(boards.first)
         let memberships = imported.resources.filter { $0.person?.id == ravi.id }
         #expect(!memberships.isEmpty && memberships.allSatisfy { $0.archivedAt != nil })
         let api = try #require(imported.tasks.first { $0.title == "Build API" })
@@ -147,6 +147,15 @@ struct KanbanBoardTransferTests {
         let board = try #require(plan.boards.first)
         #expect(plan.reusedMemberships(board, into: project) == ["Ravi"], "Mia's membership in the file is archived")
         #expect(plan.reusedMemberships(board, into: try KanbanService(from).createProject(name: "Empty", key: "EMP")).isEmpty)
+        #expect(plan.reusedMemberships(board, into: nil).isEmpty, "a new board: everyone gets their own row")
+        // Mia linked to Ravi here: two people in the file, one person on the board.
+        var linked = plan
+        let mia = try #require(linked.people.firstIndex { $0.name == "Mia" })
+        linked.people[mia].linkTo = linked.people.first { $0.name == "Ravi" }?.linkTo
+        var miaActive = linked.kanban
+        for i in miaActive.resources.indices where miaActive.resources[i].personId == linked.people[mia].id { miaActive.resources[i].archivedAt = nil }
+        linked.kanban = miaActive
+        #expect(linked.reusedMemberships(board, into: nil) == ["Mia"], "the second one linked to Ravi joins his membership")
     }
 
     @Test("Formulas behind leading whitespace or control characters are neutralised too")

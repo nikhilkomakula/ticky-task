@@ -122,7 +122,11 @@ final class BackupCoordinator {
             try BackupStore.restore(store, context: context)
             // Restored `alarmEnabled` tasks have no live notification requests
             // until we reconcile them against the rebuilt store.
-            Task { await NotificationService.syncTaskReminders(context: context) }
+            Task {
+                await NotificationService.syncTaskReminders(context: context)
+                // The restored boards replace the old ones' due-date reminders too, whichever window is open.
+                await NotificationService.syncKanbanReminders(context: context)
+            }
             statusMessage = "Backup restored."
             showRestoreConfirm = false
             clearPending()
