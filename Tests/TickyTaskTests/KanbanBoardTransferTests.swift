@@ -290,6 +290,22 @@ struct KanbanBoardTransferTests {
         #expect(try to.fetchCount(FetchDescriptor<KanbanPerson>()) == people && target.resources.count == 1)
     }
 
+    @Test("A damaged board position or a full change-log counter refuses the import before anything is written")
+    func damagedBoardsRefuse() throws {
+        let (from, project) = try source()
+        let data = try T.export([project], context: from)
+        let to = fresh()
+        let target = try KanbanService(to).createProject(name: "Edge", key: "EDGE")
+        target.sortIndex = 0x1p53
+        #expect(throws: T.TransferError.rowPositions("Edge")) { try T.apply(try T.plan(data, context: to), fileName: "f", context: to) }
+        target.sortIndex = 0
+        target.nextActivitySeq = .max
+        var plan = try T.plan(data, context: to)
+        plan.boards[0].mergeInto = target.id
+        #expect(throws: T.TransferError.rowPositions("Edge")) { try T.apply(plan, fileName: "f", context: to) }
+        #expect(try to.fetchCount(FetchDescriptor<KanbanProject>()) == 1 && to.fetchCount(FetchDescriptor<KanbanTask>()) == 0)
+    }
+
     @Test("Imported steps are renumbered in their order, whatever positions the file had")
     func stepsRenumbered() throws {
         let (from, project) = try source()

@@ -27,7 +27,7 @@ enum KanbanBoardTransfer {
             case .newerVersion: "That board file was made by a newer version of TickyTask."
             case let .missingPerson(name): "The file refers to a person it doesn't include (on “\(name)”)."
             case .noSuchBoard: "The board to merge into no longer exists."
-            case let .rowPositions(name): "“\(name)” has damaged row or card positions, so nothing was imported into it."
+            case let .rowPositions(name): "“\(name)” has damaged positions or history numbering, so nothing was imported."
             }
         }
     }
@@ -167,14 +167,20 @@ enum KanbanBoardTransfer {
         try RecurrenceMaterializer.checkpoint(context)
         let existingProjects = Dictionary(try context.fetch(FetchDescriptor<KanbanProject>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let existingPeople = Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // New boards, rows and cards go after the last ones, and each board gets one more
+        // change-log entry: past 2^52 (or non-finite) whole steps stop being exact, and a full
+        // counter would trap. A store damaged that way is refused before anything is written.
+        func unusable(_ position: Double) -> Bool { !position.isFinite || abs(position) >= 0x1p52 }
+        if let board = existingProjects.values.first(where: { unusable($0.sortIndex) }) { throw TransferError.rowPositions(board.name) }
+        var entries: [UUID: Int] = [:]
         for board in plan.boards {
             guard let id = board.mergeInto else { continue }
             guard let target = existingProjects[id] else { throw TransferError.noSuchBoard }
-            // New rows and cards go after the last ones; past 2^52 (or non-finite) whole steps stop being exact.
-            func unusable(_ position: Double) -> Bool { !position.isFinite || abs(position) >= 0x1p52 }
             if target.resources.contains(where: { unusable($0.sortIndex) }) || target.tasks.contains(where: { unusable($0.sortIndex) }) {
                 throw TransferError.rowPositions(target.name)
             }
+            entries[id, default: 0] += 1
+            if target.nextActivitySeq > Int.max - entries[id, default: 0] { throw TransferError.rowPositions(target.name) }
         }
         for person in plan.people { if let id = person.linkTo, existingPeople[id] == nil { throw TransferError.missingPerson(person.name) } }
         let note = try KanbanActivityPayload().encoded()   // the informational "Imported from" entries
