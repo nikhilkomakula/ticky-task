@@ -53,12 +53,18 @@ final class WeeklySummaryUITests: XCTestCase {
     private func select(_ app: XCUIApplication, _ title: String) {
         let row = task(app, title)
         XCTAssertTrue(row.waitForExistence(timeout: 5), "\(title) should be listed")
-        let list = app.sheets.scrollViews.firstMatch
+        // `isHittable` reports true for a row clipped by the scroll view on macOS, so check
+        // that the row's centre is inside the list's visible frame instead.
+        let list = app.sheets.firstMatch.scrollViews.firstMatch
+        func onScreen() -> Bool {
+            guard list.exists else { return row.isHittable }
+            return list.frame.insetBy(dx: 0, dy: 6).contains(CGPoint(x: row.frame.midX, y: row.frame.midY))
+        }
         // The sign of a scroll delta differs between setups; try one way, then the other.
-        for delta in Array(repeating: -150.0, count: 8) + Array(repeating: 150.0, count: 16) where !row.isHittable {
+        for delta in Array(repeating: -120.0, count: 10) + Array(repeating: 120.0, count: 20) where !onScreen() {
             list.scroll(byDeltaX: 0, deltaY: delta)
         }
-        XCTAssertTrue(row.isHittable, "\(title) should be scrolled into view")
+        XCTAssertTrue(onScreen(), "\(title) should be scrolled into view")
         row.click()
     }
 
