@@ -128,7 +128,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
         .sheet(isPresented: $app.isPlannerNewTaskPresented) {
-            TaskEditorView(createOn: app.selectedDayKey)
+            TaskEditorView(newTaskWithDayKey: app.selectedDayKey)
         }
         .sheet(isPresented: $app.isKanbanNewCardPresented) {
             NewCardSheetContent()
@@ -296,7 +296,7 @@ private struct NewCardSheetContent: View {
     var body: some View {
         if case let .project(projectID) = app.kanban.selection,
            let project = projects.first(where: { $0.id == projectID }) {
-            KanbanTaskEditor(newCardIn: project, column: nil, row: nil)
+            KanbanTaskEditor(newCardIn: project, column: nil, row: .unassigned)
         }
     }
 }

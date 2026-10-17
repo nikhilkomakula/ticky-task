@@ -13,6 +13,8 @@ struct KanbanBoardView: View {
     /// Only the sticky views read this, so scrolling doesn't redraw the board.
     @State private var scroll = KanbanScrollOffset()
     @State private var prompt: KanbanTextPrompt?
+    /// A cell's + opens the full card editor on that column and row.
+    @State private var newCardCell: NewCardCell?
     @State private var columnToDelete: KanbanColumn?
     @State private var isAddingPerson = false
     @State private var editingMembership: KanbanResource?
@@ -90,6 +92,7 @@ struct KanbanBoardView: View {
             .task(id: app.highlightedKanbanTaskID) { await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
         }
         .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
+        .sheet(item: $newCardCell) { KanbanTaskEditor(newCardIn: project, column: $0.column, row: $0.row) }
         .sheet(item: $columnToDelete) { KanbanDeleteColumnSheet(column: $0) }
         .sheet(isPresented: $isAddingPerson) { KanbanAddPersonSheet(project: project) }
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
@@ -332,9 +335,7 @@ struct KanbanBoardView: View {
     }
 
     private func addCard(in column: KanbanColumn, row: KanbanRowKey) {
-        prompt = .init(title: "New card in \(column.name)", placeholder: "Title") { title in
-            _ = try app.kanbanService(context).createTask(in: project, title: title, column: column, row: row)
-        }
+        newCardCell = NewCardCell(column: column.id, row: row)
     }
 
     private func toggle(_ key: KanbanRowKey, collapsed: Bool) {
@@ -645,4 +646,10 @@ struct KanbanDeleteColumnSheet: View {
         }
         .padding(20)
     }
+}
+
+private struct NewCardCell: Identifiable {
+    let id = UUID()
+    let column: UUID
+    let row: KanbanRowKey
 }
