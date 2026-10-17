@@ -12,7 +12,7 @@ struct ShortcutsSheet: View {
         let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
         var groups: [Group] = [("Everywhere", [
             ("⌘F", "Search tasks and cards"), ("⇧⌘Y", "Weekly Summary"), ("⌘,", "Settings"), ("⌘/", "This list"),
-        ] + (policy.showsSwitcher ? [("⌘1 / ⌘2", "Planner / Kanban")] : []))]
+        ] + (policy.showsSwitcher ? [(ModuleShortcuts.shared.summary, "Planner / Kanban")] : []))]
         if policy.isVisible(.kanban) {
             groups.append(("Kanban board", [
                 ("⌘N", "New card in the backlog"), ("⌘Z / ⇧⌘Z", "Undo / redo a board change"),

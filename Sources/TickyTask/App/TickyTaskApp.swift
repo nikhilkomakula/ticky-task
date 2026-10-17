@@ -58,8 +58,8 @@ struct TickyTaskApp: App {
                 KanbanUndoCommands(appState: appState)
             }
             CommandGroup(before: .toolbar) {
-                ModuleCommand(appState: appState, module: .planner, key: "1")
-                ModuleCommand(appState: appState, module: .kanban, key: "2")
+                ModuleCommand(appState: appState, module: .planner)
+                ModuleCommand(appState: appState, module: .kanban)
                 Divider()
             }
         }
@@ -116,14 +116,15 @@ private struct ShortcutsCommand: View {
     }
 }
 
-/// View › Planner (⌘1) / Kanban (⌘2); disabled while the module is hidden.
+/// View › Planner / Kanban (⌘1 / ⌘2 unless changed in Settings › Shortcuts); disabled while
+/// the module is hidden.
 private struct ModuleCommand: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
     @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
     let appState: AppState
     let module: AppModule
-    let key: KeyEquivalent
+    private let shortcuts = ModuleShortcuts.shared
 
     var body: some View {
         Button(module.label) {
@@ -131,7 +132,7 @@ private struct ModuleCommand: View {
             NSApp.activate(ignoringOtherApps: true)
             appState.module = module
         }
-        .keyboardShortcut(key, modifiers: .command)
+        .keyboardShortcut(shortcuts.menuShortcut(for: module))
         .disabled(!ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).isVisible(module))
     }
 }

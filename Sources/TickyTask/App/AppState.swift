@@ -42,7 +42,7 @@ final class AppState {
     /// in Settings › General.
     var availableUpdate: AppRelease?
 
-    /// The module the main window shows (⌘1 / ⌘2).
+    /// The module the main window shows (View › Planner / Kanban).
     var module: AppModule = .planner
     var kanban = KanbanNavigation()
     /// A board card to briefly highlight after a reveal (Attention, search).

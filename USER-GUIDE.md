@@ -8,7 +8,7 @@ TickyTask's **Kanban** module helps you track work across teams with visibility 
 
 **Turn Kanban on.** Open **Settings › Kanban** and toggle **Show Kanban**. The module appears next to the Planner in the top bar.
 
-**Switch between modules.** Press **⌘1** for Planner or **⌘2** for Kanban. Or click the **Planner | Kanban** segmented control at the top left of the window (it appears only when both modules are visible).
+**Switch between modules.** Press **⌘1** for Planner or **⌘2** for Kanban. Or click the **Planner | Kanban** segmented control at the top of the window (it appears only when both modules are visible). To use different keys, open **Settings › Shortcuts**, click **Show Planner** or **Show Kanban** under **In TickyTask**, and press the new combination; click the field's **×** to clear it, or **Restore ⌘1 and ⌘2** to go back. A combination another menu item already uses is refused, so to swap the two, clear one first.
 
 **Create your first board.** In the Kanban sidebar, click **New board**. Choose a template:
 - **Default**: To Do → In Progress → Done.
@@ -231,7 +231,7 @@ Restoring a backup clears undo/redo for the board and imports. Everything is res
 |---|---|
 | **Everywhere** | |
 | ⌘F | Search tasks and cards |
-| ⌘1 / ⌘2 | Switch to Planner / Kanban |
+| ⌘1 / ⌘2 | Switch to Planner / Kanban (changeable in Settings › Shortcuts) |
 | ⌘/ | Show this shortcut list |
 | **On the Kanban board** | |
 | ⌘N | New card in the backlog |

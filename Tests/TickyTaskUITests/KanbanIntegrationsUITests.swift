@@ -48,6 +48,41 @@ final class KanbanIntegrationsUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the demo board opens")
     }
 
+    /// Settings › Shortcuts changes the Kanban shortcut: the new keys switch module and ⌘2 no
+    /// longer does; Restore brings ⌘1 and ⌘2 back. (Shortcuts are app preferences, so the test
+    /// restores them at both ends.)
+    func testChangeTheKanbanShortcut() {
+        let app = launch()
+        func openShortcuts() {
+            app.typeKey(",", modifierFlags: .command)
+            let tab = app.toolbars.buttons["Shortcuts"].firstMatch
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "Settings has a Shortcuts tab")
+            tab.click()
+            XCTAssertTrue(element(app, "shortcut-restore-modules").waitForExistence(timeout: 5))
+        }
+        openShortcuts()
+        element(app, "shortcut-restore-modules").click()
+        let recorder = element(app, "shortcut-show-kanban").exists ? element(app, "shortcut-show-kanban") : app.searchFields.element(boundBy: 4)
+        XCTAssertTrue(recorder.exists, "the Kanban recorder is there")
+        recorder.click()
+        app.typeKey("k", modifierFlags: [.command, .option, .control])
+        app.typeKey("w", modifierFlags: .command)   // close Settings
+
+        let board = element(app, "kanban-sidebar-Platform")
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertFalse(board.waitForExistence(timeout: 2), "⌘2 no longer opens Kanban")
+        app.typeKey("k", modifierFlags: [.command, .option, .control])
+        XCTAssertTrue(board.waitForExistence(timeout: 5), "the new shortcut opens Kanban")
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Alpha"].waitForExistence(timeout: 5), "⌘1 still opens the Planner")
+
+        openShortcuts()
+        element(app, "shortcut-restore-modules").click()
+        app.typeKey("w", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertTrue(board.waitForExistence(timeout: 5), "restored: ⌘2 opens Kanban again")
+    }
+
     func testSummarySheetListsTheBoardsCards() {
         let app = launch()
         openPlatform(app)

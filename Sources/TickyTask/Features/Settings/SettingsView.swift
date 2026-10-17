@@ -154,13 +154,26 @@ private struct ShortcutsSettingsView: View {
 
     var body: some View {
         Form {
-            KeyboardShortcuts.Recorder("Open TickyTask:", name: .openApp)
-            KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
-            KeyboardShortcuts.Recorder("Toggle menu bar:", name: .toggleMenuBar)
-            Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
-            Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section("From any app") {
+                KeyboardShortcuts.Recorder("Open TickyTask:", name: .openApp)
+                KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
+                KeyboardShortcuts.Recorder("Toggle menu bar:", name: .toggleMenuBar)
+                Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
+                Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("In TickyTask") {
+                KeyboardShortcuts.Recorder("Show Planner:", name: .showPlanner) { _ in ModuleShortcuts.shared.reload() }
+                    .accessibilityIdentifier("shortcut-show-planner")
+                KeyboardShortcuts.Recorder("Show Kanban:", name: .showKanban) { _ in ModuleShortcuts.shared.reload() }
+                    .accessibilityIdentifier("shortcut-show-kanban")
+                Button("Restore ⌘1 and ⌘2") { ModuleShortcuts.shared.restoreDefaults() }
+                    .accessibilityIdentifier("shortcut-restore-modules")
+                Text("Switch the main window between Planner and Kanban (the View menu shows them). To swap the two, clear one first; a shortcut another menu item already uses is refused.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()
