@@ -66,4 +66,18 @@ struct KanbanEditorTests {
         #expect(card.column?.id == project.orderedColumns[0].id && card.dependsOn.isEmpty)
         #expect(project.activities.count == afterSetup && afterSetup > entries)
     }
+
+    @Test("A blocking WIP limit refuses a new card in a full column")
+    func createRespectsBlockingLimit() throws {
+        let (s, _, project, _) = try board()
+        let doing = project.orderedColumns[1]
+        try s.editColumn(doing, wipLimit: .some(1))
+        _ = try s.createTask(in: project, title: "One", column: doing)
+        _ = try s.createTask(in: project, title: "Two (warn policy)", column: doing)
+        project.wipPolicy = .block
+        let count = project.tasks.count
+        #expect(throws: KanbanServiceError.wipBlocked([doing.id])) { try s.createTask(in: project, title: "Three", column: doing) }
+        #expect(project.tasks.count == count)
+        _ = try s.createTask(in: project, title: "Backlog is fine")
+    }
 }

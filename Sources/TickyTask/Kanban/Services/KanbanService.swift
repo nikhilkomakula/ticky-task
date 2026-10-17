@@ -514,6 +514,11 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         guard let column = column ?? project.columns.first(where: { $0.kind == .backlog }), column.project?.id == project.id
         else { throw KanbanServiceError.invariant("Pick a column on this board.") }
+        // A blocking WIP limit refuses a new card in a full column, as it refuses a move.
+        if project.wipPolicy == .block, let limit = column.wipLimit,
+           columnCards(column).filter({ $0.archivedAt == nil }).count >= limit {
+            throw KanbanServiceError.wipBlocked([column.id])
+        }
         let resource = try resource(for: row, in: project)
         let task = KanbanTask(title: title)
         task.createdAt = now(); task.updatedAt = now()

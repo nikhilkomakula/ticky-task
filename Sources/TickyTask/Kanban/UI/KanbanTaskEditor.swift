@@ -345,7 +345,7 @@ struct KanbanTaskEditor: View {
             if let labels { try service.setLabels(task, labels); saved.append("labels") }
             if let prerequisites { try service.setDependencies(task, prerequisites); saved.append("dependencies") }
             loadedNotes = notes
-            let suggest = try saveSteps(service)
+            let suggest = try saveSteps(service, saved: &saved)
             if suggest, task.column?.kind != .done { suggestDone = true } else { dismiss() }
         } catch {
             self.error = saved.isEmpty ? error.localizedDescription
@@ -356,22 +356,32 @@ struct KanbanTaskEditor: View {
     /// Applies step deletions, renames, ticks and additions. A new step takes its saved id at
     /// once, so pressing Done again never adds it twice. Suggests Done only when a tick
     /// finished the list and every step on the card is done afterwards.
-    private func saveSteps(_ service: KanbanService) throws -> Bool {
+    private func saveSteps(_ service: KanbanService, saved: inout [String]) throws -> Bool {
         var ticked = false
         let kept = Set(steps.map(\.id))
-        for subtask in task.subtasks where !kept.contains(subtask.id) { try service.deleteSubtask(subtask) }
+        for subtask in task.subtasks where !kept.contains(subtask.id) {
+            try service.deleteSubtask(subtask)
+            saved.insertIfMissing("subtasks")
+        }
         for index in steps.indices {
             let draft = steps[index]
             let subtask: KanbanSubtask
             if draft.isNew {
                 subtask = try service.addSubtask(to: task, title: draft.title.trimmingCharacters(in: .whitespaces))
-                steps[index] = StepDraft(id: subtask.id, title: subtask.title, isDone: subtask.isDone)
+                steps[index] = StepDraft(id: subtask.id, title: subtask.title, isDone: draft.isDone)
+                saved.insertIfMissing("subtasks")
             } else {
                 guard let existing = task.subtasks.first(where: { $0.id == draft.id }) else { continue }
                 subtask = existing
-                try service.renameSubtask(subtask, draft.title)
+                if subtask.title != draft.title.trimmingCharacters(in: .whitespaces) {
+                    try service.renameSubtask(subtask, draft.title)
+                    saved.insertIfMissing("subtasks")
+                }
             }
-            if subtask.isDone != draft.isDone, try service.setSubtaskDone(subtask, draft.isDone) { ticked = true }
+            if subtask.isDone != draft.isDone {
+                if try service.setSubtaskDone(subtask, draft.isDone) { ticked = true }
+                saved.insertIfMissing("subtasks")
+            }
         }
         return ticked && !task.subtasks.isEmpty && task.subtasks.allSatisfy(\.isDone)
     }
@@ -401,6 +411,10 @@ struct KanbanTaskEditor: View {
             self.error = error.localizedDescription
         }
     }
+}
+
+private extension Array where Element == String {
+    mutating func insertIfMissing(_ item: String) { if !contains(item) { append(item) } }
 }
 
 /// Toggleable chips that wrap onto new lines.
