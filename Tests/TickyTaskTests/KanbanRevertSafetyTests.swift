@@ -483,4 +483,44 @@ struct KanbanRevertSafetyTests {
         #expect(throws: KanbanServiceError.self) { try b.service.undoPersonArchive(ravi, group: miaGroup) }
         #expect(ravi.archivedAt != nil && mia.archivedAt != nil && b.mia.archivedAt != nil)
     }
+
+    // MARK: - Round 6 (Codex)
+
+    @Test("Bringing an archived card back into a column that became Done: revert is refused, restore completes it")
+    func unarchiveIntoNowDoneColumn() throws {
+        let b = try board()
+        let column = try b.service.addColumn(to: b.project, name: "Review", at: 1)
+        let original = try b.service.createTask(in: b.project, title: "T", column: column)
+        try b.service.archiveTask(original)
+        let archive = b.last()
+        let id = original.id
+        try b.service.deleteTask(original)
+        try b.service.editColumn(column, kind: .done)              // empty now, so allowed
+        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" }))
+        let card = try #require(b.project.tasks.first { $0.id == id })
+        #expect(card.archivedAt != nil && card.column?.id == column.id)
+        #expect(throws: KanbanServiceError.self) { try b.service.revert(archive) }
+        #expect(card.archivedAt != nil)
+        try b.service.restoreTask(card)
+        #expect(card.archivedAt == nil && card.completedAt != nil, "restoring completes it in Done")
+        try b.service.undo(in: b.project)
+        #expect(card.archivedAt != nil && card.completedAt == nil, "and ⌘Z puts it back exactly")
+    }
+
+    @Test("Restoring a card whose membership was archived meanwhile brings it back Unassigned")
+    func restoreOntoArchivedMembership() throws {
+        let b = try board()
+        let card = try b.service.createTask(in: b.project, title: "T", row: .resource(b.mia.id))
+        try b.service.archiveTask(card)
+        let id = card.id
+        try b.service.deleteTask(card)
+        try b.service.archiveMembership(b.mia)
+        try b.service.revert(try #require(b.project.activities.first { $0.kindRaw == "deleted" }))
+        let back = try #require(b.project.tasks.first { $0.id == id })
+        try b.service.restoreTask(back)
+        #expect(back.archivedAt == nil && back.resource == nil)
+        try b.service.edit(back, [.title: .string("New")])
+        try b.service.undo(in: b.project)
+        #expect(back.title == "T", "later edits still undo")
+    }
 }

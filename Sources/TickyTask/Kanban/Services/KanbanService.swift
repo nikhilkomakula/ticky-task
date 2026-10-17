@@ -737,7 +737,21 @@ struct KanbanService {
         let stamp = archived ? now() : nil
         let change = KanbanFieldChange(entity: .task, id: task.id, field: "archivedAt",
                                        old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date))
-        let data = try KanbanActivityPayload(changes: [change]).encoded()
+        // A card coming back must fit the board as it is now: complete exactly when its
+        // column is Done, and Unassigned if its membership was archived meanwhile.
+        var transitions: [KanbanTransition] = []
+        if !archived {
+            var to = placement(task)
+            if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
+            if let resource = task.resource, resource.archivedAt != nil {
+                to.resourceID = nil
+                to.sortIndex = (project.tasks.filter { $0.id != task.id && $0.archivedAt == nil && $0.column?.id == task.column?.id && $0.resource == nil }
+                    .map(\.sortIndex).max() ?? -1) + 1
+            }
+            if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
+        }
+        let data = try KanbanActivityPayload(transitions: transitions, changes: [change]).encoded()
+        applyTransitions(transitions, in: project)
         task.archivedAt = stamp
         try save(project, kind: archived ? .archived : .restored, taskIDs: [task.id],
                  summary: "\(archived ? "Archived" : "Restored") \(task.title)", encodedPayload: data)

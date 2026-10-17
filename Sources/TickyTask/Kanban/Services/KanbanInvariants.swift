@@ -62,7 +62,10 @@ struct KanbanInvariants {
         for change in payload.changes {
             switch (change.entity, change.field) {
             case (.task, "dependsOn"): if case let .uuids(ids)? = change.new { next.dependencies[change.id] = Set(ids) }
-            case (.task, "archivedAt"): next.cards[change.id]?.live = change.new == nil
+            case (.task, "archivedAt"):
+                next.cards[change.id]?.live = change.new == nil
+                // A card coming back must fit where it is: complete in Done, on an active row.
+                if change.new == nil { next.placed.insert(change.id) }
             case (.resource, "archivedAt"): next.memberships[change.id]?.active = change.new == nil
             case (.column, "kind"):
                 if case let .string(kind)? = change.new { next.columns[change.id] = kind }
@@ -85,6 +88,9 @@ struct KanbanInvariants {
         // A card is complete exactly when it sits in a Done column.
         for id in placed {
             guard let card = cards[id], card.live, let column = card.column, let kind = columns[column] else { continue }
+            if let resource = card.resource, memberships[resource]?.active != true {
+                return "a card would come back on a row that isn't on the board"
+            }
             if (kind == KanbanColumnKind.done.rawValue) != card.completed {
                 return kind == KanbanColumnKind.done.rawValue
                     ? "a card would sit in a Done column without being complete"
