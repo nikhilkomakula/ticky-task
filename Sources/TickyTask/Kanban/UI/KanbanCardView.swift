@@ -36,11 +36,10 @@ struct KanbanCardView: View {
         .accessibilityIdentifier("kanban-card-\(task.title)")
     }
 
-    /// What the combined card element says beyond what's visible: the hidden Low priority,
-    /// the blocked reason and what it depends on.
+    /// What the combined card element says beyond what's visible: the blocked reason and what
+    /// it depends on.
     private var spokenDetails: String {
         var parts: [String] = []
-        if priority == .low { parts.append("Low priority") }
         if task.isBlocked, let reason = task.blockedReason, !reason.isEmpty { parts.append("Blocked: \(reason)") }
         if !task.dependsOn.isEmpty { parts.append("Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))") }
         return parts.joined(separator: ", ")
@@ -65,7 +64,7 @@ struct KanbanCardView: View {
         .onTapGesture(perform: onOpen)
     }
 
-    /// Critical and Medium/High glyphs sit on the title's first line; Low shows nothing.
+    /// The Critical flag and the priority glyph (as in the planner) sit on the title's first line.
     private var title: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             if task.isCritical {
@@ -73,11 +72,9 @@ struct KanbanCardView: View {
                     .help("Critical")
                     .accessibilityLabel("Critical")
             }
-            if priority != .low {
-                Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(priority.tint)
-                    .help("\(priority.label) priority")
-                    .accessibilityLabel("\(priority.label) priority")
-            }
+            Image(systemName: priority.symbol).font(.system(size: 10)).foregroundStyle(priority.tint)
+                .help("\(priority.label) priority")
+                .accessibilityLabel("\(priority.label) priority")
             Text(task.title)
                 .font(.system(size: 13, weight: .medium))
                 .lineSpacing(2)

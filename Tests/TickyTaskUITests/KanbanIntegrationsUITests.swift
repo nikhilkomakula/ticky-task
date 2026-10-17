@@ -16,6 +16,12 @@ final class KanbanIntegrationsUITests: XCTestCase {
         return app
     }
 
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        return condition()
+    }
+
     private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)[id].firstMatch
     }
@@ -49,8 +55,8 @@ final class KanbanIntegrationsUITests: XCTestCase {
     }
 
     /// Settings › Shortcuts changes the Kanban shortcut: the new keys switch module and ⌘2 no
-    /// longer does; Restore brings ⌘1 and ⌘2 back. (Shortcuts are app preferences, so the test
-    /// restores them at both ends.)
+    /// longer does; Restore brings ⌘1 and ⌘2 back. (Under -uitest the shortcuts live in a store
+    /// emptied at each launch, so a failure here can't leave ⌘2 changed for other tests.)
     func testChangeTheKanbanShortcut() {
         let app = launch()
         func openShortcuts() {
@@ -61,11 +67,11 @@ final class KanbanIntegrationsUITests: XCTestCase {
             XCTAssertTrue(element(app, "shortcut-restore-modules").waitForExistence(timeout: 5))
         }
         openShortcuts()
-        element(app, "shortcut-restore-modules").click()
-        let recorder = element(app, "shortcut-show-kanban").exists ? element(app, "shortcut-show-kanban") : app.searchFields.element(boundBy: 4)
+        let recorder = element(app, "shortcut-show-kanban")
         XCTAssertTrue(recorder.exists, "the Kanban recorder is there")
         recorder.click()
         app.typeKey("k", modifierFlags: [.command, .option, .control])
+        XCTAssertTrue(eventually { (recorder.value as? String) == "⌃⌥⌘K" || recorder.label.contains("⌃⌥⌘K") }, "the new keys are recorded")
         app.typeKey("w", modifierFlags: .command)   // close Settings
 
         let board = element(app, "kanban-sidebar-Platform")

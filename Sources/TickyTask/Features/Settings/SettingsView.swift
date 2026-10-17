@@ -164,13 +164,11 @@ private struct ShortcutsSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("In TickyTask") {
-                KeyboardShortcuts.Recorder("Show Planner:", name: .showPlanner) { _ in ModuleShortcuts.shared.reload() }
-                    .accessibilityIdentifier("shortcut-show-planner")
-                KeyboardShortcuts.Recorder("Show Kanban:", name: .showKanban) { _ in ModuleShortcuts.shared.reload() }
-                    .accessibilityIdentifier("shortcut-show-kanban")
+                ModuleShortcutRecorder(module: .planner)
+                ModuleShortcutRecorder(module: .kanban)
                 Button("Restore ⌘1 and ⌘2") { ModuleShortcuts.shared.restoreDefaults() }
                     .accessibilityIdentifier("shortcut-restore-modules")
-                Text("Switch the main window between Planner and Kanban (the View menu shows them). To swap the two, clear one first; a shortcut another menu item already uses is refused.")
+                Text("Switch the main window between Planner and Kanban (the View menu shows them). Click a shortcut, then press the new keys; Esc cancels. Keys already used by the other module, a global shortcut or another menu item are refused, so to swap the two, clear one first.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
