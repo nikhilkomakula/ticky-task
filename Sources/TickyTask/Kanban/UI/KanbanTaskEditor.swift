@@ -50,6 +50,13 @@ struct KanbanTaskEditor: View {
     @State private var scheduledNote: String?
     @FocusState private var titleFocused: Bool
     @State private var showLabelManager = false
+    // Optional sections start collapsed, and open on load when they have content (design: the
+    // editor fits a laptop screen); the choice lasts for this presentation only.
+    @State private var showSteps = false
+    @State private var showDetails = false
+    @State private var showSchedule = false
+    @State private var showLinks = false
+    @State private var showHistory = false
 
     // MARK: - Initialization
 
@@ -94,12 +101,17 @@ struct KanbanTaskEditor: View {
                         .accessibilityIdentifier("kanban-editor-title")
                         .focused($titleFocused)
                 }
-                Section("Details") { RichNotesEditor(text: $notes) }
                 placementSection
                 attributesSection
+                stepsSection
+                Section {
+                    KanbanEditorDisclosure("Details", summary: detailsSummary, isExpanded: $showDetails, id: "details") {
+                        RichNotesEditor(text: $notes)
+                            .frame(minHeight: 120, idealHeight: 140, maxHeight: 220)
+                    }
+                }
                 datesSection
                 linksSection
-                stepsSection
                 if !isCreateMode { historySection }
             }
             .formStyle(.grouped)
@@ -109,9 +121,10 @@ struct KanbanTaskEditor: View {
                 footer
             }
         }
-        .frame(minWidth: 580, minHeight: 640)
+        .frame(minWidth: 580, idealWidth: 600, minHeight: 560, idealHeight: 680)
         .onAppear {
             load()
+            expandSectionsWithContent()
             if isCreateMode {
                 titleFocused = true
             }
@@ -214,7 +227,8 @@ struct KanbanTaskEditor: View {
     }
 
     private var datesSection: some View {
-        Section("Schedule") {
+        Section {
+          KanbanEditorDisclosure("Schedule", summary: scheduleSummary, isExpanded: $showSchedule, id: "schedule") {
             Toggle("Start date", isOn: $hasStart)
             if hasStart { DatePicker("Starts", selection: $start, displayedComponents: .date) }
             Toggle("Due date", isOn: $hasDue)
@@ -225,11 +239,13 @@ struct KanbanTaskEditor: View {
                 TextField("Hours", value: $estimate, format: .number)
                     .accessibilityIdentifier("kanban-editor-estimate")
             }
+          }
         }
     }
 
     private var linksSection: some View {
         Section {
+          KanbanEditorDisclosure("Jira & dependencies", summary: linksSummary, isExpanded: $showLinks, id: "links") {
             TextField("Jira link", text: $jiraURL, prompt: Text("https://…/browse/KEY-123"))
                 .accessibilityIdentifier("kanban-editor-jira")
             if !trimmedJira.isEmpty {
@@ -251,11 +267,13 @@ struct KanbanTaskEditor: View {
                 .fixedSize()
                 .accessibilityIdentifier("kanban-editor-dependencies")
             }
+          }
         }
     }
 
     private var stepsSection: some View {
-        Section("Subtasks") {
+        Section {
+          KanbanEditorDisclosure("Subtasks", summary: stepsSummary, isExpanded: $showSteps, id: "subtasks") {
             ForEach(orderedSteps) { step in
                 if let index = steps.firstIndex(where: { $0.id == step.id }) {
                     ChecklistRow(title: $steps[index].title, isDone: $steps[index].isDone,
@@ -270,6 +288,7 @@ struct KanbanTaskEditor: View {
                     .onSubmit(addStep)
                     .accessibilityIdentifier("kanban-editor-add-subtask")
             }
+          }
         }
     }
 
@@ -278,7 +297,9 @@ struct KanbanTaskEditor: View {
         let entries: [KanbanActivity] = task.map { card in
             (card.project?.activities ?? []).filter { $0.taskIDs.contains(card.id) }.sorted { $0.seq > $1.seq }
         } ?? []
-        return Section("History") {
+        return Section {
+          KanbanEditorDisclosure("History", summary: entries.isEmpty ? "No changes" : "\(entries.count) change\(entries.count == 1 ? "" : "s")",
+                                 isExpanded: $showHistory, id: "history") {
             if entries.isEmpty {
                 Text("No changes yet.").foregroundStyle(.secondary)
             }
@@ -298,7 +319,44 @@ struct KanbanTaskEditor: View {
                     }
                 }
             }
+          }
         }
+    }
+
+    // MARK: - Collapsible sections
+
+    /// Opens the optional sections that already hold something (a new card has none).
+    private func expandSectionsWithContent() {
+        showSteps = !steps.isEmpty
+        showDetails = !String(notes.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        showSchedule = hasStart || hasDue || hasEstimate
+        showLinks = !trimmedJira.isEmpty || !dependencyIDs.isEmpty
+    }
+
+    private var stepsSummary: String {
+        steps.isEmpty ? "None" : "\(steps.filter(\.isDone).count)/\(steps.count) done"
+    }
+
+    private var detailsSummary: String {
+        let lines = String(notes.characters).split(whereSeparator: \.isNewline)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        return lines == 0 ? "None" : "\(lines) line\(lines == 1 ? "" : "s")"
+    }
+
+    private var scheduleSummary: String {
+        let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        var parts: [String] = []
+        if hasStart { parts.append("starts \(start.formatted(day))") }
+        if hasDue { parts.append("due \(due.formatted(day))") }
+        if hasEstimate { parts.append("\(estimate.formatted(.number.precision(.fractionLength(0...1))))h") }
+        return parts.isEmpty ? "Not set" : parts.joined(separator: " · ")
+    }
+
+    private var linksSummary: String {
+        var parts: [String] = []
+        if !trimmedJira.isEmpty { parts.append(jiraKey(trimmedJira) ?? "Jira link") }
+        if !dependencyIDs.isEmpty { parts.append("depends on \(dependencyIDs.count) card\(dependencyIDs.count == 1 ? "" : "s")") }
+        return parts.isEmpty ? "None" : parts.joined(separator: " · ")
     }
 
     private var footer: some View {
@@ -645,5 +703,48 @@ struct FlowLayout: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+}
+
+/// A section header that collapses its content: chevron, title and a one-line summary of
+/// what's inside, so the editor fits a laptop screen with everything optional closed.
+struct KanbanEditorDisclosure<Content: View>: View {
+    let title: String
+    let summary: String
+    @Binding var isExpanded: Bool
+    let id: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, summary: String, isExpanded: Binding<Bool>, id: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.summary = summary
+        self._isExpanded = isExpanded
+        self.id = id
+        self.content = content
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                Text(title).font(.headline)
+                Spacer()
+                if !isExpanded {
+                    Text(summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        .accessibilityLabel(title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed, \(summary)")
+        .accessibilityIdentifier("kanban-editor-\(id)-disclosure")
+        if isExpanded { content() }
     }
 }

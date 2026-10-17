@@ -35,15 +35,13 @@ struct KanbanCardView: View {
         .accessibilityIdentifier("kanban-card-\(task.title)")
     }
 
-    /// What the combined card element says beyond the visible labels: the hidden Low
-    /// priority, the blocked reason, what it depends on and any labels past the visible two.
+    /// What the combined card element says beyond what's visible: the hidden Low priority,
+    /// the blocked reason and what it depends on.
     private var spokenDetails: String {
         var parts: [String] = []
         if priority == .low { parts.append("Low priority") }
         if task.isBlocked, let reason = task.blockedReason, !reason.isEmpty { parts.append("Blocked: \(reason)") }
         if !task.dependsOn.isEmpty { parts.append("Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))") }
-        let labels = task.labels.sorted { $0.sortIndex < $1.sortIndex }.dropFirst(compact ? 1 : 2)
-        if !labels.isEmpty { parts.append("Also labelled \(labels.map(\.name).joined(separator: ", "))") }
         return parts.joined(separator: ", ")
     }
 
@@ -66,10 +64,8 @@ struct KanbanCardView: View {
                 Text(task.title)
                     .font(.system(size: 13))
                     .foregroundStyle(.primary)
-                    .lineLimit(compact ? 1 : 2)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)   // the full title, wrapped
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(task.title)
             }
             .frame(minHeight: 22, alignment: .leading)
             if !task.labels.isEmpty { labels }
@@ -83,37 +79,22 @@ struct KanbanCardView: View {
         .onTapGesture(perform: onOpen)
     }
 
-    /// A colour dot and the name for each label; two at most (one when compact), then "+n".
+    /// Every label as a small tag in its colour, wrapping onto more lines as needed.
     private var labels: some View {
-        let sorted = task.labels.sorted { $0.sortIndex < $1.sortIndex }
-        let shown = Array(sorted.prefix(compact ? 1 : 2))
-        let hidden = sorted.dropFirst(shown.count)
-        return HStack(spacing: 6) {
-            ForEach(shown) { label in
-                HStack(spacing: 3) {
-                    Circle()
-                        .fill(KanbanUI.color(label.colorHex) ?? .gray)
-                        .overlay(Circle().strokeBorder(Color.primary.opacity(0.35), lineWidth: 0.5))
-                        .frame(width: 6, height: 6)
-                        .help("Label")
-                    Text(label.name)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .frame(maxWidth: 64, alignment: .leading)
-                        .help(label.name)
-                }
-            }
-            if !hidden.isEmpty {
-                Text("+\(hidden.count)")
+        FlowLayout(spacing: 4) {
+            ForEach(task.labels.sorted { $0.sortIndex < $1.sortIndex }) { label in
+                let color = KanbanUI.color(label.colorHex) ?? .gray
+                Text(label.name)
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .help("More labels")
-                    .accessibilityLabel("\(hidden.count) more labels")
-                    .accessibilityValue(hidden.map(\.name).joined(separator: ", "))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(color.opacity(0.2)))
+                    .overlay(Capsule().strokeBorder(color.opacity(0.45), lineWidth: 0.5))
+                    .help("Label")
             }
         }
-        .lineLimit(1)
     }
 
     /// One quiet row, only what's set: due, estimate, Jira, blocked, dependencies, notes, steps.
@@ -149,9 +130,11 @@ struct KanbanCardView: View {
                         .accessibilityIdentifier("kanban-notes-\(task.id)")
                 }
                 if !subtasks.isEmpty {
-                    Text("\(subtasks.filter(\.isDone).count)/\(subtasks.count)")
-                        .monospacedDigit()
-                        .help("Steps")
+                    HStack(spacing: 2) {
+                        Image(systemName: "checklist")
+                        Text("\(subtasks.filter(\.isDone).count)/\(subtasks.count)").monospacedDigit()
+                    }
+                        .help("Subtasks")
                         .accessibilityLabel("\(subtasks.filter(\.isDone).count) of \(subtasks.count) steps done")
                 }
             }

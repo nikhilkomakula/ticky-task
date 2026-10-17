@@ -79,9 +79,11 @@ struct TaskRowView: View {
 
                 if !task.subtasks.isEmpty {
                     let done = task.subtasks.filter(\.isDone).count
-                    Text("\(done)/\(task.subtasks.count)")
+                    Label("\(done)/\(task.subtasks.count)", systemImage: "checklist")
+                        .labelStyle(.titleAndIcon)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .help("Subtasks")
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
