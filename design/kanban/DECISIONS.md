@@ -35,6 +35,7 @@ Each entry records what was decided, who raised it, Codex's position, and the ou
 | I3-d | Round 4 | **INCREMENT-3: APPROVED** — no findings | PR after increment 2 merges (no tag) |
 | I4-a | Increment 4 (card editor, quick add) | **CHANGES REQUESTED** — 5 should-fix: a refused later step (e.g. a dependency cycle) left earlier steps saved; a retry deleted and recreated saved steps; Move-to-Done suggested while a new step was open; reverting creation left the editor on a deleted card; archived prerequisites couldn't be removed. Nits: Revert offered on informational entries; a fragile step-count UI assertion | Fixed: every part is checked first (`checkEdit`, `checkMove`, `checkDependencies`) so nothing can be refused once saving starts, and an I/O failure names what's already saved (I-D7); new steps take their saved ids; Done is suggested only when every step is done afterwards; the editor closes if its card is gone; archived prerequisites listed as such; no Revert on `memberArchived`; the UI test reopens the editor |
 | I4-b | Round 2 | **CHANGES REQUESTED** — fixes 2–5 confirmed; **I-D7 accepted**; 2 should-fix: a new step's saved id replaced its draft tick (a retry left it unticked); quick add ignored a blocking WIP limit; nit: "already saved" omitted step changes | Fixed: the draft keeps its tick; `createTask` refuses a full column under the block policy; step changes are listed |
+| I4-c | Round 3 | **INCREMENT-4: APPROVED** — no findings | PR after increment 3 merges (no tag) |
 
 ### R2 issues and how they were resolved
 
