@@ -26,72 +26,84 @@ struct KanbanCardView: View {
 
         ZStack(alignment: .topTrailing) {
             // Main card content (the draggable part)
-            VStack(alignment: .leading, spacing: compact ? 3 : 5) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    if task.isCritical {
-                        Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(.red)
-                            .help("Critical")
-                            .accessibilityLabel("Critical")
-                    }
-                    Image(systemName: priority.symbol).font(.system(size: 11)).foregroundStyle(priority.tint)
-                        .help(priority.label.lowercased() == "low" ? "Low priority" : priority.label.lowercased() == "medium" ? "Medium priority" : "High priority")
-                        .accessibilityLabel("\(priority.label) priority")
-                    Text(task.title)
-                        .font(.system(size: 13))
-                        .lineLimit(compact ? 2 : 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    // Reserve 52pt for hover buttons (not visible, just space)
-                    if !isInDragPreview {
-                        Color.clear.frame(width: 52, height: 22)
-                    }
-                }
-                if !task.labels.isEmpty { labels }
-                metadata
-            }
-            .padding(.vertical, compact ? 4 : 6)
-            .padding(.horizontal, 8)
-            .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
-                                                                    lineWidth: highlighted || isSelected ? 2 : 1))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
+            cardContent
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .animation(.easeInOut(duration: 0.2), value: highlighted)
 
-            // Hover actions overlay (OUTSIDE gesture subtree)
+            // Hover actions overlay (OUTSIDE gesture subtree in KanbanBoardView)
             if !isInDragPreview && (isHovering || isFocused) {
-                HStack(spacing: 4) {
-                    Button(action: onOpen) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 11))
-                    }
-                    .help("Edit card")
-                    .accessibilityLabel("Edit card")
-                    .accessibilityIdentifier("kanban-card-edit-\(task.id)")
-
-                    if let onDelete {
-                        Button(action: onDelete) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11))
-                        }
-                        .help("Delete card")
-                        .accessibilityLabel("Delete card")
-                        .accessibilityIdentifier("kanban-card-delete-\(task.id)")
-                    }
-                }
-                .buttonStyle(.borderless)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
-                .frame(width: 52, height: 22)
+                cardHoverActions
             }
         }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .animation(.easeInOut(duration: 0.2), value: highlighted)
         .onHover { isHovering = $0 }
         .focused($isFocused)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Edit", onOpen)
         .accessibilityAction(named: "Delete") { onDelete?() }
-        .accessibilityIdentifier("kanban-card-\(task.id)")
+        .accessibilityIdentifier("kanban-card-\(task.title)")
+    }
+
+    private var cardContent: some View {
+        let highlighted = app.highlightedKanbanTaskID == task.id
+
+        return VStack(alignment: .leading, spacing: compact ? 3 : 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                if task.isCritical {
+                    Image(systemName: "flag.fill").font(.system(size: 11)).foregroundStyle(.red)
+                        .help("Critical")
+                        .accessibilityLabel("Critical")
+                }
+                Image(systemName: priority.symbol).font(.system(size: 11)).foregroundStyle(priority.tint)
+                    .help(priority.label.lowercased() == "low" ? "Low priority" : priority.label.lowercased() == "medium" ? "Medium priority" : "High priority")
+                    .accessibilityLabel("\(priority.label) priority")
+                Text(task.title)
+                    .font(.system(size: 13))
+                    .lineLimit(compact ? 2 : 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Reserve 52pt for hover buttons (not visible, just space)
+                if !isInDragPreview {
+                    Color.clear.frame(width: 52, height: 22)
+                }
+            }
+            if !task.labels.isEmpty { labels }
+            metadata
+        }
+        .padding(.vertical, compact ? 4 : 6)
+        .padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? Color.accentColor.opacity(0.18) : Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(highlighted || isSelected ? Color.accentColor : Color.primary.opacity(0.08),
+                                                                lineWidth: highlighted || isSelected ? 2 : 1))
+        .onTapGesture(perform: onOpen)
+    }
+
+    private var cardHoverActions: some View {
+        let blockedText = task.isBlocked ? (task.blockedReason.map { "Blocked: \($0)" } ?? "Blocked") : nil
+        let depsText = !task.dependsOn.isEmpty ? "Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))" : nil
+
+        return HStack(spacing: 4) {
+            Button(action: onOpen) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 11))
+            }
+            .help("Edit card")
+            .accessibilityLabel("Edit card")
+            .accessibilityIdentifier("kanban-card-edit-\(task.id)")
+
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                }
+                .help("Delete card")
+                .accessibilityLabel("Delete card")
+                .accessibilityIdentifier("kanban-card-delete-\(task.id)")
+            }
+        }
+        .buttonStyle(.borderless)
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
+        .frame(width: 52, height: 22)
     }
 
     private var labels: some View {
@@ -123,11 +135,13 @@ struct KanbanCardView: View {
                     Image(systemName: "hand.raised.fill").foregroundStyle(.red)
                         .help("Blocked")
                         .accessibilityLabel("Blocked")
+                        .accessibilityValue(task.blockedReason ?? "")
                 }
                 if !task.dependsOn.isEmpty {
                     Image(systemName: "arrow.triangle.branch").foregroundStyle(.secondary)
                         .help("Dependencies")
                         .accessibilityLabel("Has dependencies")
+                        .accessibilityValue(task.dependsOn.map(\.title).joined(separator: ", "))
                 }
                 Spacer(minLength: 0)
                 if task.hasNotes {
@@ -155,13 +169,16 @@ struct KanbanCardView: View {
         let calendar = Calendar.current
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()), to: calendar.startOfDay(for: due)).day ?? 0
         let open = task.column?.kind != .done
-        let color: Color = !open ? .secondary : days < 0 ? .red : days <= project.dueSoonThresholdDays ? .orange : .secondary
-        let helpText = open && days < 0 ? "Overdue" : days > 0 && days <= project.dueSoonThresholdDays ? "Due soon" : "Due date"
-        return Label(due.formatted(.dateTime.month(.abbreviated).day()), systemImage: days < 0 && open ? "exclamationmark.circle.fill" : days > 0 && days <= project.dueSoonThresholdDays && open ? "clock.fill" : "calendar")
+        let isOverdue = open && days < 0
+        let isDueSoon = open && days >= 0 && days <= project.dueSoonThresholdDays
+        let color: Color = isOverdue ? .red : isDueSoon ? .orange : .secondary
+        let helpText = isOverdue ? "Overdue" : isDueSoon ? "Due soon" : "Due date"
+        let icon = isOverdue ? "exclamationmark.circle.fill" : isDueSoon ? "clock.fill" : "calendar"
+        return Label(due.formatted(.dateTime.month(.abbreviated).day()), systemImage: icon)
             .labelStyle(.titleAndIcon)
             .foregroundStyle(color)
             .help(helpText)
-            .accessibilityLabel(open && days < 0 ? "Overdue, due \(due.formatted(date: .abbreviated, time: .omitted))"
+            .accessibilityLabel(isOverdue ? "Overdue, due \(due.formatted(date: .abbreviated, time: .omitted))"
                                 : "Due \(due.formatted(date: .abbreviated, time: .omitted))")
     }
 

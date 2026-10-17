@@ -346,4 +346,21 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "value CONTAINS 'without dates'")).firstMatch.waitForExistence(timeout: 5),
                       "undated cards are counted")
     }
+
+    func testCardDeleteButtonShowsAndDeletes() {
+        let app = launch()
+        openPlatform(app)
+        let card = element(app, "kanban-card-Write docs")
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "the card exists before delete")
+        // Hover to reveal the delete button
+        card.hover()
+        let deleteButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-delete-'")).firstMatch
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), "the delete button appears on hover")
+        deleteButton.click()
+        // Confirm in the dialog
+        let deleteConfirm = app.sheets.buttons["Delete Card"].firstMatch
+        XCTAssertTrue(deleteConfirm.waitForExistence(timeout: 5), "the delete confirmation dialog appears")
+        deleteConfirm.click()
+        XCTAssertFalse(element(app, "kanban-card-Write docs").exists, "the card is deleted")
+    }
 }

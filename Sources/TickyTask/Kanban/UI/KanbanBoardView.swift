@@ -16,6 +16,7 @@ struct KanbanBoardView: View {
     /// A cell's + opens the full card editor on that column and row.
     @State private var newCardCell: NewCardCell?
     @State private var columnToDelete: KanbanColumn?
+    @State private var cardToDelete: KanbanTask?
     @State private var isAddingPerson = false
     @State private var editingMembership: KanbanResource?
     @State private var archivingMembership: KanbanResource?
@@ -98,6 +99,17 @@ struct KanbanBoardView: View {
         .sheet(item: $editingMembership) { KanbanMembershipSheet(resource: $0) }
         .sheet(item: $editingTask) { KanbanTaskEditor(task: $0) }
         .sheet(item: $movingTask) { KanbanMoveSheet(task: $0) }
+        .confirmationDialog(
+            "Delete '\(cardToDelete?.title ?? "")'?",
+            isPresented: Binding(get: { cardToDelete != nil }, set: { if !$0 { cardToDelete = nil } }),
+            presenting: cardToDelete) { task in
+                Button("Delete Card", role: .destructive) {
+                    app.runKanban { try app.kanbanService(context).deleteTask(task) }
+                    cardToDelete = nil
+                }
+            } message: { task in
+                Text("You can bring it back from the Change Log.")
+            }
         .onDisappear { drag.cancel() }
         .confirmationDialog("Remove \(archivingMembership?.displayName ?? "") from this board?",
                             isPresented: Binding(get: { archivingMembership != nil }, set: { if !$0 { archivingMembership = nil } })) {
@@ -149,6 +161,7 @@ struct KanbanBoardView: View {
                                dragSource: { dragSource(for: $0, dragIDs: dragIDs) },
                                menuTasks: { menuTasks(for: $0) },
                                onOpen: { open($0) },
+                               onDelete: { cardToDelete = $0 },
                                onAdd: { addCard(in: column, row: row.key) })
                 }
             }
@@ -398,7 +411,7 @@ struct KanbanBoardView: View {
             prompt = .init(title: "Rename column", initial: column.name) { try service.editColumn(column, name: $0) }
         }
         Menu("Colour") {
-            Button("None") { app.runKanban { try service.editColumn(column, colorHex: .some(nil)) } }
+            Button("Stage default") { app.runKanban { try service.editColumn(column, colorHex: .some(nil)) } }
             ForEach(TaskColor.allCases) { color in
                 Button(String(describing: color).capitalized) { app.runKanban { try service.editColumn(column, colorHex: .some(color.hex)) } }
             }
@@ -443,13 +456,16 @@ private struct KanbanCell: View {
     var dragSource: (KanbanTask) -> BoardDragSource
     var menuTasks: (KanbanTask) -> [KanbanTask]
     var onOpen: (KanbanTask) -> Void
+    var onDelete: (KanbanTask) -> Void
     var onAdd: () -> Void
     @State private var isHovering = false
 
     var body: some View {
         VStack(spacing: 6) {
             ForEach(tasks) { task in
-                KanbanCardView(task: task, project: project, isSelected: selected.contains(task.id), onOpen: { onOpen(task) })
+                KanbanCardView(task: task, project: project, isSelected: selected.contains(task.id),
+                              onOpen: { onOpen(task) },
+                              onDelete: { onDelete(task) })
                     .id(task.id)
                     .opacity(drag.isDragging(card: task.id) ? 0.001 : task.archivedAt != nil ? 0.5 : 1)
                     .contextMenu { KanbanBulkMenu(project: project, tasks: menuTasks(task), onOpen: onOpen) }
