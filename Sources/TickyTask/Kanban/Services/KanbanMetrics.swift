@@ -608,7 +608,16 @@ extension MetricsSnapshot {
     @MainActor
     init(project: KanbanProject, now: Date, calendar: Calendar) {
         var blockedSince: [UUID: Date] = [:]
-        for activity in project.activities.sorted(by: { $0.seq < $1.seq }) where activity.kindRaw == KanbanActivityKind.edited.rawValue {
+        // Fetched (only edits, cards with their relationships), not walked through the inverse
+        // arrays: a long log would otherwise load every entry, and each card's relations one by one.
+        let pid = project.id, edited = KanbanActivityKind.edited.rawValue
+        let edits = (try? project.modelContext?.fetch(FetchDescriptor<KanbanActivity>(
+            predicate: #Predicate { $0.project?.id == pid && $0.kindRaw == edited }, sortBy: [SortDescriptor(\.seq)])))
+            ?? project.activities.filter { $0.kindRaw == edited }.sorted { $0.seq < $1.seq }
+        var cardFetch = FetchDescriptor<KanbanTask>(predicate: #Predicate { $0.project?.id == pid })
+        cardFetch.relationshipKeyPathsForPrefetching = [\.column, \.resource, \.labels, \.subtasks, \.dependsOn]
+        let tasks = (try? project.modelContext?.fetch(cardFetch)) ?? project.tasks
+        for activity in edits {
             guard let payload = try? KanbanActivityPayload.decode(activity.payload) else { continue }
             for change in payload.changes where change.entity == .task && change.field == "isBlocked" && change.new == .bool(true) {
                 blockedSince[change.id] = activity.at
@@ -626,7 +635,7 @@ extension MetricsSnapshot {
                        capacityHoursOverride: r.capacityHoursPerWeekOverride, openTaskTargetOverride: r.openTaskTargetOverride,
                        startDate: r.startDate, endDate: r.endDate, archived: r.archivedAt != nil)
             },
-            cards: project.tasks.compactMap { t in
+            cards: tasks.compactMap { t in
                 guard let column = t.column else { return nil }
                 return Card(id: t.id, title: t.title, column: column.id, resource: t.resource?.id, priority: t.priority,
                             isCritical: t.isCritical, dueDate: t.dueDate, startDate: t.startDate, estimateHours: t.estimateHours,

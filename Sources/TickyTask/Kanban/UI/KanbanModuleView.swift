@@ -112,6 +112,18 @@ enum KanbanUI {
 
     static func color(_ hex: String?) -> Color? { hex.flatMap { Color(hex: $0) } }
 
+    /// Display names that tell people with the same name apart ("Alex", "Alex (2)").
+    static func uniqueNames(_ people: [(id: UUID, name: String)]) -> [UUID: String] {
+        var seen: [String: Int] = [:]
+        var result: [UUID: String] = [:]
+        for person in people {
+            let n = (seen[person.name] ?? 0) + 1
+            seen[person.name] = n
+            result[person.id] = n == 1 ? person.name : "\(person.name) (\(n))"
+        }
+        return result
+    }
+
     static func bandColor(_ band: KanbanMetrics.Band?) -> Color {
         switch band {
         case .green: .green

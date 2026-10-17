@@ -98,6 +98,10 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
     /// nil: either; true: has one; false: hasn't.
     var hasJira: Bool?
     var hasEstimate: Bool?
+    /// Only cards not in a Done column.
+    var openOnly = false
+    /// Only cards in these columns.
+    var columnIDs: Set<UUID> = []
 
     init() {}
 
@@ -113,6 +117,8 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         blockedOnly = (try? c.decodeIfPresent(Bool.self, forKey: .blockedOnly)) ?? false
         hasJira = try? c.decodeIfPresent(Bool.self, forKey: .hasJira)
         hasEstimate = try? c.decodeIfPresent(Bool.self, forKey: .hasEstimate)
+        openOnly = (try? c.decodeIfPresent(Bool.self, forKey: .openOnly)) ?? false
+        columnIDs = (try? c.decodeIfPresent(Set<UUID>.self, forKey: .columnIDs)) ?? []
     }
 
     var isActive: Bool { self != KanbanCardFilter() }
@@ -131,6 +137,8 @@ struct KanbanCardFilter: Codable, Equatable, Sendable {
         if blockedOnly, !task.isBlocked { return false }
         if let hasJira, (task.jiraURL.map { KanbanMetrics.isWebURL($0) } ?? false) != hasJira { return false }
         if let hasEstimate, (task.estimateHours != nil) != hasEstimate { return false }
+        if openOnly, task.column?.kind == .done { return false }
+        if !columnIDs.isEmpty, !(task.column.map { columnIDs.contains($0.id) } ?? false) { return false }
         return true
     }
 

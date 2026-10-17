@@ -90,6 +90,9 @@ struct KanbanReplayTests {
         try b.move(a, to: b.done, on: F.date(10, 4))   // a clock skew: the later entry is dated earlier
         let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
         #expect(countsOn(day(days, F.date(10, 6))) == ["To Do": 0, "In Progress": 0, "Done": 1], "applied in seq order")
+        #expect(countsOn(day(days, F.date(10, 4))) == ["To Do": 0, "In Progress": 0, "Done": 1],
+                "the earlier-seq entry dated the 5th counts from the 4th, the next entry's time")
+        #expect(countsOn(day(days, F.date(10, 3))) == ["To Do": 1, "In Progress": 0, "Done": 0])
     }
 
     @Test func groupedAndInverseTransitionsReplay() throws {
@@ -232,30 +235,72 @@ struct KanbanReplayTests {
         #expect(elapsed < .milliseconds(300), "\(elapsed)")
     }
 
-    @Test func referenceFixtureBudget() {
-        // 500 cards and 5,000 moves over 90 days, as in the design's budget (02 §5).
-        let columns = (0..<10).map { i in MetricsSnapshot.Column(id: UUID(), name: "C\(i)", kind: i == 0 ? .backlog : i == 9 ? .done : .active) }
-        let cards = (0..<500).map { i in F.card(columns[i % 10].id, created: F.date(7, 1 + i % 28)) }
-        var s = F.board([], cards)
-        s.columns = columns
-        func record(_ c: MetricsSnapshot.Column) -> KanbanPlacementRecord {
-            KanbanPlacementRecord(columnID: c.id, columnName: c.name, columnKind: c.kind.rawValue, resourceID: nil, sortIndex: 0, completedAt: nil)
+    /// The design's budget (02 §5) on a real store: 500 cards, 20 people, 10 columns and 5,000
+    /// change-log entries, timed cold — snapshot, decoding the log, and every metric and
+    /// replay the dashboard draws.
+    @Test func referenceFixtureBudget() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let project = KanbanProject(name: "Reference", key: "REF")
+        context.insert(project)
+        let columns = (0..<10).map { i in KanbanColumn(name: "C\(i)", kind: i == 0 ? .backlog : i == 9 ? .done : .active, sortIndex: Double(i)) }
+        columns.forEach { context.insert($0); $0.project = project }
+        let resources = (0..<20).map { i -> KanbanResource in
+            let person = KanbanPerson(name: "P\(i)", initials: "P\(i)")
+            context.insert(person)
+            let r = KanbanResource(person: person, allocationPercent: i % 4 == 0 ? 50 : 100, sortIndex: Double(i))
+            context.insert(r)
+            r.project = project
+            return r
         }
-        let activities = (0..<5000).map { i -> MetricsActivity in
-            let card = cards[i % 500], from = columns[i % 10], to = columns[(i + 1) % 10]
-            let payload = KanbanActivityPayload(transitions: [KanbanTransition(taskID: card.id, from: record(from), to: record(to))])
-            return MetricsActivity(seq: i + 1, at: F.date(7, 20).addingTimeInterval(Double(i) * 1500), kind: .moved, payload: payload)
+        let tasks = (0..<500).map { i -> KanbanTask in
+            let t = KanbanTask(title: "Card \(i)", priority: i % 3, sortIndex: Double(i))
+            context.insert(t)
+            t.project = project
+            t.column = columns[i % 10]
+            t.resource = i % 7 == 0 ? nil : resources[i % 20]
+            t.createdAt = F.date(7, 1 + i % 28)
+            t.dueDate = i % 2 == 0 ? F.date(11, 1 + i % 28) : nil
+            return t
         }
+        func record(_ c: KanbanColumn) -> KanbanPlacementRecord {
+            KanbanPlacementRecord(columnID: c.id, columnName: c.name, columnKind: c.kindRaw, resourceID: nil, sortIndex: 0, completedAt: nil)
+        }
+        for i in 0..<5000 {
+            let card = tasks[i % 500]
+            let payload = KanbanActivityPayload(transitions: [KanbanTransition(taskID: card.id, from: record(columns[i % 10]), to: record(columns[(i + 1) % 10]))])
+            let entry = KanbanActivity(seq: i + 1, at: F.date(7, 20).addingTimeInterval(Double(i) * 1500), kind: KanbanActivityKind.moved.rawValue,
+                                       taskIDs: [card.id], payload: try payload.encoded())
+            context.insert(entry)
+            entry.project = project
+        }
+        try context.save()
+
+        let clock = ContinuousClock()
+        let phases = clock.measure { _ = MetricsSnapshot(project: project, now: F.now, calendar: F.calendar()) }
+        let decode = clock.measure { _ = MetricsActivity.records(of: project) }
         let elapsed = ContinuousClock().measure {
-            _ = R.cfd(s, activities: activities, days: 90)
-            _ = R.throughput(s, activities: activities, weeks: 12)
-            _ = R.agingWIP(s, activities: activities)
-            _ = R.burnUp(s, activities: activities, days: 90)
+            let s = MetricsSnapshot(project: project, now: F.now, calendar: F.calendar())
+            let log = MetricsActivity.records(of: project)
+            _ = KanbanMetrics.loadVsCapacity(s)
+            _ = KanbanMetrics.capacityHeatmap(s, weeks: 12)
+            _ = KanbanMetrics.composition(s)
+            _ = KanbanMetrics.peopleRollup([s])
+            _ = KanbanMetrics.tasksByColumn(s)
+            _ = KanbanMetrics.unassignedBacklog(s)
+            _ = KanbanMetrics.priorityMatrix(s)
+            _ = KanbanMetrics.labelMix(s)
+            _ = KanbanMetrics.blockedTasks(s)
+            _ = KanbanMetrics.dueBuckets(s)
+            _ = KanbanMetrics.hygieneReport(s)
+            let flow = R.cfd(s, activities: log, days: 90)
+            _ = R.burnUp(flow, hours: false)
+            _ = R.throughput(s, activities: log, weeks: 12)
+            _ = R.agingWIP(s, activities: log)
         }
         #if DEBUG
-        #expect(elapsed < .milliseconds(600), "Debug canary: \(elapsed)")
+        #expect(elapsed < .milliseconds(300), "Debug canary: \(elapsed) (snapshot \(phases), log \(decode))")
         #else
-        #expect(elapsed < .milliseconds(100), "\(elapsed)")
+        #expect(elapsed < .milliseconds(100), "\(elapsed) (snapshot \(phases), log \(decode))")
         #endif
     }
 
@@ -269,5 +314,57 @@ struct KanbanReplayTests {
         var next = key
         next.generation = 2
         #expect(cache.activities(of: b.project, key: next).count == before + 1)
+    }
+
+    // MARK: - Review round 1 regressions
+
+    @Test func deletedDefaultColumnKeepsItsEarlierHistory() throws {
+        let b = try Board()
+        let doing = b.doing, doingID = b.doing.id
+        _ = try b.card("A", in: doing, on: F.date(10, 1))
+        try b.service.deleteColumn(doing, movingTasksTo: b.todo)
+        b.at(F.date(10, 6))
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        let before = try #require(day(days, F.date(10, 3)))
+        #expect(before.bands.first { $0.columnID == doingID }?.count == 1, "In Progress existed with A before it was deleted")
+        #expect(before.bands.first { $0.columnID == doingID }?.isDeleted == true)
+    }
+
+    @Test func columnKindChangesApplyWhenTheyHappened() throws {
+        let b = try Board()
+        let review = try b.service.addColumn(to: b.project, name: "Review", at: 2)
+        b.at(F.date(9, 30))
+        let early = try b.card("Early", in: review, on: F.date(10, 1))
+        try b.move(early, to: b.doing, on: F.date(10, 2))   // a kind changes only while empty
+        try b.service.editColumn(review, kind: .done)
+        b.at(F.date(10, 3))
+        _ = try b.card("A", in: review, on: F.date(10, 4))
+        try b.service.deleteColumn(review, movingTasksTo: b.done)
+        b.at(F.date(10, 8))
+        let points = R.burnUp(b.snapshot(), activities: b.activities, days: 14)
+        #expect(points.first { $0.day == F.calendar().startOfDay(for: F.date(10, 5)) }?.completed == 1, "Review was a Done column then")
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        #expect(day(days, F.date(10, 1))?.bands.first { $0.name == "Review" }?.kind == .active, "and Active before the 3rd")
+    }
+
+    @Test func legacyCardDeletedLaterKeepsItsLifetime() throws {
+        let b = try Board()
+        let a = try b.card("A", on: F.date(10, 1))
+        b.forget(a, kind: .created)
+        try b.service.deleteTask(a)
+        b.at(F.date(10, 6))
+        let days = R.cfd(b.snapshot(), activities: b.activities, days: 14)
+        #expect(countsOn(day(days, F.date(10, 3)))["To Do"] == 1, "it existed from its createdAt")
+        #expect(countsOn(day(days, F.date(10, 7)))["To Do"] == 0)
+    }
+
+    @Test func aDeletedCardKeepsItsEstimateInHistory() throws {
+        let b = try Board()
+        let a = try b.card("A", on: F.date(10, 1))
+        try b.service.edit(a, [.estimateHours: .double(20)])
+        try b.service.deleteTask(a)
+        b.at(F.date(10, 6))
+        let days = R.cfd(b.snapshot(hours: true), activities: b.activities, days: 14)
+        #expect(day(days, F.date(10, 3))?.bands.first { $0.name == "To Do" }?.load == 20)
     }
 }

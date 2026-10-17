@@ -162,9 +162,11 @@ struct KanbanAttentionView: View {
                 ForEach(groups, id: \.0.id) { project, items in
                     Section(project.name) {
                         // Grouped by person within each board (design 01 §5).
-                        let byPerson = Dictionary(grouping: items) { $0.task.resource?.displayName ?? "Unassigned" }
-                        ForEach(byPerson.keys.sorted(), id: \.self) { person in
-                            Text(person).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        let byPerson = Dictionary(grouping: items) { $0.task.resource?.id }
+                        let labels = KanbanUI.uniqueNames(project.resources.sorted { $0.sortIndex < $1.sortIndex }.map { ($0.id, $0.displayName) })
+                        let order = byPerson.keys.sorted { (labels[$0 ?? UUID()] ?? "") < (labels[$1 ?? UUID()] ?? "") }
+                        ForEach(order, id: \.self) { person in
+                            Text(person.flatMap { labels[$0] } ?? "Unassigned").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                             ForEach(byPerson[person] ?? []) { item in
                             Button { app.revealKanban(taskID: item.task.id, projectID: project.id) } label: {
                                 HStack {

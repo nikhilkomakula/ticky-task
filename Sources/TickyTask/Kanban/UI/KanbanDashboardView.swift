@@ -16,32 +16,49 @@ struct KanbanDashboardView: View {
         let key = app.kanbanMetricsKey(weekStartsMonday: weekStartsMonday)
         let s = app.kanbanMetrics.snapshot(of: project, key: key, calendar: calendar)
         let log = app.kanbanMetrics.activities(of: project, key: key)
+        let flow = KanbanReplay.cfd(s, activities: log)   // once, for both history charts
+        let hours = s.loadMeasure == .hours
         let names = Dictionary(s.cards.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
         let columns = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        let members = Dictionary(s.members.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        let members = KanbanUI.uniqueNames(s.members.map { ($0.id, $0.name) })
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 420), spacing: 12, alignment: .top)], spacing: 12) {
-                DashboardCard(title: "Load vs capacity", id: "load") { LoadChart(s: s) }
-                DashboardCard(title: "Capacity, next 12 weeks", id: "heatmap") { HeatmapChart(s: s) }
-                DashboardCard(title: "Tasks by column", id: "columns") { ColumnsChart(s: s) }
-                DashboardCard(title: "Unassigned backlog", id: "backlog", action: { open { $0.unassigned = true } }) {
-                    BacklogSummary(backlog: KanbanMetrics.unassignedBacklog(s), names: names, hours: s.loadMeasure == .hours)
+                DashboardCard(title: "Load vs capacity", id: "load") {
+                    LoadChart(s: s, members: members, open: { id in open { $0.openOnly = true; if let id { $0.resourceIDs = [id] } else { $0.unassigned = true } } })
                 }
-                DashboardCard(title: "Due dates", id: "due", action: { open { $0.due = .overdue } }) {
+                DashboardCard(title: "Capacity, next 12 weeks", id: "heatmap") {
+                    HeatmapChart(s: s, members: members, open: { id in open { $0.openOnly = true; $0.resourceIDs = [id] } })
+                }
+                DashboardCard(title: hours ? "Hours by column" : "Tasks by column", id: "columns") {
+                    ColumnsChart(s: s, open: { id in open { $0.columnIDs = [id] } })
+                }
+                DashboardCard(title: "Unassigned backlog", id: "backlog", action: {
+                    open { filter in filter.unassigned = true; filter.columnIDs = Set(s.columns.filter { $0.kind == .backlog }.map(\.id)) }
+                }) {
+                    BacklogSummary(backlog: KanbanMetrics.unassignedBacklog(s), names: names, hours: hours)
+                }
+                DashboardCard(title: "Due dates", id: "due", action: { open { $0.openOnly = true; $0.due = .overdue } }) {
                     DueSummary(due: KanbanMetrics.dueBuckets(s), names: names)
                 }
                 DashboardCard(title: "Team", id: "composition") { CompositionSummary(c: KanbanMetrics.composition(s), members: members) }
-                DashboardCard(title: "Priority by column", id: "priority") { PriorityGrid(s: s, columns: columns) }
-                DashboardCard(title: "Tasks with label", id: "labels") { LabelMixChart(s: s, columns: columns, labels: labelNames) }
-                DashboardCard(title: "Blocked", id: "blocked", action: { open { $0.blockedOnly = true } }) {
+                DashboardCard(title: hours ? "Priority by column (hours)" : "Priority by column", id: "priority") {
+                    PriorityGrid(s: s, hours: hours, open: { row in open { row == .critical ? ($0.criticalOnly = true) : ($0.priorities = [row.priority]) } })
+                }
+                DashboardCard(title: hours ? "Hours with label" : "Tasks with label", id: "labels") {
+                    LabelMixChart(s: s, labels: labelNames, hours: hours, open: { id in open { $0.labelIDs = [id] } })
+                }
+                DashboardCard(title: "Blocked", id: "blocked", action: { open { $0.openOnly = true; $0.blockedOnly = true } }) {
                     BlockedList(blocked: KanbanMetrics.blockedTasks(s), names: names)
                 }
-                DashboardCard(title: "Cumulative flow, 90 days", id: "cfd") { FlowChart(days: KanbanReplay.cfd(s, activities: log), hours: s.loadMeasure == .hours) }
+                DashboardCard(title: "Cumulative flow, 90 days", id: "cfd") { FlowChart(days: flow, hours: hours) }
                 DashboardCard(title: "Completed work (by latest completion)", id: "throughput",
                               subtitle: "Reopened work moves out of earlier weeks") { ThroughputChart(weeks: KanbanReplay.throughput(s, activities: log)) }
-                DashboardCard(title: "Age of work in progress", id: "aging") { AgingList(aging: KanbanReplay.agingWIP(s, activities: log), names: names, columns: columns) }
-                DashboardCard(title: "Burn-up, 90 days", id: "burnup") { BurnUpChart(points: KanbanReplay.burnUp(s, activities: log), hours: s.loadMeasure == .hours) }
-                DashboardCard(title: "Hygiene", id: "hygiene") { HygieneList(h: KanbanMetrics.hygieneReport(s), hours: s.loadMeasure == .hours) }
+                DashboardCard(title: "Age of work in progress", id: "aging") {
+                    AgingList(aging: KanbanReplay.agingWIP(s, activities: log), names: names, columns: columns,
+                              open: { id in app.revealKanban(taskID: id, projectID: project.id) })
+                }
+                DashboardCard(title: "Burn-up, 90 days", id: "burnup") { BurnUpChart(points: KanbanReplay.burnUp(flow, hours: hours), hours: hours) }
+                DashboardCard(title: "Hygiene", id: "hygiene") { HygieneList(h: KanbanMetrics.hygieneReport(s), hours: hours, open: open) }
             }
             .padding(12)
         }
@@ -52,10 +69,12 @@ struct KanbanDashboardView: View {
         Dictionary(project.labels.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
     }
 
-    /// Opens the board with a filter for what the chart shows.
+    /// Opens the board with a filter for what the chart counts. The metrics count live cards
+    /// only, so archived ones are hidden.
     private func open(_ filter: (inout KanbanCardFilter) -> Void) {
         app.updateBoardState(project, context: context) { state in
             state.view = .board
+            state.showArchived = false
             state.filter = KanbanCardFilter()
             filter(&state.filter)
         }
@@ -107,41 +126,54 @@ private let oneDecimal = FloatingPointFormatStyle<Double>.number.precision(.frac
 
 private struct LoadChart: View {
     let s: MetricsSnapshot
+    let members: [UUID: String]
+    var open: (UUID?) -> Void
 
     struct Bar: Identifiable {
         let id: String
-        let member: String
+        let person: String
         let column: String
         let load: Double
     }
 
+    private func label(_ row: KanbanMetrics.LoadRow) -> String { row.memberID.flatMap { members[$0] } ?? "Unassigned" }
+
     var body: some View {
-        let rows = KanbanMetrics.loadVsCapacity(s).filter { $0.memberID != nil }
+        // The Unassigned row shows its load with no target.
+        let rows = KanbanMetrics.loadVsCapacity(s).filter { $0.memberID != nil || $0.load > 0 }
         let columns = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         let bars = rows.flatMap { row in
-            row.segments.filter { $0.load > 0 }.map { Bar(id: "\(row.name)-\($0.column)", member: row.name, column: columns[$0.column] ?? "", load: $0.load) }
+            row.segments.filter { $0.load > 0 }.map { segment in
+                Bar(id: "\(row.memberID?.uuidString ?? "unassigned")-\(segment.column)", person: label(row),
+                    column: columns[segment.column] ?? "", load: segment.load)
+            }
         }
         if rows.isEmpty {
-            Empty(text: "Add people to the board to see their load.")
+            Empty(text: "No open work and no people on this board yet.")
         } else {
             Chart(bars) { bar in
-                BarMark(x: .value("Load", bar.load), y: .value("Person", bar.member))
+                BarMark(x: .value("Load", bar.load), y: .value("Person", bar.person))
                     .foregroundStyle(by: .value("Column", bar.column))
             }
             .frame(height: CGFloat(max(rows.count, 2)) * 28 + 30)
-            ForEach(rows, id: \.name) { row in
-                HStack {
-                    Circle().fill(KanbanUI.utilisationColor(row.utilisation)).frame(width: 8, height: 8)
-                    Text(row.name)
-                    Spacer()
-                    Text(KanbanUI.loadText(load: row.load, target: row.target, utilisation: row.utilisation, hours: s.loadMeasure == .hours))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                    if let weeks = row.backlogCoverageWeeks {
-                        Text("· backlog \(weeks.formatted(oneDecimal)) wk").foregroundStyle(.secondary)
+            ForEach(rows, id: \.memberID) { row in
+                Button { open(row.memberID) } label: {
+                    HStack {
+                        Circle().fill(KanbanUI.utilisationColor(row.utilisation)).frame(width: 8, height: 8)
+                        Text(label(row))
+                        Spacer()
+                        Text(KanbanUI.loadText(load: row.load, target: row.target, utilisation: row.utilisation, hours: s.loadMeasure == .hours))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        if let weeks = row.backlogCoverageWeeks {
+                            Text("· backlog \(weeks.formatted(oneDecimal)) wk").foregroundStyle(.secondary)
+                        }
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .font(.caption)
+                .help("Show \(label(row))'s open cards")
             }
         }
     }
@@ -151,24 +183,48 @@ private struct LoadChart: View {
 
 private struct HeatmapChart: View {
     let s: MetricsSnapshot
+    let members: [UUID: String]
+    var open: (UUID) -> Void
+
+    enum State { case band(KanbanMetrics.Band), offBoardWithWork, offBoard, noWorkDays }
 
     struct Cell: Identifiable {
         let id: String
-        let member: String
+        let person: String
         let week: Date
         let value: Double?
-        let band: KanbanMetrics.Band?
+        let load: Double
+        let state: State
+    }
+
+    private static func color(_ state: State) -> Color {
+        switch state {
+        case let .band(band): KanbanUI.bandColor(band)
+        case .offBoardWithWork: .red
+        case .offBoard, .noWorkDays: Color.gray.opacity(0.25)
+        }
+    }
+
+    private static func describe(_ cell: Cell) -> String {
+        switch cell.state {
+        case .band: cell.value.map { "\(Int(($0 * 100).rounded()))%" } ?? ""
+        case .offBoardWithWork: "not on the board, but holds \(cell.load.formatted(oneDecimal))"
+        case .offBoard: "not on the board"
+        case .noWorkDays: "no work days"
+        }
     }
 
     var body: some View {
         let rows = KanbanMetrics.capacityHeatmap(s, weeks: 12)
         let week0 = s.weekStart(s.today)
         let cells: [Cell] = rows.flatMap { row in
-            row.weeks.enumerated().map { index, cell in
+            row.weeks.enumerated().map { index, heat in
                 let week = s.addDays(7 * index, to: week0)
-                switch cell {
-                case let .ratio(load, target, band): return Cell(id: "\(row.memberID)-\(index)", member: row.name, week: week, value: load / target, band: band)
-                case .unavailable, .noCapacity: return Cell(id: "\(row.memberID)-\(index)", member: row.name, week: week, value: nil, band: nil)
+                let id = "\(row.memberID)-\(index)", person = members[row.memberID] ?? row.name
+                switch heat {
+                case let .ratio(load, target, band): return Cell(id: id, person: person, week: week, value: load / target, load: load, state: .band(band))
+                case let .unavailable(load): return Cell(id: id, person: person, week: week, value: nil, load: load, state: load > 0 ? .offBoardWithWork : .offBoard)
+                case .noCapacity: return Cell(id: id, person: person, week: week, value: nil, load: 0, state: .noWorkDays)
                 }
             }
         }
@@ -176,13 +232,19 @@ private struct HeatmapChart: View {
             Empty(text: "No people on this board yet.")
         } else {
             Chart(cells) { cell in
-                RectangleMark(x: .value("Week", cell.week, unit: .weekOfYear), y: .value("Person", cell.member))
-                    .foregroundStyle(cell.band.map { KanbanUI.bandColor($0) } ?? Color.gray.opacity(0.25))
+                RectangleMark(x: .value("Week", cell.week, unit: .weekOfYear), y: .value("Person", cell.person))
+                    .foregroundStyle(Self.color(cell.state))
                     .opacity(cell.value.map { min(max($0, 0.25), 1) } ?? 1)
-                    .accessibilityLabel("\(cell.member), week of \(cell.week.formatted(.dateTime.month().day()))")
-                    .accessibilityValue(cell.value.map { "\(Int(($0 * 100).rounded()))%" } ?? "not on the board")
+                    .accessibilityLabel("\(cell.person), week of \(cell.week.formatted(.dateTime.month().day()))")
+                    .accessibilityValue(Self.describe(cell))
             }
             .frame(height: CGFloat(max(rows.count, 2)) * 26 + 30)
+            HStack(spacing: 10) {
+                ForEach(rows, id: \.memberID) { row in
+                    Button(members[row.memberID] ?? row.name) { open(row.memberID) }.buttonStyle(.link)
+                }
+            }
+            .font(.caption)
         }
     }
 }
@@ -191,24 +253,30 @@ private struct HeatmapChart: View {
 
 private struct ColumnsChart: View {
     let s: MetricsSnapshot
+    var open: (UUID) -> Void
 
     struct Bar: Identifiable {
         let id: UUID
         let name: String
-        let count: Int
+        let value: Double
     }
 
     var body: some View {
+        let hours = s.loadMeasure == .hours
         let names = Dictionary(s.columns.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
-        let bars = KanbanMetrics.tasksByColumn(s).map { Bar(id: $0.column, name: names[$0.column] ?? "", count: $0.count) }
-        if bars.allSatisfy({ $0.count == 0 }) {
+        let bars = KanbanMetrics.tasksByColumn(s).map { Bar(id: $0.column, name: names[$0.column] ?? "", value: hours ? $0.load : Double($0.count)) }
+        if bars.allSatisfy({ $0.value == 0 }) {
             Empty(text: "No cards yet.")
         } else {
             Chart(bars) { bar in
-                BarMark(x: .value("Column", bar.name), y: .value("Cards", bar.count))
-                    .annotation(position: .top) { Text("\(bar.count)").font(.caption2) }
+                BarMark(x: .value("Column", bar.name), y: .value(hours ? "Hours" : "Cards", bar.value))
+                    .annotation(position: .top) { Text("\(bar.value.formatted(oneDecimal))\(hours ? "h" : "")").font(.caption2) }
             }
             .frame(height: 160)
+            HStack(spacing: 10) {
+                ForEach(bars) { bar in Button(bar.name) { open(bar.id) }.buttonStyle(.link) }
+            }
+            .font(.caption)
         }
     }
 }
@@ -295,10 +363,12 @@ private struct CompositionSummary: View {
 
 private struct PriorityGrid: View {
     let s: MetricsSnapshot
-    let columns: [UUID: String]
+    let hours: Bool
+    var open: (KanbanMetrics.PriorityRow) -> Void
 
     var body: some View {
         let matrix = KanbanMetrics.priorityMatrix(s)
+        let unit = hours ? "h" : ""
         Grid(alignment: .trailing, horizontalSpacing: 12, verticalSpacing: 4) {
             GridRow {
                 Text("")
@@ -306,9 +376,9 @@ private struct PriorityGrid: View {
             }
             ForEach(KanbanMetrics.PriorityRow.allCases, id: \.self) { row in
                 GridRow {
-                    Text(row.rawValue).bold()
+                    Button(row.rawValue) { open(row) }.buttonStyle(.link).bold()
                     ForEach(s.columns, id: \.id) { column in
-                        Text((matrix[row]?[column.id] ?? 0).formatted(oneDecimal)).monospacedDigit()
+                        Text("\((matrix[row]?[column.id] ?? 0).formatted(oneDecimal))\(unit)").monospacedDigit()
                     }
                 }
             }
@@ -319,8 +389,9 @@ private struct PriorityGrid: View {
 
 private struct LabelMixChart: View {
     let s: MetricsSnapshot
-    let columns: [UUID: String]
     let labels: [UUID: String]
+    let hours: Bool
+    var open: (UUID) -> Void
 
     struct Bar: Identifiable {
         let id: String
@@ -336,14 +407,21 @@ private struct LabelMixChart: View {
                 Bar(id: "\(column.id)-\(label?.uuidString ?? "none")", column: column.name, label: label.flatMap { labels[$0] } ?? "No label", value: value)
             }
         }
+        let used = Set(s.cards.filter { !$0.archived }.flatMap(\.labels))
         if bars.isEmpty {
             Empty(text: "No cards yet.")
         } else {
             Chart(bars) { bar in
-                BarMark(x: .value("Column", bar.column), y: .value("Tasks with label", bar.value))
+                BarMark(x: .value("Column", bar.column), y: .value(hours ? "Hours with label" : "Tasks with label", bar.value))
                     .foregroundStyle(by: .value("Label", bar.label))
             }
             .frame(height: 170)
+            HStack(spacing: 10) {
+                ForEach(labels.filter { used.contains($0.key) }.sorted { $0.value < $1.value }, id: \.key) { label in
+                    Button(label.value) { open(label.key) }.buttonStyle(.link)
+                }
+            }
+            .font(.caption)
         }
     }
 }
@@ -372,20 +450,34 @@ private struct BlockedList: View {
 private struct HygieneList: View {
     let h: KanbanMetrics.Hygiene
     let hours: Bool
+    var open: ((inout KanbanCardFilter) -> Void) -> Void
+
+    struct Check: Identifiable {
+        let id: String
+        let count: Int
+        let filter: ((inout KanbanCardFilter) -> Void)?
+    }
 
     var body: some View {
-        let checks: [(String, Int)] = [
-            ("No due date", h.missingDue.count), ("No Jira link", h.missingJira.count),
-            ("All steps done but not in Done", h.subtasksDoneNotDone.count), ("Done with open steps", h.doneWithOpenSubtasks.count),
-            ("People with no open work", h.idleResources.count), ("Past their end date, still holding work", h.pastEndHoldingWork.count),
-        ] + (hours ? [("No estimate", h.missingEstimate.count)] : [])
-        ForEach(checks, id: \.0) { check in
+        let checks: [Check] = [
+            Check(id: "No due date", count: h.missingDue.count, filter: { $0.openOnly = true; $0.due = KanbanCardFilter.Due.none }),
+            Check(id: "No Jira link", count: h.missingJira.count, filter: { $0.openOnly = true; $0.hasJira = false }),
+            Check(id: "All steps done but not in Done", count: h.subtasksDoneNotDone.count, filter: nil),
+            Check(id: "Done with open steps", count: h.doneWithOpenSubtasks.count, filter: nil),
+            Check(id: "People with no open work", count: h.idleResources.count, filter: nil),
+            Check(id: "Past their end date, still holding work", count: h.pastEndHoldingWork.count, filter: nil),
+        ] + (hours ? [Check(id: "No estimate", count: h.missingEstimate.count, filter: { $0.openOnly = true; $0.hasEstimate = false })] : [])
+        ForEach(checks) { check in
             HStack {
-                Image(systemName: check.1 == 0 ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .foregroundStyle(check.1 == 0 ? Color.green : Color.orange)
-                Text(check.0)
+                Image(systemName: check.count == 0 ? "checkmark.circle.fill" : "exclamationmark.circle")
+                    .foregroundStyle(check.count == 0 ? Color.green : Color.orange)
+                if let filter = check.filter, check.count > 0 {
+                    Button(check.id) { open(filter) }.buttonStyle(.link)
+                } else {
+                    Text(check.id)
+                }
                 Spacer()
-                Text("\(check.1)").monospacedDigit()
+                Text("\(check.count)").monospacedDigit()
             }
             .font(.caption)
         }
@@ -405,19 +497,33 @@ private struct FlowChart: View {
         let value: Double
     }
 
+    private static let palette: [Color] = [.green, .blue, .orange, .purple, .teal, .pink, .indigo, .brown, .mint, .cyan]
+
     var body: some View {
         let points: [Point] = days.flatMap { day in
             day.bands.map { Point(id: "\(day.day.timeIntervalSince1970)-\($0.columnID)", day: day.day,
                                   band: $0.isDeleted ? "\($0.name) (deleted)" : $0.name, value: hours ? $0.load : Double($0.count)) }
         }
-        if points.allSatisfy({ $0.value == 0 }) {
-            Empty(text: "History appears as cards move.")
-        } else {
-            Chart(points) { point in
-                AreaMark(x: .value("Day", point.day, unit: .day), y: .value(hours ? "Hours" : "Cards", point.value), stacking: .standard)
-                    .foregroundStyle(by: .value("Column", point.band))
+        // Stable colours, with deleted columns grey.
+        let bands = (days.last?.bands ?? []) + days.flatMap(\.bands)
+        var domain: [String] = [], range: [Color] = []
+        for band in bands {
+            let name = band.isDeleted ? "\(band.name) (deleted)" : band.name
+            guard !domain.contains(name) else { continue }
+            domain.append(name)
+            range.append(band.isDeleted ? Color.gray.opacity(0.5) : Self.palette[(domain.count - 1) % Self.palette.count])
+        }
+        return Group {
+            if points.allSatisfy({ $0.value == 0 }) {
+                Empty(text: "History appears as cards move.")
+            } else {
+                Chart(points) { point in
+                    AreaMark(x: .value("Day", point.day, unit: .day), y: .value(hours ? "Hours" : "Cards", point.value), stacking: .standard)
+                        .foregroundStyle(by: .value("Column", point.band))
+                }
+                .chartForegroundStyleScale(domain: domain, range: range)
+                .frame(height: 180)
             }
-            .frame(height: 180)
         }
     }
 }
@@ -449,6 +555,7 @@ private struct AgingList: View {
     let aging: [KanbanReplay.Aging]
     let names: [UUID: String]
     let columns: [UUID: String]
+    var open: (UUID) -> Void
 
     var body: some View {
         if aging.isEmpty {
@@ -456,7 +563,7 @@ private struct AgingList: View {
         } else {
             ForEach(aging.prefix(8), id: \.cardID) { item in
                 HStack {
-                    Text(names[item.cardID] ?? "")
+                    Button(names[item.cardID] ?? "") { open(item.cardID) }.buttonStyle(.link)
                     Text(columns[item.columnID] ?? "").foregroundStyle(.secondary)
                     Spacer()
                     Text("\(item.ageDays)d").monospacedDigit().foregroundStyle(item.ageDays > 14 ? .orange : .primary)
@@ -484,6 +591,17 @@ private struct BurnUpChart: View {
                 }
             }
             .frame(height: 170)
+        }
+    }
+}
+
+private extension KanbanMetrics.PriorityRow {
+    /// The stored priority for High/Medium/Low (Critical is its own flag).
+    var priority: Int {
+        switch self {
+        case .critical, .high: TaskPriority.high.rawValue
+        case .medium: TaskPriority.medium.rawValue
+        case .low: TaskPriority.low.rawValue
         }
     }
 }

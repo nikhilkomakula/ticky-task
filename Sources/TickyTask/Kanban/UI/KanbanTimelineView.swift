@@ -7,6 +7,7 @@ import Charts
 /// filters and Show Archived.
 struct KanbanTimelineView: View {
     let project: KanbanProject
+    @Environment(AppState.self) private var app
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
 
     struct Bar: Identifiable {
@@ -20,8 +21,11 @@ struct KanbanTimelineView: View {
     }
 
     var body: some View {
+        let _ = app.kanbanClock   // today's marker and date filters roll over at midnight
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
         let state = KanbanBoardState.decode(project.boardState)
+        let people = KanbanUI.uniqueNames(project.resources.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
+            .map { ($0.id, $0.displayName) })
         let today = calendar.startOfDay(for: Date())
         let cards = project.tasks.filter { (state.showArchived || $0.archivedAt == nil) && state.filter.matches($0, calendar: calendar) }
         let bars: [Bar] = cards.compactMap { task in
@@ -29,7 +33,7 @@ struct KanbanTimelineView: View {
             let a = calendar.startOfDay(for: first), b = calendar.startOfDay(for: task.dueDate ?? first)
             let end = calendar.date(byAdding: .day, value: 1, to: max(a, b)) ?? max(a, b)
             let open = task.column?.kind != .done
-            return Bar(id: task.id, title: task.title, person: task.resource.flatMap { $0.archivedAt == nil ? $0.displayName : nil } ?? "Unassigned",
+            return Bar(id: task.id, title: task.title, person: task.resource.flatMap { people[$0.id] } ?? "Unassigned",
                        start: min(a, b), end: end, column: task.column?.name ?? "", overdue: open && (task.dueDate.map { calendar.startOfDay(for: $0) < today } ?? false))
         }
         .sorted { ($0.person, $0.start) < ($1.person, $1.start) }
@@ -39,6 +43,7 @@ struct KanbanTimelineView: View {
                 ContentUnavailableView("Nothing scheduled", systemImage: "calendar",
                                        description: Text("Give cards a start or due date to see them here."))
             } else {
+                ScrollView(.vertical) {
                 Chart {
                     RuleMark(x: .value("Today", today)).foregroundStyle(.secondary).lineStyle(StrokeStyle(dash: [3, 3]))
                     ForEach(bars) { bar in
@@ -53,8 +58,9 @@ struct KanbanTimelineView: View {
                     }
                 }
                 .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear)) }
-                .frame(minHeight: CGFloat(Set(bars.map(\.person)).count) * 44 + 40)
+                .frame(height: CGFloat(Set(bars.map(\.person)).count) * 44 + 40)
                 .padding(12)
+                }
             }
             if undated > 0 {
                 Text("\(undated) card\(undated == 1 ? "" : "s") without dates not shown.")
