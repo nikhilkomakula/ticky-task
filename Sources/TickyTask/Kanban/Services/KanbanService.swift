@@ -208,6 +208,56 @@ struct KanbanService {
         return resource
     }
 
+    /// The editable fields of a membership (a person's place on one board).
+    enum MembershipField: String, CaseIterable {
+        case role, assignmentRaw, allocationPercent, capacityHoursPerWeekOverride, openTaskTargetOverride, startDate, endDate
+    }
+
+    /// Edits a membership's role, assignment, allocation, capacity overrides or dates;
+    /// recorded on the board and undoable. Everything is validated before anything changes.
+    func editMembership(_ resource: KanbanResource, _ values: [MembershipField: KanbanValue?]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        guard let project = resource.project, resource.archivedAt == nil else { throw KanbanServiceError.notFound }
+        for (field, value) in values {
+            switch (field, value) {
+            case (.role, .string?), (.role, nil), (.startDate, .date?), (.startDate, nil), (.endDate, .date?), (.endDate, nil): break
+            case let (.assignmentRaw, .string(raw)?) where KanbanAssignment(rawValue: raw) != nil: break
+            case let (.allocationPercent, .int(p)?) where (1...100).contains(p): break
+            case let (.capacityHoursPerWeekOverride, .double(v)?), let (.openTaskTargetOverride, .double(v)?):
+                guard v.isFinite && v >= 0 else { throw KanbanServiceError.invariant("Capacity can't be negative.") }
+            case (.capacityHoursPerWeekOverride, nil), (.openTaskTargetOverride, nil): break
+            default: throw KanbanServiceError.invariant("\(field.rawValue) can't hold that value.")
+            }
+        }
+        func date(_ field: MembershipField, _ current: Date?) -> Date? {
+            guard let entry = values[field] else { return current }
+            if case let .date(d)? = entry { return d }
+            return nil
+        }
+        if let start = date(.startDate, resource.startDate), let end = date(.endDate, resource.endDate), end < start {
+            throw KanbanServiceError.invariant("The end date is before the start date.")
+        }
+        let changes = values.compactMap { field, value -> KanbanFieldChange? in
+            let old = resourceValue(resource, field.rawValue)
+            return old == value ? nil : KanbanFieldChange(entity: .resource, id: resource.id, field: field.rawValue, old: old, new: value)
+        }.sorted { $0.field < $1.field }
+        guard !changes.isEmpty else { return }
+        let data = try KanbanActivityPayload(changes: changes).encoded()
+        changes.forEach { setResource($0, in: project) }
+        try save(project, kind: .structure, taskIDs: [], summary: "Edited \(resource.displayName)", encodedPayload: data)
+    }
+
+    /// Edits a person's name, initials or employment. A person isn't one board's, so this is
+    /// a plain confirmed edit, outside every Change Log (01 §2.2).
+    func editPerson(_ person: KanbanPerson, name: String? = nil, initials: String? = nil, employment: KanbanEmployment? = nil) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty { throw KanbanServiceError.invariant("A person needs a name.") }
+        if let name { person.name = name }
+        if let initials { person.initials = initials }
+        if let employment { person.employmentRaw = employment.rawValue }
+        try saveOrUndo()
+    }
+
     /// Archives a membership: its tasks go to Unassigned in the same save.
     func archiveMembership(_ resource: KanbanResource) throws {
         try RecurrenceMaterializer.checkpoint(context)
@@ -956,6 +1006,13 @@ struct KanbanService {
         switch field {
         case "archivedAt": return resource.archivedAt.map(KanbanValue.date)
         case "sortIndex": return .double(resource.sortIndex)
+        case "role": return resource.role.map(KanbanValue.string)
+        case "assignmentRaw": return .string(resource.assignmentRaw)
+        case "allocationPercent": return .int(resource.allocationPercent)
+        case "capacityHoursPerWeekOverride": return resource.capacityHoursPerWeekOverride.map(KanbanValue.double)
+        case "openTaskTargetOverride": return resource.openTaskTargetOverride.map(KanbanValue.double)
+        case "startDate": return resource.startDate.map(KanbanValue.date)
+        case "endDate": return resource.endDate.map(KanbanValue.date)
         default: return nil
         }
     }
@@ -966,6 +1023,18 @@ struct KanbanService {
         case let ("archivedAt", .date(d)?): resource.archivedAt = d
         case ("archivedAt", nil): resource.archivedAt = nil
         case let ("sortIndex", .double(d)?): resource.sortIndex = d
+        case let ("role", .string(v)?): resource.role = v
+        case ("role", nil): resource.role = nil
+        case let ("assignmentRaw", .string(v)?): resource.assignmentRaw = v
+        case let ("allocationPercent", .int(v)?): resource.allocationPercent = v
+        case let ("capacityHoursPerWeekOverride", .double(v)?): resource.capacityHoursPerWeekOverride = v
+        case ("capacityHoursPerWeekOverride", nil): resource.capacityHoursPerWeekOverride = nil
+        case let ("openTaskTargetOverride", .double(v)?): resource.openTaskTargetOverride = v
+        case ("openTaskTargetOverride", nil): resource.openTaskTargetOverride = nil
+        case let ("startDate", .date(v)?): resource.startDate = v
+        case ("startDate", nil): resource.startDate = nil
+        case let ("endDate", .date(v)?): resource.endDate = v
+        case ("endDate", nil): resource.endDate = nil
         default: break
         }
     }

@@ -40,6 +40,17 @@ final class AppState {
     /// in Settings › General.
     var availableUpdate: AppRelease?
 
+    /// The module the main window shows (⌘1 / ⌘2).
+    var module: AppModule = .planner
+    var kanban = KanbanNavigation()
+    /// A board card to briefly highlight after a reveal (Attention, search).
+    var highlightedKanbanTaskID: UUID?
+    private var kanbanRevealGeneration = 0
+    /// Board undo/redo for this session; cleared by a restore.
+    let kanbanHistory = KanbanHistory()
+    /// Bumped by every Kanban save and by a restore (01 §2.5).
+    let kanbanGeneration = KanbanStoreGeneration()
+
     private let calendar: Calendar
 
     init(calendar: Calendar = .current, now: Date = Date()) {
@@ -112,6 +123,19 @@ final class AppState {
         let key = WeekMath.dayKey(for: date, calendar: calendar)
         return weekDays(columns: columns, weekStartsMonday: mondayStart, showWeekends: showWeekends)
             .contains { WeekMath.dayKey(for: $0, calendar: calendar) == key }
+    }
+
+    /// Opens the Kanban module on `projectID`'s board and highlights the card for ~2s.
+    func revealKanban(taskID: UUID, projectID: UUID) {
+        module = .kanban
+        kanban.selection = .project(projectID)
+        highlightedKanbanTaskID = taskID
+        kanbanRevealGeneration &+= 1
+        let generation = kanbanRevealGeneration
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if kanbanRevealGeneration == generation { highlightedKanbanTaskID = nil }
+        }
     }
 
     /// Flash the highlight for ~2s, using a generation token so a newer reveal's
