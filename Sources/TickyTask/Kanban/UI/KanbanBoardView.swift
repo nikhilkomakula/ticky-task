@@ -90,16 +90,7 @@ struct KanbanBoardView: View {
             .defaultScrollAnchor(.topLeading)
             .accessibilityIdentifier("kanban-board")
             .scrollPosition($position)
-            .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
-                scroll.x = max(0, geometry.contentOffset.x + geometry.contentInsets.leading)
-                scroll.geometry = geometry
-                if let pending = scroll.pendingAnchorY {
-                    let clamped = min(pending, max(0, geometry.contentSize.height - geometry.containerSize.height))
-                    if abs(geometry.contentOffset.y - clamped) < 1 { scroll.pendingAnchorY = nil }
-                }
-                // Overscan absorbs these coarse updates; card bodies don't follow every pixel.
-                scroll.visibleRange = (floor(geometry.visibleRect.minY / 200) * 200)...(ceil(geometry.visibleRect.maxY / 200) * 200)
-            }
+            .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in scroll.update(geometry) }
             .onScrollPhaseChange { _, phase in
                 if phase == .tracking || phase == .interacting { scroll.pendingAnchorY = nil }
             }
@@ -807,6 +798,22 @@ final class KanbanScrollOffset {
     @ObservationIgnored var anchorFrames = BoardFrames()
     /// Several cards can settle before scroll geometry acknowledges the first correction.
     @ObservationIgnored var pendingAnchorY: CGFloat?
+
+    /// Called on every scroll tick. Only values that changed are assigned: an @Observable setter
+    /// notifies even for an equal value, which would redraw the sticky headers on vertical
+    /// scrolls and re-window every visible cell on every tick.
+    func update(_ geometry: ScrollGeometry) {
+        let x = max(0, geometry.contentOffset.x + geometry.contentInsets.leading)
+        if x != self.x { self.x = x }
+        self.geometry = geometry
+        if let pending = pendingAnchorY {
+            let clamped = min(pending, max(0, geometry.contentSize.height - geometry.containerSize.height))
+            if abs(geometry.contentOffset.y - clamped) < 1 { pendingAnchorY = nil }
+        }
+        // Coarse steps, absorbed by the cells' overscan, so card bodies don't follow every pixel.
+        let range = (floor(geometry.visibleRect.minY / 200) * 200)...(ceil(geometry.visibleRect.maxY / 200) * 200)
+        if range != visibleRange { visibleRange = range }
+    }
 }
 
 /// What has keyboard focus on a board.
