@@ -30,67 +30,39 @@ final class KanbanBoardScrollPerfTests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the board's columns render")
     }
 
-    /// Scrolls the board vertically by dragging from the middle down and measuring
-    /// frame rate (via XCTOSSignpostMetric.scrollingAndDecelerationMetric) to catch
-    /// performance drops in data preparation or view rendering with large cards.
+    /// The board ready to scroll, warmed up once so the first realization isn't measured.
+    /// Scrolling uses the scroll wheel: a press-and-drag on the board would pick up a card.
+    private func board(_ app: XCUIApplication) -> XCUIElement {
+        openVolumeBoard(app)
+        let board = element(app, "kanban-board")
+        XCTAssertTrue(board.waitForExistence(timeout: 10))
+        board.scroll(byDeltaX: 0, deltaY: -1200)
+        board.scroll(byDeltaX: 0, deltaY: 1200)
+        return board
+    }
+
     func testVerticalScrollPerformance() {
         let app = launch()
-        openVolumeBoard(app)
-        
-        let board = element(app, "kanban-board")
-        XCTAssertTrue(board.waitForExistence(timeout: 10))
-        
-        let startPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        let endPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
-        
-        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric]) {
-            startPoint.press(forDuration: 0.1, thenDragTo: endPoint)
+        let board = board(app)
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric, XCTClockMetric()], options: options) {
+            board.scroll(byDeltaX: 0, deltaY: -2400)
+            board.scroll(byDeltaX: 0, deltaY: 2400)
         }
-        
         app.terminate()
     }
 
-    /// Scrolls the board horizontally by dragging across columns and measures
-    /// frame rate. Horizontal scrolling must repaint the sticky column headers
-    /// and drag preview, so this catches header rendering bottlenecks.
+    /// Horizontal scrolling also moves the sticky row headers.
     func testHorizontalScrollPerformance() {
         let app = launch()
-        openVolumeBoard(app)
-        
-        let board = element(app, "kanban-board")
-        XCTAssertTrue(board.waitForExistence(timeout: 10))
-        
-        let startPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        let endPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-        
-        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric]) {
-            startPoint.press(forDuration: 0.1, thenDragTo: endPoint)
+        let board = board(app)
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric, XCTClockMetric()], options: options) {
+            board.scroll(byDeltaX: -1200, deltaY: 0)
+            board.scroll(byDeltaX: 1200, deltaY: 0)
         }
-        
-        app.terminate()
-    }
-
-    /// Performs multiple rapid scrolls in both directions and times the total
-    /// elapsed time with XCTClockMetric to measure cumulative scroll responsiveness.
-    func testRepeatedScrollTiming() {
-        let app = launch()
-        openVolumeBoard(app)
-        
-        let board = element(app, "kanban-board")
-        XCTAssertTrue(board.waitForExistence(timeout: 10))
-        
-        measure(metrics: [XCTClockMetric()]) {
-            for _ in 0..<5 {
-                let downPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                let upPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-                downPoint.press(forDuration: 0.05, thenDragTo: upPoint)
-                
-                let rightPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-                let leftPoint = board.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-                rightPoint.press(forDuration: 0.05, thenDragTo: leftPoint)
-            }
-        }
-        
         app.terminate()
     }
 }

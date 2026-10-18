@@ -174,8 +174,7 @@ enum KanbanVolumeSeed {
                 cardsCreated += 1
             }
         }
-        
-        try service.save()
+
         return project
     }
 }

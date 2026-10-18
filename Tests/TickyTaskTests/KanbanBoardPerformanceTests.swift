@@ -100,11 +100,7 @@ struct KanbanBoardPerformanceTests {
                 by: \.0
             ).mapValues { state.sorted($0.map(\.1)) }
 
-            let metrics = AppState().kanbanMetrics.snapshot(
-                of: project,
-                key: "weekStartsMonday-true",
-                calendar: calendar
-            )
+            let metrics = MetricsSnapshot(project: project, now: Date(), calendar: calendar)
             _ = (cells, metrics, columns)
         }
 
@@ -114,7 +110,7 @@ struct KanbanBoardPerformanceTests {
 }
 
 // Helper type matching KanbanBoardView's CellKey
-struct CellKey: Hashable {
+private struct CellKey: Hashable {
     let column: UUID
     let row: KanbanRowKey
 }
