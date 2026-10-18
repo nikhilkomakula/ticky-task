@@ -509,9 +509,7 @@ enum BackupStore {
         for dto in kanban.holidays ?? [] {
             let holiday = KanbanHoliday(id: dto.id, day: dto.day, name: dto.name,
                                        portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,
-                                       workedBy: dto.workedBy.flatMap { personIds in
-                                           personIds.compactMap { personMap[$0] }.isEmpty ? nil : personIds
-                                       })
+                                       workedBy: KanbanHoliday.normalized(dto.workedBy?.filter { personMap[$0] != nil }))
             holiday.createdAt = dto.createdAt
             holiday.updatedAt = dto.updatedAt
             context.insert(holiday)

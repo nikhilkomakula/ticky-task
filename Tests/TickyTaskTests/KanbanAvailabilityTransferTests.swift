@@ -29,7 +29,7 @@ struct KanbanAvailabilityTransferTests {
         let snapshot = try BackupStore.makeSnapshot(context: context)
         let data = try BackupCoding.encoder().encode(snapshot)
         let decoded = try BackupCoding.decoder().decode(BackupStoreDTO.self, from: data)
-        #expect(decoded.kanban?.version == 2)
+        #expect(decoded.kanban?.version == 3)
         let fresh = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         try BackupStore.restore(decoded, context: fresh)
         let board = try #require(try fresh.fetch(FetchDescriptor<KanbanProject>()).first)
@@ -78,7 +78,7 @@ struct KanbanAvailabilityTransferTests {
         let (_, context, board, _, _) = try source()
         let file = try KanbanBoardTransfer.export([board], context: context)
         let envelope = try BackupCoding.decoder().decode(KanbanBoardTransfer.Envelope.self, from: file)
-        #expect(envelope.version == 2)
+        #expect(envelope.version == 3)
         #expect(envelope.kanban.timeOff?.count == 2, "the March entry is outside the board's dates")
         #expect(envelope.kanban.availabilityOverrides?.count == 1)
 
@@ -277,8 +277,8 @@ struct KanbanAvailabilityTransferTests {
         let (_, context, _, _, _) = try source()
         let ravi = try #require(try context.fetch(FetchDescriptor<KanbanPerson>()).first)
         var kanban = try KanbanBackupDTO.snapshot(context: context)
-        kanban.holidays = [KanbanHolidayDTO(day: "20261026", name: "Thanksgiving")]
-        #expect(throws: BackupError.self) { try KanbanBackupValidator.validate(kanban) }
+        kanban.holidays = [KanbanHolidayDTO(day: "20261026", name: "Thanksgiving", workedBy: [ravi.id])]
+        try KanbanBackupValidator.validate(kanban)
         kanban.holidays = [KanbanHolidayDTO(day: "invalid", name: "Bad")]
         #expect(throws: BackupError.self) { try KanbanBackupValidator.validate(kanban) }
         kanban.holidays = [KanbanHolidayDTO(day: "20261026", name: "", workedBy: [ravi.id])]
@@ -387,7 +387,39 @@ struct KanbanAvailabilityTransferTests {
         #expect(holiday.workedBy?.count == 2)
         try context.save()
 
-        try s.deletePerson(ravi)
-        #expect(holiday.workedBy?.count == 1 && holiday.workedBy?.contains(sita.id) ?? false)
+        try s.deletePerson(sita)   // Ravi is still on the board, so only Sita can go
+        #expect(holiday.workedBy == [ravi.id])
+    }
+
+    @Test("Holiday exceptions follow the people they were matched to; the file's version keeps exceptions it can't know; holidays can be left out")
+    func holidayExceptionsAcrossStores() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let board = try s.createProject(name: "Platform", key: "PLAT", startDay: "20261005", endDay: "20261127")
+        let ravi = try s.createPerson(name: "Ravi Kumar", initials: "RK")
+        _ = try s.addMembership(ravi, to: board)
+        try s.addHoliday(KanbanHolidayDTO(day: "20261026", name: "Diwali", workedBy: [ravi.id]), on: board)
+        let file = try KanbanBoardTransfer.export([board], context: context)
+
+        let other = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s2 = KanbanService(other, history: KanbanHistory())
+        let target = try s2.createProject(name: "Here", key: "HERE")
+        let here = try s2.createPerson(name: "Ravi Kumar", initials: "RK")   // another id, matched by name
+        let mia = try s2.createPerson(name: "Mia Chen", initials: "MC")     // not in the file
+        try s2.addHoliday(KanbanHolidayDTO(day: "20261026", name: "Diwali", workedBy: [mia.id]), on: target)
+        let local = try #require(try other.fetch(FetchDescriptor<KanbanHoliday>()).first)
+
+        var skip = try KanbanBoardTransfer.plan(file, context: other)
+        #expect(skip.holidayChanges(here: [local], people: [here, mia]) == (0, 1), "same day and name, different exceptions")
+        skip.importHolidays = false
+        skip.useIncomingHolidays = true
+        try KanbanBoardTransfer.apply(skip, fileName: "f", context: other)
+        #expect(local.workedBy == [mia.id], "left out entirely")
+
+        var incoming = try KanbanBoardTransfer.plan(file, context: other)
+        incoming.useIncomingHolidays = true
+        try KanbanBoardTransfer.apply(incoming, fileName: "f", context: other)
+        #expect(Set(local.workedBy ?? []) == [here.id, mia.id], "Ravi's exception mapped here; Mia's kept")
+        #expect(try other.fetchCount(FetchDescriptor<KanbanHoliday>()) == 1)
     }
 }
