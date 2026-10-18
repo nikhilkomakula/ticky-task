@@ -19,6 +19,9 @@ final class KanbanProject {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var archivedAt: Date?
+    /// The board's first and last days (`yyyyMMdd`, inclusive), both optional.
+    var startDay: String?
+    var endDay: String?
 
     /// `Calendar` weekday numbers (1 = Sunday … 7 = Saturday); Mon–Fri by default.
     var workWeekDays: [Int] = [2, 3, 4, 5, 6]

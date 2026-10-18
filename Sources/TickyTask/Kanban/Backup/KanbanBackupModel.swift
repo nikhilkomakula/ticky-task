@@ -310,3 +310,80 @@ struct KanbanActivityDTO: Codable, Equatable, Sendable {
         self.projectId = model.project?.id
     }
 }
+
+// MARK: - Availability (Kanban payload v2; every key optional for v1 files)
+
+struct KanbanTimeOffDTO: Codable, Equatable, Hashable, Sendable {
+    var id: UUID
+    var personId: UUID?
+    var startDay: String
+    var endDay: String
+    var portionRaw: String
+    var kindRaw: String
+    var note: String?
+    var originRaw: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: KanbanTimeOff) {
+        id = model.id
+        personId = model.person?.id
+        startDay = model.startDay
+        endDay = model.endDay
+        portionRaw = model.portionRaw
+        kindRaw = model.kindRaw
+        note = model.note
+        originRaw = model.originRaw
+        createdAt = model.createdAt
+        updatedAt = model.updatedAt
+    }
+
+    init(id: UUID = UUID(), personId: UUID?, startDay: String, endDay: String, portion: KanbanTimeOffPortion = .full,
+         kind: KanbanTimeOffKind = .pto, note: String? = nil, origin: KanbanTimeOffOrigin = .manual,
+         createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id
+        self.personId = personId
+        self.startDay = startDay
+        self.endDay = endDay
+        self.portionRaw = portion.rawValue
+        self.kindRaw = kind.rawValue
+        self.note = note
+        self.originRaw = origin.rawValue
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    /// What the entry says, without its id or timestamps: two entries alike here are the same time off.
+    var meaning: [String] { [personId?.uuidString ?? "", startDay, endDay, portionRaw, kindRaw] }
+}
+
+struct KanbanAvailabilityOverrideDTO: Codable, Equatable, Hashable, Sendable {
+    var id: UUID
+    var resourceId: UUID?
+    var weekStart: String
+    var halfDays: Int
+    var note: String?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: KanbanAvailabilityOverride) {
+        id = model.id
+        resourceId = model.resource?.id
+        weekStart = model.weekStart
+        halfDays = model.halfDays
+        note = model.note
+        createdAt = model.createdAt
+        updatedAt = model.updatedAt
+    }
+
+    init(id: UUID = UUID(), resourceId: UUID?, weekStart: String, halfDays: Int, note: String? = nil,
+         createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id
+        self.resourceId = resourceId
+        self.weekStart = weekStart
+        self.halfDays = halfDays
+        self.note = note
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}

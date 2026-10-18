@@ -16,6 +16,11 @@ final class KanbanPerson {
     /// Board memberships. Nullify rather than `.deny` (unreliable at runtime);
     /// `KanbanService` refuses to delete a person while any membership exists.
     @Relationship(deleteRule: .nullify, inverse: \KanbanResource.person) var memberships: [KanbanResource] = []
+    /// Time off, on every board. Deleted with the person.
+    @Relationship(deleteRule: .cascade, inverse: \KanbanTimeOff.person) var timeOff: [KanbanTimeOff] = []
+    /// Other names the availability assistant matched to this person (added only when the
+    /// user chose to remember one).
+    var aliases: [String]?
 
     init(id: UUID = UUID(), name: String = "", initials: String = "", employment: KanbanEmployment = .fte) {
         self.id = id

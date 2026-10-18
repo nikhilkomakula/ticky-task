@@ -3,6 +3,8 @@ import Foundation
 /// What a change-log entry did (design 01 §2.3). Stored as `KanbanActivity.kindRaw`.
 enum KanbanActivityKind: String, Codable, Sendable {
     case created, moved, edited, archived, restored, deleted, restoredGraph, structure, memberArchived, scheduled
+    /// Time off, availability overrides and remembered names (payload v2, `availability`).
+    case availability
 }
 
 /// A scalar value of an edited field, so edits can be replayed, reverted and conflict-checked.
@@ -55,7 +57,8 @@ struct KanbanRemovedGraph: Codable, Equatable, Sendable {
 /// The versioned payload of one change-log entry: per-row transitions with their
 /// expected values, so it can be replayed (dashboards) and reverted with conflict checks.
 struct KanbanActivityPayload: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    /// 2 (v0.3.0) adds `availability`; version-1 entries still read.
+    static let currentVersion = 2
     var version = currentVersion
     /// Moves, including those caused by deleting a column or archiving a membership.
     var transitions: [KanbanTransition] = []
@@ -68,6 +71,8 @@ struct KanbanActivityPayload: Codable, Equatable, Sendable {
     /// `scheduled`: the planner task and day.
     var plannerTaskID: UUID?
     var dayKey: String?
+    /// `availability`: what the entry changed, before and after.
+    var availability: KanbanAvailabilityDelta?
 
     func encoded() throws -> Data { try JSONEncoder.kanbanPayload.encode(self) }
     static func decode(_ data: Data) throws -> KanbanActivityPayload {
@@ -90,4 +95,50 @@ extension JSONEncoder {
 extension JSONDecoder {
     /// One decoder for every payload: making a new one per entry dominated decoding a long log.
     static let kanbanPayload = JSONDecoder()
+}
+
+/// Time off, overrides and aliases one availability entry changed, each as it was before and
+/// after (nil = absent). Undo checks that the records still match `after`, wherever they were
+/// edited since, then puts back `before`.
+struct KanbanAvailabilityDelta: Codable, Equatable, Sendable {
+    struct TimeOff: Codable, Equatable, Sendable {
+        var id: UUID
+        var before: KanbanTimeOffDTO?
+        var after: KanbanTimeOffDTO?
+    }
+
+    struct Override: Codable, Equatable, Sendable {
+        var id: UUID
+        var before: KanbanAvailabilityOverrideDTO?
+        var after: KanbanAvailabilityOverrideDTO?
+    }
+
+    struct Aliases: Codable, Equatable, Sendable {
+        var personID: UUID
+        var before: [String]?
+        var after: [String]?
+    }
+
+    var timeOff: [TimeOff] = []
+    var overrides: [Override] = []
+    var aliases: [Aliases] = []
+
+    init(timeOff: [TimeOff] = [], overrides: [Override] = [], aliases: [Aliases] = []) {
+        (self.timeOff, self.overrides, self.aliases) = (timeOff, overrides, aliases)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        timeOff = try c.decodeIfPresent([TimeOff].self, forKey: .timeOff) ?? []
+        overrides = try c.decodeIfPresent([Override].self, forKey: .overrides) ?? []
+        aliases = try c.decodeIfPresent([Aliases].self, forKey: .aliases) ?? []
+    }
+
+    var isEmpty: Bool { timeOff.isEmpty && overrides.isEmpty && aliases.isEmpty }
+
+    var reversed: KanbanAvailabilityDelta {
+        KanbanAvailabilityDelta(timeOff: timeOff.map { .init(id: $0.id, before: $0.after, after: $0.before) },
+                                overrides: overrides.map { .init(id: $0.id, before: $0.after, after: $0.before) },
+                                aliases: aliases.map { .init(personID: $0.personID, before: $0.after, after: $0.before) })
+    }
 }

@@ -17,7 +17,9 @@ enum AppSchema {
         [TaskItem.self, Subtask.self, CustomList.self, TaskTag.self, TaskOccurrence.self,
          // Kanban (v0.2.0): additive types; existing stores gain empty tables.
          KanbanProject.self, KanbanColumn.self, KanbanPerson.self, KanbanResource.self,
-         KanbanTask.self, KanbanSubtask.self, KanbanLabel.self, KanbanActivity.self]
+         KanbanTask.self, KanbanSubtask.self, KanbanLabel.self, KanbanActivity.self,
+         // Availability (v0.3.0): additive types.
+         KanbanTimeOff.self, KanbanAvailabilityOverride.self]
 
     static let schema = Schema(models)
 }

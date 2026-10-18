@@ -25,6 +25,8 @@ final class KanbanResource {
     /// Assigned tasks. Nullify, so removing a membership leaves its tasks Unassigned.
     @Relationship(deleteRule: .nullify, inverse: \KanbanTask.resource) var tasks: [KanbanTask] = []
     @Relationship(deleteRule: .nullify, inverse: \KanbanSubtask.assignee) var subtaskAssignments: [KanbanSubtask] = []
+    /// Weekly availability overrides on this board. Deleted with the membership.
+    @Relationship(deleteRule: .cascade, inverse: \KanbanAvailabilityOverride.resource) var availabilityOverrides: [KanbanAvailabilityOverride] = []
 
     init(id: UUID = UUID(), person: KanbanPerson? = nil, assignment: KanbanAssignment = .fullTime,
          allocationPercent: Int = 100, sortIndex: Double = 0) {

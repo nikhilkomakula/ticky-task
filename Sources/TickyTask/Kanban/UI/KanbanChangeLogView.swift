@@ -71,6 +71,7 @@ struct KanbanChangeLogView: View {
         case .structure: "square.grid.3x2"
         case .memberArchived: "person.crop.circle.badge.minus"
         case .scheduled: "calendar.badge.plus"
+        case .availability: "calendar.badge.clock"
         case nil: "circle"
         }
     }
@@ -87,6 +88,7 @@ struct KanbanChangeLogView: View {
         case .structure: "Structure"
         case .memberArchived: "Member archived"
         case .scheduled: "Scheduled"
+        case .availability: "Availability"
         case nil: "Activity"
         }
     }

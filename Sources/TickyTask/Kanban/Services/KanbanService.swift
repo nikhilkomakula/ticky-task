@@ -53,12 +53,16 @@ struct KanbanService {
     /// its first change-log entry records the creation.
     @discardableResult
     func createProject(name: String, key: String, template: KanbanTemplate = .standard,
-                       defaults: KanbanBoardDefaults = KanbanBoardDefaults()) throws -> KanbanProject {
+                       defaults: KanbanBoardDefaults = KanbanBoardDefaults(),
+                       startDay: String? = nil, endDay: String? = nil) throws -> KanbanProject {
         try RecurrenceMaterializer.checkpoint(context)
         if let problem = template.problem { throw KanbanServiceError.invariant(problem) }
         let existing = try context.fetch(FetchDescriptor<KanbanProject>())
+        try Self.checkBoardDates(startDay, endDay)
         let project = KanbanProject(name: name, key: key, sortIndex: (existing.map(\.sortIndex).max() ?? -1) + 1)
         defaults.apply(to: project)
+        project.startDay = startDay
+        project.endDay = endDay
         context.insert(project)
         for (index, column) in template.columns.enumerated() {
             let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
@@ -140,6 +144,13 @@ struct KanbanService {
             let old = projectValue(project, field.rawValue)
             return old == value ? nil : KanbanFieldChange(entity: .project, id: project.id, field: field.rawValue, old: old, new: value)
         }.sorted { $0.field < $1.field }
+        guard !changes.isEmpty else { return }
+        try editProjectFields(project, changes)
+    }
+
+    /// Records and applies already-checked board field changes as one entry.
+    func editProjectFields(_ project: KanbanProject, _ changes: [KanbanFieldChange]) throws {
+        try RecurrenceMaterializer.checkpoint(context)
         guard !changes.isEmpty else { return }
         let data = try KanbanActivityPayload(changes: changes).encoded()
         changes.forEach { setProject($0, in: project) }
@@ -1184,8 +1195,8 @@ struct KanbanService {
 
     /// Appends the entry and saves once. Callers encode the payload before mutating, so the
     /// only fallible step left after the first change is this save.
-    private func save(_ project: KanbanProject, kind: KanbanActivityKind, taskIDs: [UUID], summary: String,
-                      encodedPayload: Data, undoable: Bool = true) throws {
+    func save(_ project: KanbanProject, kind: KanbanActivityKind, taskIDs: [UUID], summary: String,
+              encodedPayload: Data, undoable: Bool = true) throws {
         let entry = appendActivity(project, kind: kind, taskIDs: taskIDs, summary: summary, payload: encodedPayload)
         try saveOrUndo()
         if undoable { history?.recordUserOperation(entry.id, project: project.id) }
@@ -1555,6 +1566,8 @@ struct KanbanService {
         case "symbolName": return .string(project.symbolName)
         case "isPinned": return .bool(project.isPinned)
         case "archivedAt": return project.archivedAt.map(KanbanValue.date)
+        case "startDay": return project.startDay.map(KanbanValue.string)
+        case "endDay": return project.endDay.map(KanbanValue.string)
         case "workWeekDays": return .ints(project.workWeekDays)
         case "hoursPerDay": return .double(project.hoursPerDay)
         case "defaultCapacityHoursPerWeek": return .double(project.defaultCapacityHoursPerWeek)
@@ -1579,6 +1592,10 @@ struct KanbanService {
         case let ("symbolName", .string(v)?): project.symbolName = v
         case let ("isPinned", .bool(v)?): project.isPinned = v
         case let ("archivedAt", .date(v)?): project.archivedAt = v
+        case let ("startDay", .string(v)?): project.startDay = v
+        case ("startDay", nil): project.startDay = nil
+        case let ("endDay", .string(v)?): project.endDay = v
+        case ("endDay", nil): project.endDay = nil
         case ("archivedAt", nil): project.archivedAt = nil
         case let ("workWeekDays", .ints(v)?): project.workWeekDays = v
         case let ("hoursPerDay", .double(v)?): project.hoursPerDay = v
@@ -1619,7 +1636,7 @@ struct KanbanService {
 
     // MARK: - Internals: inverses
 
-    private struct Inverse {
+    struct Inverse {
         var kind: KanbanActivityKind
         var payload: KanbanActivityPayload
         var apply: () -> Void
@@ -1696,6 +1713,10 @@ struct KanbanService {
             for parent in g.subtasks.compactMap(\.taskId) { touches[parent, default: []].insert("subtasks") }
             for edge in g.incomingDependencies where edge.count == 2 { touches[edge[0], default: []].insert("dependsOn") }
         }
+        if let a = p.availability {
+            for id in a.timeOff.map(\.id) + a.overrides.map(\.id) { touches[id, default: []].insert("*") }
+            for alias in a.aliases { touches[alias.personID, default: []].insert("aliases") }
+        }
         return touches
     }
 
@@ -1750,6 +1771,8 @@ struct KanbanService {
                                reversedChanges: reversedChanges, in: project)
         case .deleted:
             return try reinsert(payload, reversedTransitions: reversedTransitions, reversedChanges: reversedChanges, in: project)
+        case .availability:
+            return try availabilityInverse(payload)
         case .memberArchived, .scheduled:
             throw KanbanServiceError.conflict("That change can't be reverted here.")
         }
