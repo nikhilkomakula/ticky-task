@@ -20,17 +20,22 @@ struct KanbanCardSnapshotTests {
                                     dueDate: Calendar.current.date(byAdding: .day, value: -2, to: Date()))
         try s.edit(full, [.priority: .int(TaskPriority.high.rawValue), .isCritical: .bool(true), .isBlocked: .bool(true),
                           .blockedReason: .string("Waiting on keys"), .jiraURL: .string("https://jira.example.com/browse/PLAT-1234"),
-                          .notes: .string("See the design doc"), .complexity: .int(3)])
+                          .notes: .string("See the design doc"), .complexity: .int(3),
+                          .startDate: .date(Calendar.current.date(byAdding: .day, value: 3, to: Date())!), .estimateHours: .double(6)])
+        full.dependsOn = [short]
         try s.setLabels(full, Array(labels.prefix(4)))
         _ = try s.addSubtask(to: full, title: "Endpoints")
         let medium = try s.createTask(in: project, title: "Write docs", dueDate: Date())
         try s.edit(medium, [.priority: .int(TaskPriority.medium.rawValue), .complexity: .int(1)])
         try s.setLabels(medium, [labels[1]])
+        let archived = try s.createTask(in: project, title: "Old spike")
+        try s.edit(archived, [.estimateHours: .double(2)])
+        try s.setArchived([archived], true)
         let app = AppState()
         for scheme in [ColorScheme.light, .dark] {
             for width in [180.0, 250.0, 480.0] {
                 let cards = VStack(alignment: .leading, spacing: 6) {
-                    ForEach([short, medium, full]) { KanbanCardView(task: $0, project: project) }
+                    ForEach([short, medium, full, archived]) { KanbanCardView(task: $0, project: project) }
                 }
                 .padding(6)
                 .frame(width: width - 0)

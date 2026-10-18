@@ -58,11 +58,29 @@ The load target for each resource—how many cards they should have open—is ca
 - **Blocked** and optional reason.
 - **Start date**, **Due date**, **Estimate** (hours, if the board measures load in hours).
 - **Jira link** (validated; shows the key if recognized).
-- **Depends on** (other cards in this project; the card shows a dependency glyph).
+- **Depends on** (other cards in this project; while any of them isn't done, or is archived, the card shows **Waiting on n**).
 - **Subtasks** (per-card checklist; completed items sink to the bottom).
 - **History** (the card's change log, newest first; each entry has a **Revert** button if it can be undone).
 
-**Mark it blocked.** Toggle **Blocked** and enter a reason. The blocked glyph appears on the card and in dashboard charts.
+**Mark it blocked.** Toggle **Blocked** and enter a reason. The card shows **Blocked** (hover for the reason), and it counts in dashboard charts.
+
+**Read a card at a glance.** Below the title and labels, a card shows an icon for each piece of information that's set, risks first, so a quick review catches what needs attention:
+
+| Icon | Shows | Means |
+|---|---|---|
+| raised hand, red | **Blocked** | Marked blocked; hover for the reason |
+| exclamation mark, red | **Overdue 2d** | Past its due date by that many days |
+| branch, amber | **Waiting on 1** | Something it depends on isn't done yet (or is archived); hover for which |
+| clock, amber / calendar | **Due today**, **Due Oct 20** | Due soon (within the board's threshold) / its due date |
+| calendar with clock | **Start Oct 21** | Its start date, while that's still to come |
+| timer | **6h** | Its estimate |
+| bars | **Low / Med / High** | Its complexity |
+| checklist | **0/1** | Steps done of total |
+| link | **PLAT-1234** | Its Jira issue; click to open it |
+| note | — | It has notes |
+| archive box | — | It's archived (shown with **Show Archived**) |
+
+The Critical flag and the priority glyph sit before the title. Red and amber mean "needs attention"; everything else stays grey. A finished or archived card shows its dates without warning colours and no Blocked, Waiting or Start markers. Hover any icon for a full description.
 
 **Assign it.** Use the **Assignee** picker in the editor, or drag the card to a row header to reassign it while keeping the column.
 

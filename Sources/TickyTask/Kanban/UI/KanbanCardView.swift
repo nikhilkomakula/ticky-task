@@ -3,8 +3,8 @@ import AppKit
 import SwiftData
 
 /// A board card, in the planner row's visual language (design 01 §5): Critical flag,
-/// priority glyph, title, then labels, due date, estimate, Jira key, blocked and
-/// dependency glyphs, notes and the subtask count.
+/// priority glyph, title, then labels and an icon for each piece of information that's set
+/// (dates, estimate, complexity, Jira, blocked, dependencies, notes, steps, archived).
 struct KanbanCardView: View {
     let task: KanbanTask
     let project: KanbanProject
@@ -29,20 +29,10 @@ struct KanbanCardView: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .animation(.easeInOut(duration: 0.2), value: highlighted)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(spokenDetails)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "Edit", onOpen)
         .accessibilityAction(named: "Delete") { onDelete?() }
         .accessibilityIdentifier("kanban-card-\(task.title)")
-    }
-
-    /// What the combined card element says beyond what's visible: the blocked reason and what
-    /// it depends on.
-    private var spokenDetails: String {
-        var parts: [String] = []
-        if task.isBlocked, let reason = task.blockedReason, !reason.isEmpty { parts.append("Blocked: \(reason)") }
-        if !task.dependsOn.isEmpty { parts.append("Depends on \(task.dependsOn.map(\.title).joined(separator: ", "))") }
-        return parts.joined(separator: ", ")
     }
 
     private var cardContent: some View {
@@ -106,20 +96,42 @@ struct KanbanCardView: View {
         }
     }
 
-    /// Only what's set, right-aligned below the title and tags: due, estimate, complexity, Jira,
-    /// blocked, dependencies, notes, steps. A marker that doesn't fit moves to the next line whole.
+    /// Only what's set, right-aligned below the title and tags, risks first so a reviewer sees
+    /// them at once: blocked, overdue, waiting on prerequisites, due, a start still to come,
+    /// estimate, complexity, steps, Jira, notes, archived (design agreed with Codex). Risks and
+    /// dates say what they are in words; a marker that doesn't fit moves to the next line whole.
     @ViewBuilder
     private var metadata: some View {
         let subtasks = task.subtasks
         let complexity = task.complexity.flatMap(KanbanComplexity.init(rawValue:))
-        let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil || complexity != nil
-            || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        // A finished or archived card raises no alerts and colours no dates.
+        let live = task.archivedAt == nil && task.column?.kind != .done
+        let futureStart = task.startDate.flatMap { live && calendar.startOfDay(for: $0) > today ? $0 : nil }
+        // As the backlog reads readiness: a prerequisite counts once it's done and not archived.
+        let waitingOn = live ? task.dependsOn.filter { $0.archivedAt != nil || $0.column?.kind != .done } : []
+        let blocked = live && task.isBlocked
+        let overdue = live && task.dueDate.map { calendar.startOfDay(for: $0) < today } == true
+        let hasAny = blocked || task.dueDate != nil || !waitingOn.isEmpty || futureStart != nil || task.estimateHours != nil
+            || complexity != nil || !subtasks.isEmpty || task.jiraKey != nil || task.hasNotes || task.archivedAt != nil
         if hasAny {
             FlowLayout(spacing: 8, lineSpacing: 4, trailing: true) {
-                if let due = task.dueDate { dueLabel(due) }
-                if project.loadMeasure == .hours, let hours = task.estimateHours {
-                    Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h").monospacedDigit()
-                        .help("Estimate")
+                if blocked {
+                    let reason = task.blockedReason.flatMap { $0.isEmpty ? nil : $0 }
+                    marker("hand.raised.fill", "Blocked", tint: KanbanCardPalette.red, spoken: reason.map { "Blocked: \($0)." } ?? "Blocked.")
+                }
+                // Overdue is a risk and goes before Waiting; any other due date after it.
+                if let due = task.dueDate, overdue { dueLabel(due, live: live) }
+                if !waitingOn.isEmpty { waitingLabel(waitingOn) }
+                if let due = task.dueDate, !overdue { dueLabel(due, live: live) }
+                if let start = futureStart {
+                    marker("calendar.badge.clock", "Start \(start.formatted(.dateTime.month(.abbreviated).day()))",
+                           spoken: "Starts \(start.formatted(date: .long, time: .omitted)).")
+                }
+                if let hours = task.estimateHours {
+                    let amount = hours.formatted(.number.precision(.fractionLength(0...1)))
+                    marker("timer", "\(amount)h", spoken: "Estimated effort: \(amount) \(hours == 1 ? "hour" : "hours").")
                 }
                 if let complexity {
                     // Bars filled to the level, as a signal meter reads.
@@ -127,36 +139,25 @@ struct KanbanCardView: View {
                         Image(systemName: "cellularbars", variableValue: complexity.barsFilled)
                         Text(complexity.shortLabel)
                     }
-                        .help("Complexity: \(complexity.label)")
+                        .help("Complexity: \(complexity.label).")
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Complexity \(complexity.label)")
+                        .accessibilityLabel("Complexity: \(complexity.label).")
+                }
+                if !subtasks.isEmpty {
+                    let done = subtasks.filter(\.isDone).count
+                    marker("checklist", "\(done)/\(subtasks.count)", spoken: "\(done) of \(subtasks.count) steps complete.")
                 }
                 if let key = task.jiraKey { jiraChip(key) }
-                if task.isBlocked {
-                    Image(systemName: "hand.raised.fill").foregroundStyle(KanbanCardPalette.red)
-                        .help("Blocked")
-                        .accessibilityLabel("Blocked")
-                        .accessibilityValue(task.blockedReason ?? "")
-                }
-                if !task.dependsOn.isEmpty {
-                    Image(systemName: "arrow.triangle.branch")
-                        .help("Dependencies")
-                        .accessibilityLabel("Has dependencies")
-                        .accessibilityValue(task.dependsOn.map(\.title).joined(separator: ", "))
-                }
                 if task.hasNotes {
                     Image(systemName: "note.text")
-                        .help("Notes")
+                        .help("Has notes.")
                         .accessibilityLabel("Has notes")
                         .accessibilityIdentifier("kanban-notes-\(task.id)")
                 }
-                if !subtasks.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Image(systemName: "checklist")
-                        Text("\(subtasks.filter(\.isDone).count)/\(subtasks.count)").monospacedDigit()
-                    }
-                        .help("Subtasks")
-                        .accessibilityLabel("\(subtasks.filter(\.isDone).count) of \(subtasks.count) steps done")
+                if task.archivedAt != nil {
+                    Image(systemName: "archivebox")
+                        .help("Archived.")
+                        .accessibilityLabel("Archived")
                 }
             }
             .font(.system(size: 11))
@@ -166,38 +167,59 @@ struct KanbanCardView: View {
         }
     }
 
-    /// Red when overdue, amber when due within the board's threshold; by calendar day.
-    private func dueLabel(_ due: Date) -> some View {
+    /// Red "Overdue 2d" when past due, amber "Due today" / "Due Oct 20" within the board's
+    /// threshold, otherwise "Due Oct 28"; by calendar day, and never coloured once finished.
+    private func dueLabel(_ due: Date, live: Bool) -> some View {
         let calendar = Calendar.current
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()), to: calendar.startOfDay(for: due)).day ?? 0
-        let open = task.column?.kind != .done
-        let isOverdue = open && days < 0
-        let isDueSoon = open && days >= 0 && days <= project.dueSoonThresholdDays
-        let color: Color = isOverdue ? KanbanCardPalette.red : isDueSoon ? KanbanCardPalette.amber : .secondary
-        let helpText = isOverdue ? "Overdue" : isDueSoon ? "Due soon" : "Due date"
-        let icon = isOverdue ? "exclamationmark.circle.fill" : isDueSoon ? "clock.fill" : "calendar"
-        // The date stays primary; only the glyph carries the warning colour.
-        return HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Image(systemName: icon).foregroundStyle(color)
-            Text(due.formatted(.dateTime.month(.abbreviated).day())).foregroundStyle(.primary)
+        let isOverdue = live && days < 0
+        let isDueSoon = live && days >= 0 && days <= project.dueSoonThresholdDays
+        let long = due.formatted(date: .long, time: .omitted)
+        let text = isOverdue ? "Overdue \(-days)d" : days == 0 && live ? "Due today" : "Due \(due.formatted(.dateTime.month(.abbreviated).day()))"
+        let spoken = isOverdue ? "Overdue by \(-days) \(days == -1 ? "day" : "days"). Due \(long)."
+            : isDueSoon ? "Due soon. Due \(long)." : "Due \(long)."
+        return marker(isOverdue ? "exclamationmark.circle.fill" : isDueSoon ? "clock.fill" : "calendar", text,
+                      tint: isOverdue ? KanbanCardPalette.red : isDueSoon ? KanbanCardPalette.amber : nil, spoken: spoken)
+    }
+
+    /// Amber "Waiting on n" while prerequisites are open or archived; the tooltip names them.
+    private func waitingLabel(_ waitingOn: [KanbanTask]) -> some View {
+        let open = waitingOn.filter { $0.archivedAt == nil }.map(\.title)
+        let archived = waitingOn.filter { $0.archivedAt != nil }.map(\.title)
+        var names = open
+        if !archived.isEmpty { names.append("archived: \(archived.joined(separator: ", "))") }
+        let noun = task.dependsOn.count == 1 ? "prerequisite" : "prerequisites"
+        return marker("arrow.triangle.branch", "Waiting on \(waitingOn.count)", tint: KanbanCardPalette.amber,
+                      spoken: "Waiting on \(waitingOn.count) of \(task.dependsOn.count) \(noun): \(names.joined(separator: "; ")).")
+    }
+
+    /// An icon and its short text, with one spoken label (also the tooltip). A tinted marker is
+    /// a warning: its glyph takes the colour and its words read in the primary colour.
+    private func marker(_ symbol: String, _ text: String, tint: Color? = nil, spoken: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: symbol).foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+            Text(text).monospacedDigit().foregroundStyle(tint == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         }
-            .help(helpText)
-            .accessibilityLabel(isOverdue ? "Overdue, due \(due.formatted(date: .abbreviated, time: .omitted))"
-                                : "Due \(due.formatted(date: .abbreviated, time: .omitted))")
+        .help(spoken)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 
     private func jiraChip(_ key: String) -> some View {
         Button {
             if let text = task.jiraURL, let url = URL(string: text.trimmingCharacters(in: .whitespaces)) { NSWorkspace.shared.open(url) }
         } label: {
-            Text(key).font(.system(size: 11).monospaced())
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: 80)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "link")
+                Text(key).font(.system(size: 11).monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 80)
+            }
         }
         .buttonStyle(.plain)
-        .help("Open Jira \(key)")
-        .accessibilityLabel("Jira issue \(key)")
+        .help("Open Jira issue \(key).")
+        .accessibilityLabel("Open Jira issue \(key)")
         .accessibilityAddTraits(.isButton)
     }
 }
