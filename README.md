@@ -113,6 +113,8 @@ xcodebuild test -project TickyTask.xcodeproj -scheme TickyTask \
 
 **CI:** every pull request runs the unit tests ([`macos-ci.yml`](.github/workflows/macos-ci.yml)), with the Kanban performance budgets stretched 4× for the slower shared runner; the UI tests, which drive the real app with clicks, typing, and drags, run on a GitHub-hosted Mac for every push to a `feature/**` branch ([`ui-tests.yml`](.github/workflows/ui-tests.yml)) so they never take over a developer's screen. Run it by hand (`gh workflow run ui-tests.yml --ref <branch> -f tests="TickyTaskUITests/KanbanBoardUITests"`) to repeat only some of them; the result bundle, with screen recordings and the UI hierarchy at each failure, is attached to every run.
 
+**Kanban board performance benchmarks** measure scrolling responsiveness at volume. `KanbanVolumeSeed` creates one board with 2,000 cards across ~30 people with realistic distribution (priorities, estimates, subtasks, blocked state). Unit tests in `KanbanBoardPerformanceTests` time board data preparation (snapshot construction, filtering/sorting, metrics calculations); UI tests in `KanbanBoardScrollPerfTests` measure frame rates during vertical and horizontal scrolling with `XCTOSSignpostMetric.scrollingAndDecelerationMetric`. Benchmarks are seeded and deterministic (use `-uitestKanbanVolume 2000` to open the board in the app, or run `xcodebuild test -scheme TickyTask -only-testing Tests/TickyTaskTests/KanbanBoardPerformanceTests` for unit benches).
+
 The only third-party dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (resolved via Swift Package Manager).
 
 ### Opening the unsigned build

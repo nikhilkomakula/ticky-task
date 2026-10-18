@@ -190,7 +190,7 @@ struct KanbanService {
         var keys = Set(project.collapsedRowKeys)
         if collapsed { keys.insert(row.storageKey) } else { keys.remove(row.storageKey) }
         project.collapsedRowKeys = keys.sorted()
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     /// Collapses or expands every row at once (⌃⌘↑ / ⌃⌘↓).
@@ -199,7 +199,7 @@ struct KanbanService {
         project.collapsedRowKeys = collapsed
             ? ([KanbanRowKey.unassigned.storageKey] + project.resources.filter { $0.archivedAt == nil }.map(\.id.uuidString)).sorted()
             : []
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     /// Stores the encoded board view state (last view, filters, sort, density, show-archived).
@@ -207,7 +207,7 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         guard project.boardState != state else { return }
         project.boardState = state
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     // MARK: - People and memberships
@@ -1243,6 +1243,19 @@ struct KanbanService {
             throw error
         }
         generation?.bump()
+    }
+
+    /// View state (collapsed rows, filters, sort, widths) doesn't change any metric, so a
+    /// successful save keeps every board's cached metrics. A failed one rolls back whatever
+    /// was pending, which may be data, so the caches go.
+    private func saveViewStateOnly() throws {
+        do {
+            try context.saveTransaction()
+        } catch {
+            context.undoFailedTransaction()
+            generation?.bump()
+            throw error
+        }
     }
 
     private func activity(_ id: UUID) throws -> KanbanActivity? {

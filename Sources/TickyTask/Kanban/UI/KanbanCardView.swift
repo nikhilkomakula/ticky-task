@@ -113,8 +113,9 @@ struct KanbanCardView: View {
         let waitingOn = live ? task.dependsOn.filter { $0.archivedAt != nil || $0.column?.kind != .done } : []
         let blocked = live && task.isBlocked
         let overdue = live && task.dueDate.map { calendar.startOfDay(for: $0) < today } == true
+        let notes = task.hasNotes   // cache computed property to avoid double-eval
         let hasAny = blocked || task.dueDate != nil || !waitingOn.isEmpty || futureStart != nil || task.estimateHours != nil
-            || complexity != nil || !subtasks.isEmpty || task.jiraKey != nil || task.hasNotes || task.archivedAt != nil
+            || complexity != nil || !subtasks.isEmpty || task.jiraKey != nil || notes || task.archivedAt != nil
         if hasAny {
             FlowLayout(spacing: 8, lineSpacing: 4, trailing: true) {
                 if blocked {
@@ -148,7 +149,7 @@ struct KanbanCardView: View {
                     marker("checklist", "\(done)/\(subtasks.count)", spoken: "\(done) of \(subtasks.count) steps complete.")
                 }
                 if let key = task.jiraKey { jiraChip(key) }
-                if task.hasNotes {
+                if notes {
                     Image(systemName: "note.text")
                         .help("Has notes.")
                         .accessibilityLabel("Has notes")

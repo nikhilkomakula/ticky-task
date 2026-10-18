@@ -70,12 +70,36 @@ struct BoardSnapshot: Equatable, Sendable {
     let columns: [ColumnSnapshot]
     let rows: [KanbanRowSnapshot]
     let cards: [CardSnapshot]
+    /// Pre-indexed cards by (columnID, row) for O(1) lookup performance.
+    private let cardsByLocation: [String: [CardSnapshot]]
+
+    init(projectID: UUID, wipPolicy: KanbanWIPPolicy, columns: [ColumnSnapshot], rows: [KanbanRowSnapshot], cards: [CardSnapshot]) {
+        self.projectID = projectID
+        self.wipPolicy = wipPolicy
+        self.columns = columns
+        self.rows = rows
+        self.cards = cards
+
+        // Pre-build the location index for O(1) lookups
+        var index: [String: [CardSnapshot]] = [:]
+        for card in cards {
+            let key = "\(card.columnID.uuidString):\(card.row.storageKey)"
+            if index[key] == nil {
+                index[key] = []
+            }
+            index[key]?.append(card)
+        }
+        // Sort each cell's cards by sortIndex
+        for key in index.keys {
+            index[key]?.sort { $0.sortIndex < $1.sortIndex }
+        }
+        self.cardsByLocation = index
+    }
 
     /// Fetches cards in a given column and row, sorted by sortIndex.
     func cards(in columnID: UUID, row: KanbanRowKey) -> [CardSnapshot] {
-        cards
-            .filter { $0.columnID == columnID && $0.row == row }
-            .sorted { $0.sortIndex < $1.sortIndex }
+        let key = "\(columnID.uuidString):\(row.storageKey)"
+        return cardsByLocation[key] ?? []
     }
 
     /// Fetches a column by its ID, or nil if not found.
@@ -129,6 +153,8 @@ struct BoardSnapshot: Equatable, Sendable {
         }
 
         // Cards, excluding archived unless requested.
+        // Pre-build a set of row keys for O(1) membership checks (instead of O(rows) per card).
+        let rowKeys = Set(rows.map(\.key))
         let cardSnapshots = project.tasks
             .filter { includeArchived || $0.archivedAt == nil }
             .map { task in
@@ -136,7 +162,7 @@ struct BoardSnapshot: Equatable, Sendable {
                     id: task.id,
                     columnID: task.column?.id ?? UUID(),
                     // A card whose membership isn't a row here (archived) shows as Unassigned.
-                    row: task.resource.flatMap { r in rows.contains { $0.key == .resource(r.id) } ? .resource(r.id) : nil } ?? .unassigned,
+                    row: task.resource.flatMap { r in rowKeys.contains(.resource(r.id)) ? .resource(r.id) : nil } ?? .unassigned,
                     sortIndex: task.sortIndex,
                     completedAt: task.completedAt,
                     archived: task.archivedAt != nil,
@@ -155,6 +181,6 @@ struct BoardSnapshot: Equatable, Sendable {
             columns: columns,
             rows: rows,
             cards: cardSnapshots
-        )
+        )  // Custom init pre-builds cardsByLocation
     }
 }
