@@ -441,4 +441,27 @@ struct KanbanAvailabilityTransferTests {
         #expect(Set(local.workedBy ?? []) == [here.id, mia.id], "Ravi's exception mapped here; Mia's kept")
         #expect(try other.fetchCount(FetchDescriptor<KanbanHoliday>()) == 1)
     }
+
+    @Test("A person the import creates keeps their exception on a holiday already here")
+    func holidayExceptionForNewPerson() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let board = try s.createProject(name: "Platform", key: "PLAT", startDay: "20261005", endDay: "20261127")
+        let ravi = try s.createPerson(name: "Ravi Kumar", initials: "RK")
+        _ = try s.addMembership(ravi, to: board)
+        try s.addHoliday(KanbanHolidayDTO(day: "20261026", name: "Diwali", workedBy: [ravi.id]), on: board)
+        let file = try KanbanBoardTransfer.export([board], context: context)
+
+        let other = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s2 = KanbanService(other, history: KanbanHistory())
+        let target = try s2.createProject(name: "Here", key: "HERE")
+        try s2.addHoliday(KanbanHolidayDTO(day: "20261026", name: "Diwali"), on: target)   // nobody works it here
+        var plan = try KanbanBoardTransfer.plan(file, context: other)
+        for i in plan.people.indices { plan.people[i].linkTo = nil }   // Ravi is new here
+        try KanbanBoardTransfer.apply(plan, fileName: "f", context: other)
+        let created = try #require(try other.fetch(FetchDescriptor<KanbanPerson>()).first { $0.name == "Ravi Kumar" })
+        let holiday = try #require(try other.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        let count = try other.fetchCount(FetchDescriptor<KanbanHoliday>())
+        #expect(holiday.workedBy == [created.id] && count == 1)
+    }
 }

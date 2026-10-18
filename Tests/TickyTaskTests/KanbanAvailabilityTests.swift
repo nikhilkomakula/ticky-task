@@ -381,14 +381,27 @@ extension KanbanAvailabilityServiceTests {
         #expect(back.id == holiday.id && back.workedBy == [ravi.id], "the same holiday comes back with its exception")
     }
 
-    @Test("Bad holidays are refused; exceptions for people who are gone are dropped")
+    @Test("Bad holidays are refused, unknown people included; undo after a deletion logs what it restores")
     func holidayValidation() throws {
         let (s, platform, _, ravi, _, context) = try setup()
         for bad in [KanbanHolidayDTO(day: "20260231", name: "Nope"), KanbanHolidayDTO(day: "20261126", name: "  ")] {
             #expect(throws: KanbanServiceError.self) { try s.addHoliday(bad, on: platform) }
         }
-        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, UUID()]), on: platform)
-        #expect(try context.fetch(FetchDescriptor<KanbanHoliday>()).first?.workedBy == [ravi.id])
+        #expect(throws: KanbanServiceError.self) {
+            try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, UUID()]), on: platform)
+        }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
+        // Undo after the person is deleted brings the holiday back without them, and redo still matches.
+        let sita = try s.createPerson(name: "Sita", initials: "ST")
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, sita.id]), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        try s.deleteHolidays([holiday], on: platform)
+        try s.deletePerson(sita)
+        try s.undo(in: platform)
+        let back = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        #expect(back.workedBy == [ravi.id])
+        try s.redo(in: platform)
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
     }
 
     @Test("Undo refuses when the holiday was changed again from another board")
@@ -416,5 +429,21 @@ extension KanbanAvailabilityServiceTests {
                                            holidays: [.init(id: closed.id, before: nil, after: closed)])
         #expect(throws: KanbanServiceError.self) { try s.applyAvailability(both, on: platform, summary: "x") }
         #expect(membership.availabilityOverrides.count == 1, "nothing from the refused change")
+    }
+
+    @Test("A failed holiday save changes nothing and logs nothing")
+    func holidaySaveFailure() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        let entries = platform.activities.count
+        defer { PersistenceFaults.armed = [] }
+        PersistenceFaults.armed = [.transaction]
+        #expect(throws: (any Error).self) { try s.setWorks(ravi, holiday: holiday, works: true, on: platform) }
+        PersistenceFaults.armed = [.transaction]
+        #expect(throws: (any Error).self) { try s.addHoliday(KanbanHolidayDTO(day: "20261127", name: "Day after"), on: platform) }
+        let kept = try context.fetch(FetchDescriptor<KanbanHoliday>())
+        #expect(kept.count == 1 && kept.first?.workedBy == nil)
+        #expect(platform.activities.count == entries)
     }
 }

@@ -31,6 +31,11 @@ struct KanbanAvailabilityCellPopover: View {
             } else if cell.isAllHoliday {
                 Text("Every work day this week is a public holiday.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if cell.overrideNeedsReview, let stored = cell.overrideHalfDays {
+                    Label("The override of \(KanbanAvailability.days(stored)) days no longer fits this week and isn't used. Clear it.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(KanbanAvailabilityPalette.text(.yellow)).fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     GridRow { Text("Possible"); Text("\(KanbanAvailability.days(cell.possibleHalfDays)) days").monospacedDigit() }

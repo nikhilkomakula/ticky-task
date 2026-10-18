@@ -17,6 +17,11 @@ extension KanbanService {
         guard records.matches(delta, before: true) else {
             throw KanbanServiceError.conflict("Time off changed while you were editing it. Try again.")
         }
+        // What's logged must be what's saved: an exception for someone unknown is refused here,
+        // not quietly dropped by the plan.
+        for h in delta.holidays where !(h.after?.workedBy ?? []).allSatisfy({ records.people[$0] != nil }) {
+            throw KanbanServiceError.conflict("That person is no longer in TickyTask.")
+        }
         let resources = try context.fetch(FetchDescriptor<KanbanResource>())
         let plan = try records.plan(delta, resources: resources)
         try records.checkCapacity(delta, resources: resources)
@@ -34,8 +39,13 @@ extension KanbanService {
         guard records.matches(delta, before: false) else {
             throw KanbanServiceError.conflict("That time off or availability was changed again afterwards (on this or another board). Revert the newer changes first.")
         }
-        let reversed = delta.reversed
+        var reversed = delta.reversed
         let plan = try records.plan(reversed, resources: try context.fetch(FetchDescriptor<KanbanResource>()))
+        // Undo can't restore an exception for someone deleted since; log what it does restore.
+        let restored = Dictionary(plan.holidays.map { ($0.0.id, $0.0) }, uniquingKeysWith: { a, _ in a })
+        for i in reversed.holidays.indices where reversed.holidays[i].after != nil {
+            reversed.holidays[i].after = restored[reversed.holidays[i].id]
+        }
         return Inverse(kind: .availability, payload: KanbanActivityPayload(availability: reversed)) { [context] in plan.apply(context) }
     }
 

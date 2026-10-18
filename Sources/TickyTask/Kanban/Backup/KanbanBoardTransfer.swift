@@ -372,6 +372,11 @@ enum KanbanBoardTransfer {
                     existing.name = dto.name
                     existing.portionRaw = dto.portionRaw
                     existing.workedBy = mergedWorkedBy(dto, into: existing, plan: plan) { people[$0]?.id }
+                } else {
+                    // People this import creates have no exceptions here to keep, so theirs always come along.
+                    let created = Set(plan.people.filter { $0.linkTo == nil }.map(\.id))
+                    let theirs = (dto.workedBy ?? []).filter(created.contains).compactMap { people[$0]?.id }
+                    if !theirs.isEmpty { existing.workedBy = KanbanHoliday.normalized((existing.workedBy ?? []) + theirs) }
                 }
                 existing.updatedAt = now
                 continue

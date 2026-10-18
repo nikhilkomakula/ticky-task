@@ -454,18 +454,17 @@ struct KanbanAvailabilityCellView: View {
                     .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if !isHolidayCell {
-                if cell.isOverridden {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
-                        .padding(4)
-                } else if cell.overrideNeedsReview {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(KanbanAvailabilityPalette.text(.yellow))
-                        .padding(4)
-                }
+            // A week closed by holidays can leave an override needing review: it still shows.
+            if cell.isOverridden {
+                Image(systemName: "pencil")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
+                    .padding(4)
+            } else if cell.overrideNeedsReview {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(KanbanAvailabilityPalette.text(.yellow))
+                    .padding(4)
             }
         }
         .frame(width: 80, height: 52)
@@ -611,8 +610,9 @@ enum KanbanAvailabilityFormat {
 
     /// "3 of 5 days available. 2 days off (PTO); 1 public holiday excluded (Thanksgiving). Manually overridden."
     static func spoken(_ cell: KanbanAvailability.Cell, timeOff: [KanbanTimeOff], holidays: [String] = []) -> String {
-        if cell.isAllHoliday { return "Public holiday all week" }
-        guard cell.isActive else { return "Not working this week" }
+        let review = cell.overrideNeedsReview ? ". Override needs review" : ""
+        if cell.isAllHoliday { return "Public holiday all week" + review }
+        guard cell.isActive else { return "Not working this week" + review }
         var parts = ["\(KanbanAvailability.days(cell.effectiveHalfDays)) of \(KanbanAvailability.days(cell.possibleHalfDays)) days available"]
         if cell.absentHalfDays > 0 || cell.holidayHalfDays > 0 {
             var fragments: [String] = []
