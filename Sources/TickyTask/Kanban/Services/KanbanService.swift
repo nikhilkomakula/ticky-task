@@ -190,7 +190,7 @@ struct KanbanService {
         var keys = Set(project.collapsedRowKeys)
         if collapsed { keys.insert(row.storageKey) } else { keys.remove(row.storageKey) }
         project.collapsedRowKeys = keys.sorted()
-        try saveOrUndo()
+        try saveViewStateOnly()  // presentation-only; don't bump generation
     }
 
     /// Collapses or expands every row at once (⌃⌘↑ / ⌃⌘↓).
@@ -199,7 +199,7 @@ struct KanbanService {
         project.collapsedRowKeys = collapsed
             ? ([KanbanRowKey.unassigned.storageKey] + project.resources.filter { $0.archivedAt == nil }.map(\.id.uuidString)).sorted()
             : []
-        try saveOrUndo()
+        try saveViewStateOnly()  // presentation-only; don't bump generation
     }
 
     /// Stores the encoded board view state (last view, filters, sort, density, show-archived).
@@ -207,7 +207,7 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         guard project.boardState != state else { return }
         project.boardState = state
-        try saveOrUndo()
+        try saveViewStateOnly()  // presentation-only; don't bump generation
     }
 
     // MARK: - People and memberships
@@ -1235,6 +1235,18 @@ struct KanbanService {
             throw error
         }
         generation?.bump()
+    }
+
+    /// Saves view-state-only changes (collapsed rows, filters, sort, density) without bumping generation.
+    /// This prevents metrics cache invalidation for pure UI presentation changes.
+    private func saveViewStateOnly() throws {
+        do {
+            try context.saveTransaction()
+        } catch {
+            context.undoFailedTransaction()
+            throw error
+        }
+        // NOTE: intentionally NOT bumping generation; presentation changes don't invalidate metrics
     }
 
     private func activity(_ id: UUID) throws -> KanbanActivity? {
