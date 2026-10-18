@@ -28,7 +28,7 @@ struct KanbanBoardView: View {
     @State private var live = KanbanLiveWidth()
     @State private var presentationCache = KanbanBoardPresentationCache()
     @State private var revealedCard: UUID?
-    @State private var focusRequest: CardFocusRequest?
+    @State private var focusRequest: BoardCardFocusRequest?
     @FocusState private var focus: KanbanBoardFocus?
     /// ⌘-click selection; a drag or the context menu then acts on all of it.
     @State private var selected: Set<UUID> = []
@@ -38,12 +38,6 @@ struct KanbanBoardView: View {
     @State private var appearanceColumn: UUID?
 
     typealias CellKey = KanbanBoardPresentationCache.CellKey
-
-    private struct CardFocusRequest: Equatable {
-        let cardID: UUID
-        var requiresReveal = false
-        let token = UUID()
-    }
 
     var body: some View {
         let state = KanbanBoardState.decode(project.boardState)
@@ -99,13 +93,31 @@ struct KanbanBoardView: View {
             .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
                 scroll.x = max(0, geometry.contentOffset.x + geometry.contentInsets.leading)
                 scroll.geometry = geometry
+                if let pending = scroll.pendingAnchorY {
+                    let clamped = min(pending, max(0, geometry.contentSize.height - geometry.containerSize.height))
+                    if abs(geometry.contentOffset.y - clamped) < 1 { scroll.pendingAnchorY = nil }
+                }
                 // Overscan absorbs these coarse updates; card bodies don't follow every pixel.
                 scroll.visibleRange = (floor(geometry.visibleRect.minY / 200) * 200)...(ceil(geometry.visibleRect.maxY / 200) * 200)
             }
+            .onScrollPhaseChange { _, phase in
+                if phase == .tracking || phase == .interacting { scroll.pendingAnchorY = nil }
+            }
             .publishBoardFrame { BoardFrames(viewport: $0) }
             .onPreferenceChange(BoardFramesKey.self) { frames in
+                var frames = frames
+                frames.rowOrder = snapshot.rows.compactMap(\.resourceID)
+                var previous = scroll.anchorFrames
+                previous.contentOrigin = drag.frames.contentOrigin
+                let adjustment = BoardScrollAnchor.verticalAdjustment(from: previous, to: frames)
+                scroll.anchorFrames = frames
                 drag.frames = frames
                 drag.framesChanged()
+                if adjustment != 0, !drag.isActive, focusRequest == nil, let geometry = scroll.geometry {
+                    let y = max(0, (scroll.pendingAnchorY ?? geometry.contentOffset.y) + adjustment)
+                    scroll.pendingAnchorY = y
+                    position.scrollTo(point: CGPoint(x: geometry.contentOffset.x, y: y))
+                }
             }
             .overlay { BoardDragOverlay(controller: drag, project: project) }
             .onKeyPress(phases: .down) { press in
@@ -120,11 +132,13 @@ struct KanbanBoardView: View {
                    !drag.frames.rowHeaders.contains(where: { !$0.isSummary && $0.frame.intersects(drag.frames.globalFrame(card.frame)) }),
                    !drag.frames.columnHeaders.contains(where: { $0.frame.intersects(drag.frames.globalFrame(card.frame)) }) {
                     focus = .card(request.cardID)
+                    focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterCompleting: request)
                     return
                 }
                 await reveal(request.cardID, proxy: proxy)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, focusRequest == request else { return }
                 focus = .card(request.cardID)
+                focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterCompleting: request)
             }
         }
         .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
@@ -147,7 +161,7 @@ struct KanbanBoardView: View {
             }
         .onDisappear { drag.cancel() }
         .onChange(of: focus) { _, value in
-            if let value, value != focusRequest.map({ KanbanBoardFocus.card($0.cardID) }) { focusRequest = nil }
+            focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterFocusChangesTo: value)
         }
         // Cards tucked away in a shortened Done cell leave the selection, so a drag or a bulk
         // action never carries cards you can't see.
@@ -199,7 +213,7 @@ struct KanbanBoardView: View {
                 ForEach(columns) { column in
                     let key = CellKey(column: column.id, row: row.key)
                     KanbanCell(project: project, column: column, row: row, width: widths.column(column.id), live: live,
-                               scroll: scroll, metricsKey: metricsKey, revealedCard: revealedCard,
+                               scroll: scroll, clock: metricsKey.clock, revealedCard: revealedCard,
                                tasks: shown[key] ?? [],
                                doneFooter: doneHidden[key].map { expandedDone.contains(key) ? .fewer : .older($0) },
                                onToggleDone: { if expandedDone.remove(key) == nil { expandedDone.insert(key) } },
@@ -289,11 +303,11 @@ struct KanbanBoardView: View {
             return .handled
         }
         let service = app.kanbanService(context)
-        let keyboardFocus = focusRequest.map { KanbanBoardFocus.card($0.cardID) } ?? focus
+        let keyboardFocus = BoardCardFocus.keyboardTarget(focus: focus, pendingRequest: focusRequest)
         func run(_ op: MoveOp) -> KeyPress.Result {
             app.runKanban {
                 _ = try service.move(op, in: project)
-                if case let .card(id)? = keyboardFocus { focusRequest = CardFocusRequest(cardID: id, requiresReveal: true) }
+                if case let .card(id)? = keyboardFocus { focusRequest = BoardCardFocusRequest(cardID: id, requiresReveal: true) }
             }
             return .handled
         }
@@ -341,7 +355,7 @@ struct KanbanBoardView: View {
                 app.runKanban {
                     try service.arrange(order)
                     if viewState.sort != .manual { app.updateBoardState(project, context: context) { $0.sort = .manual } }
-                    focusRequest = CardFocusRequest(cardID: id, requiresReveal: true)
+                    focusRequest = BoardCardFocusRequest(cardID: id, requiresReveal: true)
                 }
                 return .handled
             }
@@ -362,7 +376,7 @@ struct KanbanBoardView: View {
                 return run(.cards([id], to: .rowHeader(snapshot.rows[next].key)))
             case (.upArrow, false, false), (.downArrow, false, false):
                 let next = (shown.firstIndex(of: id) ?? 0) + (press.key == .upArrow ? -1 : 1)
-                if shown.indices.contains(next) { focusRequest = CardFocusRequest(cardID: shown[next]) }
+                if shown.indices.contains(next) { focusRequest = BoardCardFocusRequest(cardID: shown[next]) }
                 return .handled
             case (.leftArrow, false, false), (.rightArrow, false, false):
                 var index = columnIndex
@@ -371,7 +385,7 @@ struct KanbanBoardView: View {
                     guard columns.indices.contains(index) else { return .handled }
                     let cards = cells[CellKey(column: columns[index].id, row: card.row)] ?? []
                     if !cards.isEmpty {
-                        focusRequest = CardFocusRequest(cardID: cards[min(shown.firstIndex(of: id) ?? 0, cards.count - 1)].id)
+                        focusRequest = BoardCardFocusRequest(cardID: cards[min(shown.firstIndex(of: id) ?? 0, cards.count - 1)].id)
                         return .handled
                     }
                 }
@@ -584,7 +598,7 @@ private struct KanbanCell: View {
     let width: CGFloat
     let live: KanbanLiveWidth
     let scroll: KanbanScrollOffset
-    let metricsKey: KanbanMetricsCache.Key
+    let clock: String
     let revealedCard: UUID?
     let tasks: [KanbanTask]
     /// A shortened Done cell's "+n older", or "Show fewer" once it's opened.
@@ -604,17 +618,10 @@ private struct KanbanCell: View {
     @AppStorage("compactView") private var compact = false
     @State private var hover = KanbanCellHoverState()
     @State private var cellFrame: CGRect = .zero
-    @State private var measuredHeights: [UUID: CGFloat] = [:]
-    @State private var measuredKey: MeasurementKey?
-
-    private struct MeasurementKey: Equatable {
-        var width: CGFloat
-        var compact: Bool
-        var metrics: KanbanMetricsCache.Key
-    }
+    @State private var measurements = BoardCardMeasurements()
 
     private struct CardMeasurement: Equatable {
-        var key: MeasurementKey
+        var key: BoardCardMeasurements.Key
         var height: CGFloat
     }
 
@@ -629,12 +636,15 @@ private struct KanbanCell: View {
     }
 
     var body: some View {
-        let measurementKey = MeasurementKey(width: live.width(.column(column.id), base: width), compact: compact, metrics: metricsKey)
-        let layout = BoardCardLayout(ids: tasks.map(\.id), measuredHeights: measuredKey == measurementKey ? measuredHeights : [:])
+        let cardWidth = live.width(.column(column.id), base: width)
+        let measurementKeys = Dictionary(uniqueKeysWithValues: tasks.map {
+            ($0.id, BoardCardMeasurements.Key(task: $0, width: cardWidth, compact: compact, clock: clock))
+        })
+        let layout = BoardCardLayout(ids: tasks.map(\.id), measuredHeights: measurements.heights(for: measurementKeys))
         let range = (scroll.visibleRange.lowerBound - cellFrame.minY - 6)...(scroll.visibleRange.upperBound - cellFrame.minY - 6)
         let indices = layout.visibleIndices(in: range, pinned: pinnedCards)
         VStack(spacing: 6) {
-            if !tasks.isEmpty { cardWindow(layout, indices: indices, measurementKey: measurementKey) }
+            if !tasks.isEmpty { cardWindow(layout, indices: indices, measurementKeys: measurementKeys) }
             if let doneFooter { doneFooterButton(doneFooter) }
             KanbanCellAddButton(hover: hover, columnName: column.name, rowName: row.name, onAdd: onAdd)
         }
@@ -654,6 +664,7 @@ private struct KanbanCell: View {
         .onHover { hover.isHovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-cell-\(column.name)-\(row.name)")
+        .onChange(of: layout.ids) { _, ids in measurements.retain(Set(ids)) }
     }
 
     private var pinnedCards: Set<UUID> {
@@ -663,7 +674,7 @@ private struct KanbanCell: View {
         return ids
     }
 
-    private func cardWindow(_ layout: BoardCardLayout, indices: [Int], measurementKey: MeasurementKey) -> some View {
+    private func cardWindow(_ layout: BoardCardLayout, indices: [Int], measurementKeys: [UUID: BoardCardMeasurements.Key]) -> some View {
         // Separate items keep a distant card's scroll anchor clear of its leading spacer.
         typealias Item = (id: WindowItemID, index: Int?, height: CGFloat)
         var items: [Item] = []
@@ -676,6 +687,7 @@ private struct KanbanCell: View {
             ForEach(items, id: \.id) { item in
                 if let index = item.index {
                     let task = tasks[index]
+                    let measurementKey = measurementKeys[task.id]!
                     KanbanCardSlot(task: task, isFocused: focus.wrappedValue == .card(task.id), isDragging: drag.isDragging(card: task.id),
                                    onEdit: { onOpen(task) }, onDelete: { onDelete(task) }) {
                         KanbanCardView(task: task, project: project, isSelected: selected.contains(task.id),
@@ -698,11 +710,7 @@ private struct KanbanCell: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .onGeometryChange(for: CardMeasurement.self) { CardMeasurement(key: measurementKey, height: $0.size.height) } action: { measurement in
-                        if measuredKey != measurement.key {
-                            measuredKey = measurement.key
-                            measuredHeights = [:]
-                        }
-                        if measuredHeights[task.id] != measurement.height { measuredHeights[task.id] = measurement.height }
+                        measurements.record(measurement.height, for: task.id, key: measurement.key)
                     }
                     .frame(height: item.height, alignment: .top)
                     .id(task.id)
@@ -795,6 +803,10 @@ final class KanbanScrollOffset {
     var visibleRange: ClosedRange<CGFloat> = 0...1000
     /// For auto-scroll; not observed.
     @ObservationIgnored var geometry: ScrollGeometry?
+    /// Keep the last published layout separate from the drag controller's live row order.
+    @ObservationIgnored var anchorFrames = BoardFrames()
+    /// Several cards can settle before scroll geometry acknowledges the first correction.
+    @ObservationIgnored var pendingAnchorY: CGFloat?
 }
 
 /// What has keyboard focus on a board.
