@@ -8,6 +8,7 @@ struct KanbanSidebar: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
+    @AppStorage(KanbanDefaultBoard.key) private var defaultBoard = ""
     @State private var isCreating = false
     @State private var prompt: KanbanTextPrompt?
     @State private var pendingDelete: KanbanProject?
@@ -90,25 +91,7 @@ struct KanbanSidebar: View {
     }
 
     private func row(_ project: KanbanProject, _ summary: KanbanMetrics.ProjectSummary?) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: project.symbolName)
-                .foregroundStyle(KanbanUI.color(project.colorHex) ?? .accentColor)
-                .accessibilityHidden(true)
-            Text(project.name).lineLimit(1)
-            Spacer(minLength: 4)
-            if let summary {
-                if summary.membersOverCapacity > 0 {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .help("\(summary.membersOverCapacity) over capacity")
-                        .accessibilityLabel("\(summary.membersOverCapacity) over capacity")
-                }
-                Text("\(summary.openCards)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(summary.openCards) open")
-            }
-        }
+        KanbanSidebarBoardLabel(project: project, summary: summary)
         .tag(KanbanSidebarItem.project(project.id))
         .accessibilityIdentifier("kanban-sidebar-\(project.name)")
         .contextMenu { menu(project) }
@@ -123,6 +106,8 @@ struct KanbanSidebar: View {
             }
         }
         if project.archivedAt == nil {
+            Toggle("Default Board", isOn: Binding(get: { defaultBoard == project.id.uuidString },
+                                                  set: { defaultBoard = $0 ? project.id.uuidString : "" }))
             Button(project.isPinned ? "Unpin" : "Pin") {
                 app.runKanban { try service.editProject(project, [.isPinned: .bool(!project.isPinned)]) }
             }
@@ -151,6 +136,50 @@ struct KanbanSidebar: View {
             Button("Restore") { app.runKanban { try service.setProjectArchived(project, false) } }
         }
         Button("Delete…", role: .destructive) { pendingDelete = project }
+    }
+}
+
+/// A board's name and, for a live board, its load and counts as All projects shows them.
+struct KanbanSidebarBoardLabel: View {
+    let project: KanbanProject
+    let summary: KanbanMetrics.ProjectSummary?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: project.symbolName)
+                    .foregroundStyle(KanbanUI.color(project.colorHex) ?? .accentColor)
+                    .accessibilityHidden(true)
+                Text(project.name).lineLimit(2)
+                    .help(project.name)
+                Spacer(minLength: 4)
+                if let summary, summary.membersOverCapacity > 0 {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .help("\(summary.membersOverCapacity) over capacity")
+                        .accessibilityLabel("\(summary.membersOverCapacity) over capacity")
+                }
+            }
+            if let summary {
+                // Indented to the name; the gauge takes the load's colour, the text stays
+                // secondary so it reads on a selected row too.
+                VStack(alignment: .leading, spacing: 1) {
+                    Label {
+                        Text(KanbanUI.loadText(load: summary.load, target: summary.target, utilisation: summary.utilisation,
+                                               hours: project.loadMeasure == .hours))
+                    } icon: {
+                        Image(systemName: "gauge.medium").foregroundStyle(KanbanUI.bandColor(summary.utilisation.band))
+                    }
+                    Text("\(summary.openCards) open · \(summary.doneCards) done")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.leading, 22)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.vertical, summary == nil ? 0 : 2)
     }
 }
 

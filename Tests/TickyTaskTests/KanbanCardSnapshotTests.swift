@@ -110,4 +110,41 @@ struct KanbanCardSnapshotTests {
             }
         }
     }
+
+    @Test("Sidebar board rows with their load and counts render in light and dark")
+    func renderSidebarRows() throws {
+        guard let dir = ProcessInfo.processInfo.environment["CARD_SNAPSHOT_DIR"] else { return }
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context)
+        let wave = try s.createProject(name: "IBU Commercial Wave 2", key: "IBU")
+        let ravi = try s.addMembership(try s.createPerson(name: "Ravi", initials: "RV"), to: wave)
+        for index in 1...6 { _ = try s.createTask(in: wave, title: "Card \(index)", column: wave.orderedColumns[1], row: .resource(ravi.id)) }
+        let busy = try s.createProject(name: "Platform", key: "PLAT")
+        let mia = try s.addMembership(try s.createPerson(name: "Mia", initials: "MI"), to: busy, allocationPercent: 20)
+        for index in 1...4 { _ = try s.createTask(in: busy, title: "Card \(index)", column: busy.orderedColumns[1], row: .resource(mia.id)) }
+        let empty = try s.createProject(name: "A board with a long name that truncates", key: "LONG")
+        let app = AppState()
+        let calendar = Calendar.current
+        let key = app.kanbanMetricsKey(weekStartsMonday: true)
+        for scheme in [ColorScheme.light, .dark] {
+            let rows = VStack(alignment: .leading, spacing: 6) {
+                ForEach([wave, busy, empty]) { project in
+                    KanbanSidebarBoardLabel(project: project, summary: app.kanbanMetrics.summary(of: project, key: key, calendar: calendar))
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                }
+                KanbanSidebarBoardLabel(project: wave, summary: app.kanbanMetrics.summary(of: wave, key: key, calendar: calendar))
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary))
+            }
+            .padding(8)
+            .frame(width: 230)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: rows)
+            renderer.scale = 2
+            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+            try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sidebar-\(scheme == .dark ? "dark" : "light").png"))
+        }
+    }
 }

@@ -54,4 +54,26 @@ enum KanbanSidebarItem: Hashable, Sendable {
 struct KanbanNavigation: Equatable, Sendable {
     var selection: KanbanSidebarItem = .allProjects
     var showSidebar = true
+    /// Whether the module has opened its default board this session.
+    var openedDefault = false
+}
+
+/// Settings › Kanban › Default board: where the Kanban module opens each session.
+enum KanbanDefaultBoard {
+    /// A board's id, `allProjects`, or empty or missing for the last opened board.
+    static let key = "kanban.defaultBoard"
+    static let allProjects = "allProjects"
+
+    /// The chosen board, or All projects if that's chosen. Otherwise, or when the chosen board
+    /// is gone or archived, the last opened board, then the first in the sidebar (pinned
+    /// first); with no boards, All projects.
+    static func item(_ projects: [KanbanProject], choice: String?, lastOpened: String?) -> KanbanSidebarItem {
+        if choice == allProjects { return .allProjects }
+        let live = projects.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
+        for id in [choice, lastOpened].compactMap({ $0.flatMap(UUID.init(uuidString:)) }) where live.contains(where: { $0.id == id }) {
+            return .project(id)
+        }
+        let first = live.first(where: \.isPinned) ?? live.first
+        return first.map { .project($0.id) } ?? .allProjects
+    }
 }

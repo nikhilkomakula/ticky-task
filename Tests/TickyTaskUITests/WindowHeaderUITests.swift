@@ -104,11 +104,19 @@ final class WindowHeaderUITests: XCTestCase {
         XCTAssertTrue(boardActions.waitForExistence(timeout: 5), "Board actions menu exists on open board")
     }
 
+    private func showAllProjects(_ app: XCUIApplication) {
+        let all = element(app, "kanban-sidebar-all")
+        XCTAssertTrue(all.waitForExistence(timeout: 10), "All projects is in the sidebar")
+        all.click()
+        XCTAssertTrue(element(app, "kanban-all-tabs").waitForExistence(timeout: 5), "All projects shows")
+    }
+
     func testBoardActionsMenuHiddenInAllProjects() {
         let app = launch(showPlanner: true, showKanban: true)
 
-        // Switch to Kanban (starts on All projects)
+        // Switch to Kanban (it opens the default board) and go to All projects
         app.typeKey("2", modifierFlags: .command)
+        showAllProjects(app)
 
         let boardActions = element(app, "kanban-board-actions")
         XCTAssertFalse(boardActions.exists, "Board actions menu is hidden in All projects")
@@ -147,8 +155,9 @@ final class WindowHeaderUITests: XCTestCase {
     func testNewCardButtonHiddenWithoutBoard() {
         let app = launch(showPlanner: true, showKanban: true)
 
-        // Switch to Kanban (stays on All projects)
+        // Switch to Kanban (it opens the default board) and go to All projects
         app.typeKey("2", modifierFlags: .command)
+        showAllProjects(app)
 
         let newCardButton = element(app, "kanban-new-card")
         XCTAssertFalse(newCardButton.exists, "New card button is hidden when no board is selected")

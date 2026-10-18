@@ -16,6 +16,10 @@ TickyTask's **Kanban** module helps you track work across teams with visibility 
 
 Or load a saved template.
 
+**Your default board.** The first time you go to Kanban after TickyTask starts, it opens your default board, so you don't have to click it. Choose it in **Settings › Kanban › Default board**, or right-click a board in the sidebar and choose **Default Board**. Until you choose, it's **The last opened board**: the board you last had open, or, if that's gone or archived, the first board in the sidebar (pinned boards first). Choose **All projects** to start on the overview instead. After that first visit, switching between Planner and Kanban keeps whatever you had open. Opening a card from the menu bar or search still goes to that card's board. The choice is kept on this Mac and isn't part of backups.
+
+**Each board at a glance.** Under each board's name in the sidebar is the same summary as its All projects card: its load against capacity (for example *17 of 50 open tasks (34%)*, with the gauge coloured green, orange or red) and how many cards are open and done. Load counts only cards assigned to the board's resources and compares them with their targets, so it can differ from the open count, which includes unassigned cards. A red triangle beside the name means someone on the board is over capacity. Long names wrap onto a second line; hover to see the full name.
+
 **Set it up.** Right-click a column header (or click its **⋯**) to rename it, set a WIP limit, or move it left or right. Choose **Appearance…** to pick its colour and icon: by default (**Automatic**, marked A) the colour follows its stage (to do red, in progress orange, done green) and the icon its name (an eye for "In Review", a hand for "Blocked", an hourglass for "Waiting") or its stage. Each pick applies at once and **⌘Z** undoes it; **Reset to automatic** goes back. Add resources using the **Add resource** button below the board's rows (see Resources and memberships below). Every new board starts with an **Unassigned** row pinned at the top.
 
 ---
@@ -197,9 +201,12 @@ The menu bar's calendar now marks days with due Kanban cards so you can see at a
 
 **Modules**: toggle **Show the Planner** and **Show Kanban** (at least one stays on); choose which opens at launch.
 
+**Boards**:
+- **Default board**: where Kanban opens the first time you go to it after TickyTask starts: the last opened board (the default), All projects, or a board you pick. A board you later archive or delete is skipped, and the last opened board opens instead.
+- **Show allocation in row headers** (off by default): turn it on to show the part-time icon and percentage beside each name. Allocation still sets capacity.
+
 **New boards** defaults:
 - **Measure load in**: open tasks or hours. This affects all charts and capacity calculations.
-- **Show allocation in row headers** (under **Boards**, off by default): turn it on to show the part-time icon and percentage beside each name. Allocation still sets capacity.
 - **Open-task target per resource**: the default load target (e.g., 5 tasks per resource).
 - **Weight Critical and High cards**: if on, High and Critical cards count extra toward load (e.g., 2 or 1.5 × their count).
 - **Over a WIP limit**: warn (show red but allow drop) or block the move.

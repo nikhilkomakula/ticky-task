@@ -41,6 +41,15 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the board's columns render")
     }
 
+    func testKanbanOpensTheDefaultBoard() {
+        // An empty choice: the last opened board, which UI tests skip, so the first board.
+        let app = launch(["-kanban.defaultBoard", ""])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the first board opens without a click")
+        app.terminate()
+        let overview = launch(["-kanban.defaultBoard", "allProjects"])
+        XCTAssertTrue(element(overview, "kanban-all-tabs").waitForExistence(timeout: 10), "All projects when it's the default")
+    }
+
     func testSwitchModulesAndSeeTheBoard() {
         let app = launch()
         openPlatform(app)

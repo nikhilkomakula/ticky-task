@@ -21,6 +21,7 @@ struct KanbanSettingsView: View {
     @AppStorage(KanbanBoardDefaults.autoArchiveEnabledKey) private var autoArchive = false
     @AppStorage(KanbanBoardDefaults.autoArchiveDaysKey) private var autoArchiveDays = 30
     @AppStorage(KanbanPopover.projectKey) private var popoverProjectID = ""
+    @AppStorage(KanbanDefaultBoard.key) private var defaultBoard = ""
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var templates = KanbanTemplateStore.saved()
     @State private var message: String?
@@ -41,6 +42,21 @@ struct KanbanSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Boards") {
+                Picker("Default board", selection: $defaultBoard) {
+                    Text("The last opened board").tag("")
+                    Text("All projects").tag(KanbanDefaultBoard.allProjects)
+                    ForEach(projects.filter { $0.archivedAt == nil || $0.id.uuidString == defaultBoard }) {
+                        // An archived choice is kept but not opened.
+                        Text($0.archivedAt == nil ? $0.name : "\($0.name) (archived; not opened)").tag($0.id.uuidString)
+                    }
+                    if UUID(uuidString: defaultBoard) != nil, !projects.contains(where: { $0.id.uuidString == defaultBoard }) {
+                        Text("A deleted board (opens the last opened)").tag(defaultBoard)
+                    }
+                }
+                .accessibilityIdentifier("settings-default-board")
+                Text("Where Kanban opens the first time you go to it after TickyTask starts. You can also right-click a board in the sidebar and choose Default Board.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Show allocation in row headers", isOn: $showAllocation)
                     .accessibilityIdentifier("settings-show-allocation")
                 Text("The part-time icon and percentage beside each name. Allocation still sets capacity and stays in Edit membership.")

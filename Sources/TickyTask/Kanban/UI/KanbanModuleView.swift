@@ -57,6 +57,8 @@ struct KanbanModuleView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear(perform: openDefaultBoard)
+        .onChange(of: projects.isEmpty) { _, _ in openDefaultBoard() }
         .onChange(of: activeBoardID, initial: true) { _, id in app.kanbanActiveBoardID = id }
         .onDisappear { app.kanbanActiveBoardID = nil }
         .onChange(of: app.kanban.selection, initial: true) { _, selection in
@@ -67,6 +69,21 @@ struct KanbanModuleView: View {
         } message: {
             Text(app.kanbanError ?? "")
         }
+    }
+}
+
+extension KanbanModuleView {
+    /// The first time the module shows boards each session, it opens the default board, unless
+    /// something (a card opened from the menu bar or search) already chose one.
+    fileprivate func openDefaultBoard() {
+        // Boards that haven't loaded yet don't use up the session's turn.
+        guard !app.kanban.openedDefault, !projects.isEmpty else { return }
+        app.kanban.openedDefault = true
+        guard app.kanban.selection == .allProjects else { return }
+        let defaults = UserDefaults.standard
+        // UI tests start from the first board, whatever an earlier run opened last.
+        app.kanban.selection = KanbanDefaultBoard.item(projects, choice: defaults.string(forKey: KanbanDefaultBoard.key),
+                                                       lastOpened: UITestSupport.isRunning ? nil : defaults.string(forKey: KanbanPopover.lastProjectKey))
     }
 }
 
