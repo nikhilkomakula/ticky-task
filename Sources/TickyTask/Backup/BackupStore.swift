@@ -48,11 +48,13 @@ struct KanbanBackupDiff: Equatable, Sendable {
     let tasks: EntityDiff
     let subtasks: EntityDiff
     let activities: EntityDiff
+    let timeOff: EntityDiff
+    let availabilityOverrides: EntityDiff
     let droppedDependencyEdges: Int
 
-    var totalAdded: Int { people.added + projects.added + columns.added + resources.added + labels.added + tasks.added + subtasks.added + activities.added }
-    var totalUpdated: Int { people.updated + projects.updated + columns.updated + resources.updated + labels.updated + tasks.updated + subtasks.updated + activities.updated }
-    var totalRemoved: Int { people.removed + projects.removed + columns.removed + resources.removed + labels.removed + tasks.removed + subtasks.removed + activities.removed }
+    var totalAdded: Int { people.added + projects.added + columns.added + resources.added + labels.added + tasks.added + subtasks.added + activities.added + timeOff.added + availabilityOverrides.added }
+    var totalUpdated: Int { people.updated + projects.updated + columns.updated + resources.updated + labels.updated + tasks.updated + subtasks.updated + activities.updated + timeOff.updated + availabilityOverrides.updated }
+    var totalRemoved: Int { people.removed + projects.removed + columns.removed + resources.removed + labels.removed + tasks.removed + subtasks.removed + activities.removed + timeOff.removed + availabilityOverrides.removed }
 }
 
 /// Bridges live SwiftData models and the pure `BackupService`: reads a snapshot
@@ -118,6 +120,8 @@ enum BackupStore {
             let kanbanTasks = Set(try context.fetch(FetchDescriptor<KanbanTask>()).map(\.id))
             let subtasks = Set(try context.fetch(FetchDescriptor<KanbanSubtask>()).map(\.id))
             let activities = Set(try context.fetch(FetchDescriptor<KanbanActivity>()).map(\.id))
+            let timeOff = Set(try context.fetch(FetchDescriptor<KanbanTimeOff>()).map(\.id))
+            let overrides = Set(try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()).map(\.id))
 
             let report = try KanbanBackupValidator.validate(kanbanSection)
             kanbanDiff = KanbanBackupDiff(
@@ -129,6 +133,8 @@ enum BackupStore {
                 tasks: EntityDiff(imported: Set(kanbanSection.tasks.map(\.id)), existing: kanbanTasks),
                 subtasks: EntityDiff(imported: Set(kanbanSection.subtasks.map(\.id)), existing: subtasks),
                 activities: EntityDiff(imported: Set(kanbanSection.activities.map(\.id)), existing: activities),
+                timeOff: EntityDiff(imported: Set((kanbanSection.timeOff ?? []).map(\.id)), existing: timeOff),
+                availabilityOverrides: EntityDiff(imported: Set((kanbanSection.availabilityOverrides ?? []).map(\.id)), existing: overrides),
                 droppedDependencyEdges: report.droppedDependencyEdges
             )
         }
@@ -247,6 +253,8 @@ enum BackupStore {
         all += try context.fetch(FetchDescriptor<KanbanTask>()) as [any PersistentModel]
         all += try context.fetch(FetchDescriptor<KanbanSubtask>()) as [any PersistentModel]
         all += try context.fetch(FetchDescriptor<KanbanActivity>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<KanbanTimeOff>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()) as [any PersistentModel]
         return all
     }
 
@@ -332,6 +340,7 @@ enum BackupStore {
             person.skills = dto.skills
             person.createdAt = dto.createdAt
             person.archivedAt = dto.archivedAt
+            person.aliases = dto.aliases
             context.insert(person)
             personMap[dto.id] = person
         }
@@ -346,6 +355,8 @@ enum BackupStore {
             project.createdAt = dto.createdAt
             project.updatedAt = dto.updatedAt
             project.archivedAt = dto.archivedAt
+            project.startDay = dto.startDay
+            project.endDay = dto.endDay
             project.workWeekDays = dto.workWeekDays
             project.hoursPerDay = dto.hoursPerDay
             project.defaultCapacityHoursPerWeek = dto.defaultCapacityHoursPerWeek
@@ -465,6 +476,29 @@ enum BackupStore {
             activity.revertedByActivityID = dto.revertedByActivityID
             activity.project = dto.projectId.flatMap { projectMap[$0] }
             context.insert(activity)
+        }
+
+        // Insert time off (v2+).
+        for dto in kanban.timeOff ?? [] {
+            let entry = KanbanTimeOff(id: dto.id, startDay: dto.startDay, endDay: dto.endDay,
+                                     portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,
+                                     kind: KanbanTimeOffKind(rawValue: dto.kindRaw) ?? .pto,
+                                     origin: KanbanTimeOffOrigin(rawValue: dto.originRaw) ?? .manual)
+            entry.note = dto.note
+            entry.createdAt = dto.createdAt
+            entry.updatedAt = dto.updatedAt
+            entry.person = dto.personId.flatMap { personMap[$0] }
+            context.insert(entry)
+        }
+
+        // Insert availability overrides (v2+).
+        for dto in kanban.availabilityOverrides ?? [] {
+            let override = KanbanAvailabilityOverride(id: dto.id, weekStart: dto.weekStart, halfDays: dto.halfDays)
+            override.note = dto.note
+            override.createdAt = dto.createdAt
+            override.updatedAt = dto.updatedAt
+            override.resource = dto.resourceId.flatMap { resourceMap[$0] }
+            context.insert(override)
         }
 
         return KanbanInsertedGraph(tasksByProject: tasksByProject)

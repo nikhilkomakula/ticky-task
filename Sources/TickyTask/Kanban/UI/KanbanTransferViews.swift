@@ -12,8 +12,39 @@ enum KanbanTransferUI {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [boardType]
         panel.nameFieldStringValue = "\(project.name).\(KanbanBoardTransfer.fileExtension)"
+        // A board without both dates: choose which time off to include, before saving.
+        var range: (start: String, end: String)?
+        if project.startDay == nil || project.endDay == nil {
+            guard let chosen = chooseTimeOffRange(project) else { return }
+            range = chosen
+        }
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        app.runKanban { try KanbanBoardTransfer.export([project], context: context).write(to: url, options: .atomic) }
+        app.runKanban { try KanbanBoardTransfer.export([project], context: context, timeOffRange: range).write(to: url, options: .atomic) }
+    }
+
+    /// From–to pickers, defaulting to `KanbanBoardTransfer.defaultTimeOffRange`; nil on Cancel.
+    private static func chooseTimeOffRange(_ project: KanbanProject) -> (start: String, end: String)? {
+        let initial = KanbanBoardTransfer.defaultTimeOffRange(startDay: project.startDay, endDay: project.endDay)
+        func picker(_ key: String) -> NSDatePicker {
+            let picker = NSDatePicker()
+            picker.datePickerElements = .yearMonthDay
+            picker.datePickerStyle = .textFieldAndStepper
+            picker.dateValue = KanbanDay(key: key)?.date() ?? Date()
+            return picker
+        }
+        let from = picker(initial.start), to = picker(initial.end)
+        let row = NSStackView(views: [NSTextField(labelWithString: "From"), from, NSTextField(labelWithString: "to"), to])
+        row.spacing = 8
+        row.frame = NSRect(x: 0, y: 0, width: 360, height: 26)
+        let alert = NSAlert()
+        alert.messageText = "Which time off should the file include?"
+        alert.informativeText = "This board doesn't have both a start and an end date. Time off for its people that overlaps this range is included whole, even where it runs past it. It applies to those people on every board they're on after import."
+        alert.accessoryView = row
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let start = KanbanDay(from.dateValue), end = max(KanbanDay(to.dateValue), start)
+        return (start.key, end.key)
     }
 
     static func exportCSV(_ project: KanbanProject, app: AppState) {
@@ -67,13 +98,38 @@ struct KanbanImportSheet: View {
         return lines
     }
 
+    /// " · 4 time-off entries (applies to those people on every board)".
+    private var availabilityText: String {
+        let timeOff = request.plan.kanban.timeOff?.count ?? 0
+        let overrides = request.plan.kanban.availabilityOverrides?.count ?? 0
+        guard timeOff + overrides > 0 else { return "" }
+        var parts: [String] = []
+        if timeOff > 0 { parts.append("\(timeOff) time-off \(timeOff == 1 ? "entry" : "entries") (for those people on every board; ones already here are skipped)") }
+        if overrides > 0 { parts.append("\(overrides) availability \(overrides == 1 ? "override" : "overrides")") }
+        return " · " + parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import “\(request.fileName)”").font(.headline)
-            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) resources. Imported boards start a fresh history.")
+            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) resources\(availabilityText). Imported boards start a fresh history.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Form {
+                let conflicts = request.plan.availabilityConflicts(projects: projects, people: people)
+                if conflicts.timeOff + conflicts.overrides > 0 {
+                    Section("Availability") {
+                        if conflicts.timeOff > 0 {
+                            Toggle("Use the file's version of \(conflicts.timeOff) time-off \(conflicts.timeOff == 1 ? "entry" : "entries") that differ from what's recorded",
+                                   isOn: $request.plan.useIncomingTimeOff)
+                        }
+                        if conflicts.overrides > 0 {
+                            Toggle("Use the file's value for \(conflicts.overrides) \(conflicts.overrides == 1 ? "week" : "weeks") already overridden here",
+                                   isOn: $request.plan.useIncomingOverrides)
+                        }
+                        Text("Otherwise what's recorded here is kept.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Section("Boards") {
                     ForEach($request.plan.boards) { $board in
                         Picker(board.name, selection: $board.mergeInto) {
@@ -81,6 +137,11 @@ struct KanbanImportSheet: View {
                             ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
                         }
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
+                        if board.mergeInto != nil, let file = request.plan.kanban.projects.first(where: { $0.id == board.id }),
+                           file.startDay != nil || file.endDay != nil {
+                            Toggle("Use the file's board dates", isOn: $board.useImportedDates)
+                                .help("Otherwise this board keeps its own start and end dates")
+                        }
                         let reused = request.plan.reusedMemberships(projects: projects, people: people)[board.id] ?? []
                         if !reused.isEmpty {
                             Text("One membership per resource on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")

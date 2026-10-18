@@ -103,6 +103,14 @@ struct StubSummaryGenerator: SummaryGenerating {
         try await Task.sleep(for: delay)
         if let failure { throw failure }
         let root = (try? JSONSerialization.jsonObject(with: request.payload)) as? [String: Any]
+        if request.payloadLabel == KanbanAvailabilityAssistant.payloadLabel {
+            // The availability assistant: the first person off on Tuesday of this week.
+            let person = ((root?["people"] as? [[String: Any]])?.first?["name"] as? String) ?? "Someone"
+            let tuesday = KanbanDay.today().monday.adding(days: 1)
+            let day = String(format: "%04d-%02d-%02d", tuesday.year, tuesday.month, tuesday.day)
+            let json = #"{"schemaVersion":1,"entries":[{"sourceRef":"text","personText":"\#(person)","startDate":"\#(day)","endDate":"\#(day)","portion":"full","kind":"pto","dateText":"Tuesday","evidence":"\#(person) off Tuesday","confidence":"high","issues":[]}],"unresolved":[],"warnings":[]}"#
+            return SummaryResult(text: json, config: request.config, resolvedModel: request.config.modelID, duration: .seconds(1), usage: nil)
+        }
         let groups = root?["taskGroups"] as? [[String: Any]] ?? []
         let titles = groups.flatMap { ($0["records"] as? [[String: Any]] ?? []).compactMap { $0["title"] as? String } }
         let text = """

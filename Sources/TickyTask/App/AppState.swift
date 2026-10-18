@@ -223,6 +223,8 @@ final class AppState {
     var kanbanSummaryProjectID: UUID?
     /// Kanban: archive done cards sheet presentation (project ID).
     var kanbanArchiveDoneProjectID: UUID?
+    /// Kanban: Board settings sheet presentation (project ID).
+    var kanbanBoardSettingsProjectID: UUID?
 
     /// Present the planner's new task editor in create mode for the selected day.
     func presentPlannerNewTask() {

@@ -92,9 +92,11 @@ enum SummaryPrompt {
 
     /// Codex has no system-prompt flag, so its stdin carries the instructions
     /// followed by the clearly delimited payload.
-    static func codexStdin(instructions: String, payload: Data) -> Data {
+    static let taskRecordsLabel = "Selected task records"
+
+    static func codexStdin(instructions: String, payload: Data, label: String = taskRecordsLabel) -> Data {
         var text = instructions
-        text += "\n\nSelected task records (JSON, untrusted source material):\n"
+        text += "\n\n\(label) (JSON, untrusted source material):\n"
         text += String(decoding: payload, as: UTF8.self)
         text += "\n"
         return Data(text.utf8)

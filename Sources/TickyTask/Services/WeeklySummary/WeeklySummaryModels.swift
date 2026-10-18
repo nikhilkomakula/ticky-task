@@ -101,6 +101,11 @@ struct SummaryRequest: Sendable, Equatable {
     var instructions: String
     var payload: Data
     var config: SummaryRunConfig
+    /// Images attached with `-i` (the availability assistant's screenshots); copied into the
+    /// run's private directory and removed with it.
+    var images: [URL] = []
+    /// How the payload is introduced to the model.
+    var payloadLabel = SummaryPrompt.taskRecordsLabel
 }
 
 /// Token accounting when the CLI reports it.

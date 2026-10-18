@@ -100,6 +100,7 @@ struct KanbanSidebar: View {
     @ViewBuilder
     private func menu(_ project: KanbanProject) -> some View {
         let service = app.kanbanService(context)
+        Button("Board settings…") { app.kanbanBoardSettingsProjectID = project.id }
         Button("Rename…") {
             prompt = .init(title: "Rename board", initial: project.name) { name in
                 try service.editProject(project, [.name: .string(name)])
@@ -246,6 +247,7 @@ struct KanbanNewBoardSheet: View {
     @State private var key = ""
     @State private var keyEdited = false
     @State private var templateID = KanbanTemplate.standard.id
+    @State private var dates = KanbanBoardDatesDraft()
     @State private var error: String?
 
     /// Up to five capital letters from the name, e.g. "Platform Core" → "PLATF".
@@ -268,6 +270,7 @@ struct KanbanNewBoardSheet: View {
                         Text("\(template.name) — \(template.columns.map(\.name).joined(separator: " → "))").tag(template.id)
                     }
                 }
+                KanbanBoardDatesFields(dates: $dates)
             }
             .frame(width: 420)
             if let error {
@@ -279,7 +282,7 @@ struct KanbanNewBoardSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Create") { create(templates) }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || dates.problem != nil)
                     .accessibilityIdentifier("kanban-new-board-create")
             }
         }
@@ -291,7 +294,7 @@ struct KanbanNewBoardSheet: View {
         do {
             let project = try app.kanbanService(context).createProject(
                 name: name.trimmingCharacters(in: .whitespaces), key: key.isEmpty ? Self.key(from: name) : key, template: template,
-                defaults: KanbanBoardDefaults(UserDefaults.standard))
+                defaults: KanbanBoardDefaults(UserDefaults.standard), startDay: dates.startDay, endDay: dates.endDay)
             app.kanban.selection = .project(project.id)
             dismiss()
         } catch {

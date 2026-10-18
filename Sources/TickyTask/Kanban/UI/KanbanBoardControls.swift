@@ -26,6 +26,7 @@ struct KanbanViewControls: View {
                     Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
                     Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
                     Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                    Label("Availability", systemImage: "calendar.badge.clock").tag(KanbanBoardState.ViewKind.availability)
                     Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
                 }
                 .pickerStyle(.segmented)
@@ -38,6 +39,7 @@ struct KanbanViewControls: View {
                         Label("Board", systemImage: "square.grid.3x2").tag(KanbanBoardState.ViewKind.board)
                         Label("List", systemImage: "list.bullet").tag(KanbanBoardState.ViewKind.list)
                         Label("Timeline", systemImage: "chart.bar.xaxis").tag(KanbanBoardState.ViewKind.timeline)
+                        Label("Availability", systemImage: "calendar.badge.clock").tag(KanbanBoardState.ViewKind.availability)
                         Label("Dashboard", systemImage: "chart.pie").tag(KanbanBoardState.ViewKind.dashboard)
                     }
                     .pickerStyle(.inline)
@@ -50,6 +52,13 @@ struct KanbanViewControls: View {
                 .accessibilityIdentifier("kanban-view-picker")
             }
 
+            // Card filters, Sort and Show Archived don't apply to availability.
+            if state.view != .availability { cardControls(state) }
+        }
+    }
+
+    @ViewBuilder
+    private func cardControls(_ state: KanbanBoardState) -> some View {
             Button { showFilter.toggle() } label: {
                 Image(systemName: state.filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
             }
@@ -89,7 +98,6 @@ struct KanbanViewControls: View {
             .frame(width: 28, height: 28)
             .help(state.showArchived ? "Hide archived cards" : "Show archived cards")
             .accessibilityIdentifier("kanban-show-archived")
-        }
     }
 }
 

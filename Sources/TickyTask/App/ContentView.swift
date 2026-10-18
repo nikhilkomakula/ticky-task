@@ -159,6 +159,7 @@ struct ContentView: View {
         runCarryForward()
         AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
         runKanbanAutoArchive()
+        KanbanAvailabilityStaging.removeStale()   // screenshots left by a crash
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.syncKanbanReminders(context: context)
@@ -356,6 +357,17 @@ private struct KanbanArchiveDoneContainer: View {
     }
 }
 
+private struct KanbanBoardSettingsContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanBoardSettingsSheet(project: project)
+        }
+    }
+}
+
 /// A board id as a sheet item (rather than making UUID itself Identifiable app-wide).
 private struct BoardSheet: Identifiable {
     let id: UUID
@@ -400,6 +412,10 @@ private struct ContentViewSheetModifier: ViewModifier {
             }
             .sheet(item: $app.kanbanArchiveDoneProjectID.boardSheet) { sheet in
                 KanbanArchiveDoneContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanBoardSettingsProjectID.boardSheet) { sheet in
+                KanbanBoardSettingsContainer(projectID: sheet.id)
                     .environment(app as AppState)
             }
     }
