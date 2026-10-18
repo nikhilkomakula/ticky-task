@@ -3,7 +3,8 @@ import SwiftData
 
 /// A large, deterministic board for scrolling benchmarks (UI tests under `-uitest` and unit
 /// tests only): 29 people, the standard columns and `cardCount` cards. Three hot cells hold a
-/// quarter of the cards between them, the rest spread over every cell; cards carry priorities,
+/// quarter of the cards between them: To Do × Alice, In Progress × Bob and Done × Carol.
+/// The rest spread over every cell; cards carry priorities,
 /// estimates, due dates, labels, blockers, dependencies and subtasks, so every card icon renders.
 /// The board and people go through the service; cards are inserted directly and saved once,
 /// since thousands of service saves would outlast a UI test's launch.
@@ -21,7 +22,8 @@ enum KanbanVolumeSeed {
             let initials = String(name.split(separator: " ").compactMap(\.first))
             members.append(try service.addMembership(try service.createPerson(name: name, initials: initials), to: project))
         }
-        let hot = (0..<3).map { _ in (columns[rng.below(columns.count)], members[rng.below(members.count)]) }
+        // Fixed, distinct rows let UI tests reach a known long cell without inspecting the store.
+        let hot = [(columns[0], members[0]), (columns[1], members[1]), (columns[2], members[2])]
         let today = Calendar.current.startOfDay(for: now)
         var nextSort: [ObjectIdentifier: Double] = [:]
         var previous: KanbanTask?

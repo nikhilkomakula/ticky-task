@@ -72,6 +72,9 @@ struct MainWindowHeader: View {
 
             Divider()
         }
+        .simultaneousGesture(TapGesture().onEnded {
+            app.kanbanBoardFocusResetToken &+= 1
+        })
     }
 }
 
