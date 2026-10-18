@@ -66,8 +66,13 @@ flowchart LR
   (`weeklySummary.*` keys; Settings › AI). *Disagreement with R1-8:* a separate availability connection would make the
   owner set up ChatGPT/Ollama twice; the owner asked to "use the ChatGPT integration or similar". The disclosure names
   the destination with its host ("to Ollama at localhost:11434"), keeps "through your installed Codex CLI", and notes
-  that an OpenAI-compatible server needs a Responses API. Screenshots: "Screenshots need a model with vision support;
-  if it can't read them the request fails" — never dropped silently, never rerouted.
+  that an OpenAI-compatible server needs a Responses API. Screenshots (R2-9): the model catalog says nothing about
+  vision, so image support is **known** only for the ChatGPT-account and Codex-configuration connections (OpenAI models
+  through the CLI's `-i`), and **unknown** for local and compatible servers and custom model ids: with screenshots
+  attached the sheet says "Image support unknown for this model — an answer that ignores the screenshots can look
+  complete; check the review." `SummaryModelOption` gains an optional `acceptsImages` so a model known not to read
+  images disables "Suggest changes" while screenshots are attached (none is marked yet). Provider errors are shown as
+  they are; images are never dropped silently and the request is never rerouted.
 - **Input:** an **Instructions** field (the owner's words: "Mia is off next Tue", "cancel Ravi's PTO on Friday",
   "set Sam to 3 days the week of 2 Nov", "add Thanksgiving 26 Nov", "Ravi works on Diwali") and the material (pasted
   text, screenshots: untrusted). Either may be empty, not both. Rows from instructions have `sourceRef: "instructions"`.
@@ -83,15 +88,24 @@ flowchart LR
   - `holiday`: `date`, `name`, `portion`; `removeHoliday`: `date`, `name` (null when only one that day);
   - `holidayException`: `personText`, `date`, `name` (null when only one), `works` (bool).
   Ops sharing a `group` ("move Ravi's PTO from Tue to Thu" = remove + add) are one review row, selected together.
+- **Edits keep identity** (R2-5), resolved locally when a group is planned:
+  - `removeHoliday` + `holiday` in one group = an **update** of that record: same `id`, `createdAt` and `workedBy`; a
+    null `name` keeps the old name. "Move Diwali to Wednesday" never loses who works it (including people not on this
+    board, whose exceptions the model never saw).
+  - `removeTimeOff` + `timeOff` for the same person in one group = a **move**: when the removal takes a whole entry,
+    the addition reuses its `id` and `createdAt`; `kind: null` and the note come from the removed entry (if the group
+    removes from exactly one entry; otherwise `kind` is required). Partial removals split as before.
+  - `timeOff.kind` may be null only inside such a group.
 - **Local resolution:** people as today (alias / unique full name; otherwise unmatched); holidays to exact records by
   date (+ name), several candidates → needs review with a picker; overrides target this board's membership, a person
   not on this board → unresolved.
 - **One deterministic plan** against a request-time snapshot (time off, holidays + exceptions, this board's overrides,
-  board and membership dates): holiday changes, then exceptions, then time-off removals, then additions, then overrides
+  board and membership dates, and the board's **work days**), re-read after generation and again immediately before
+  Apply: holiday changes, then exceptions, then time-off removals, then additions, then overrides
   validated against the final holiday-aware capacity. Two selected rows that disagree about the same person and slot,
   the same week's override, or the same holiday → clash; Apply waits. Before Apply the snapshot is re-read; any change
   → "Things changed since this review — review again".
-- **Review:** groups New / Changes / **Removals** / Holidays (applies to everyone) / Unmatched / Needs review /
+- **Review** keeps design 03's cross-board line ("Time off counts on every board they're on"). Groups New / Changes / **Removals** / Holidays (applies to everyone) / Unmatched / Needs review /
   Already true. Removals, replacements and holiday changes **start unticked**, carry a "minus.circle" icon and the word
   "Removes" or "Changes" (not colour alone), list the exact records removed and the pieces kept, and show before → after
   for each affected week ("Ravi · 19–25 Oct: 3 → 4"). The impact line counts every effective change ("Removes 1, adds
@@ -106,7 +120,9 @@ the weekly band boundaries and floored display; service: holiday add/edit/delete
 cross-board undo checks; removal-only and mixed assistant changes with undo/redo; stale snapshot and clash refusal;
 save failure rollback; schema-2 parse (strict, groups, ambiguous holidays, v1 still accepted); import: holiday preview,
 exception preservation, adoption; v1/v2/v3 backup and board-file fixtures; a real v0.3.0 store migration + reopen;
-snapshot renders (light/dark) and CI UI tests for holidays and an instruction-only request.
+grouped edits keep the holiday's id and exceptions and the PTO's kind and note; a work-days change during generation
+is caught as stale; snapshot renders (light/dark) and CI UI tests for holidays and an instruction-only request,
+including keyboard navigation and VoiceOver labels.
 
 ## Version
 v0.4.0 (backup, board file and activity payload formats move to v3). No tag until the owner asks; deployed locally.
