@@ -43,6 +43,15 @@ struct BoardCardFocusTests {
                 "a later toolbar focus must not keep the completed card as a shortcut target")
     }
 
+    @Test("Reaching the requested card retains an active reveal until scrolling completes")
+    func focusArrivesDuringReveal() {
+        let request = BoardCardFocusRequest(cardID: UUID(), requiresReveal: true)
+        let pending = BoardCardFocus.pendingRequest(request, afterFocusChangesTo: .card(request.cardID))
+
+        #expect(pending == request, "focus can arrive before the offscreen card has scrolled into view")
+        #expect(BoardCardFocus.pendingRequest(pending, afterCompleting: request) == nil)
+    }
+
     @Test("Finishing a reveal clears its request even when focus does not change")
     func revealCompletes() {
         let request = BoardCardFocusRequest(cardID: UUID(), requiresReveal: true)

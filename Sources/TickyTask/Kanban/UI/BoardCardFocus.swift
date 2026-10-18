@@ -13,8 +13,10 @@ enum BoardCardFocus {
 
     static func pendingRequest(_ request: BoardCardFocusRequest?, afterFocusChangesTo focus: KanbanBoardFocus?) -> BoardCardFocusRequest? {
         // Moving a card between lazy cells may temporarily remove its focused view.
-        // A request lasts through that gap, until focus arrives or the reveal completes.
-        focus == nil ? request : nil
+        // Focus can also arrive before scrolling finishes; only the reveal completes that request.
+        if focus == nil { return request }
+        if let request, request.requiresReveal, focus == .card(request.cardID) { return request }
+        return nil
     }
 
     static func pendingRequest(_ pending: BoardCardFocusRequest?, afterCompleting request: BoardCardFocusRequest) -> BoardCardFocusRequest? {
