@@ -99,6 +99,65 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue((element(app, "kanban-availability-dates").label).hasPrefix("From"), "the range chip shows the start")
     }
 
+    /// Public holidays (design 04): a holiday comes off the week's possible days, a person who works it gets the day
+    /// back (and the weekly total moves), a week closed by holidays still shows and clears an override that no longer
+    /// fits (reached with the keyboard), and the Public holidays sheet lists and adds holidays.
+    func testPublicHolidays() {
+        let app = launch(["-kanban.defaultBoard", "", "-uitestKanbanHolidays"])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the board opens")
+        selectView(app, "Availability")
+        let monday = thisMonday(), nextMonday = dayKey(thisMonday(), plus: 7), wednesday = dayKey(thisMonday(), plus: 2)
+        let cell = element(app, "kanban-availability-Ravi Kumar-\(monday)")
+        XCTAssertTrue(cell.waitForExistence(timeout: 10), "Ravi's cell for this week")
+        wait(for: [expectation(for: NSPredicate(format: "value CONTAINS 'public holidays excluded (Seed Day)'"), evaluatedWith: cell)], timeout: 5)
+        let weekly = element(app, "kanban-availability-weekly-\(monday)")
+        XCTAssertTrue(weekly.exists, "the Weekly availability row")
+        let before = weekly.value as? String
+
+        cell.click()
+        let works = element(app, "kanban-holiday-works-\(wednesday)")
+        XCTAssertTrue(works.waitForExistence(timeout: 5), "the cell's details list the holiday")
+        works.click()
+        wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS 'public holidays excluded')"), evaluatedWith: cell)], timeout: 5)
+        XCTAssertNotEqual(weekly.value as? String, before, "the team total counts his day again")
+        app.typeKey(.escape, modifierFlags: [])
+
+        // Next week, from the keyboard: all holidays, and the override no longer fits.
+        let closed = element(app, "kanban-availability-Ravi Kumar-\(nextMonday)")
+        XCTAssertTrue(closed.waitForExistence(timeout: 5))
+        wait(for: [expectation(for: NSPredicate(format: "value CONTAINS 'Public holiday all week' AND value CONTAINS 'Override needs review'"),
+                               evaluatedWith: closed)], timeout: 5)
+        app.typeKey(.rightArrow, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
+        let clear = element(app, "kanban-availability-clear-override")
+        XCTAssertTrue(clear.waitForExistence(timeout: 5), "Return opens next week's details, with Clear override")
+        clear.click()
+        wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS 'needs review')"), evaluatedWith: closed)], timeout: 5)
+
+        // The sheet lists the shutdown and adds a holiday (today, by default).
+        element(app, "kanban-availability-more").click()
+        let menu = app.menuItems["kanban-availability-holidays-menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.click()
+        XCTAssertTrue(element(app, "kanban-holiday-\(nextMonday)").waitForExistence(timeout: 5), "the sheet lists the shutdown")
+        element(app, "kanban-holidays-add").click()
+        let name = element(app, "kanban-holiday-name")
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "the holiday editor opens")
+        name.click()
+        name.typeText("Team day")
+        element(app, "kanban-holiday-save").click()
+        XCTAssertTrue(app.staticTexts["Team day"].waitForExistence(timeout: 5), "the new holiday is listed")
+    }
+
+    /// A yyyyMMdd key `days` after another.
+    private func dayKey(_ key: String, plus days: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let base = calendar.date(from: DateComponents(year: Int(key.prefix(4)), month: Int(key.dropFirst(4).prefix(2)), day: Int(key.suffix(2))))!
+        let c = calendar.dateComponents([.year, .month, .day], from: calendar.date(byAdding: .day, value: days, to: base)!)
+        return String(format: "%04d%02d%02d", c.year!, c.month!, c.day!)
+    }
+
     /// Update availability with the UI-test stub (the first person by name, Mia Chen, off on Tuesday): review, Apply.
     func testUpdateAvailabilityFromPastedText() {
         let app = launch(["-kanban.defaultBoard", ""])

@@ -129,6 +129,14 @@ enum UITestSupport {
             }
             try context.save()
         }
+        // `-uitestKanbanHolidays`: this week's Wednesday is "Seed Day", and next week is a
+        // "Shutdown" closing a week Ravi had overridden, so the override needs review.
+        if ProcessInfo.processInfo.arguments.contains("-uitestKanbanHolidays") {
+            let monday = KanbanDay.today().monday, next = KanbanDay.today().monday.adding(days: 7)
+            try kanban.setOverride(ravi, week: next, halfDays: 8)
+            try kanban.addHoliday(KanbanHolidayDTO(day: monday.adding(days: 2).key, name: "Seed Day"), on: platform)
+            for day in 0..<5 { try kanban.addHoliday(KanbanHolidayDTO(day: next.adding(days: day).key, name: "Shutdown"), on: platform) }
+        }
         // `-uitestKanbanWide`: enough columns that the board scrolls sideways.
         if ProcessInfo.processInfo.arguments.contains("-uitestKanbanWide") {
             for index in 1...6 { _ = try kanban.addColumn(to: platform, name: "Stage \(index)", at: 2) }
