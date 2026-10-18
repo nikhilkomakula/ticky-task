@@ -67,8 +67,9 @@ flowchart LR
   owner set up ChatGPT/Ollama twice; the owner asked to "use the ChatGPT integration or similar". The disclosure names
   the destination with its host ("to Ollama at localhost:11434"), keeps "through your installed Codex CLI", and notes
   that an OpenAI-compatible server needs a Responses API. Screenshots (R2-9): the model catalog says nothing about
-  vision, so image support is **known** only for the ChatGPT-account and Codex-configuration connections (OpenAI models
-  through the CLI's `-i`), and **unknown** for local and compatible servers and custom model ids: with screenshots
+  vision, so image support is **known** only for the ChatGPT-account connection with a model from its
+  catalog (OpenAI models through the CLI's `-i`), and **unknown** for everything else — the Codex configuration (it may
+  name any provider or gateway, R3-3), local and compatible servers, and custom model ids: with screenshots
   attached the sheet says "Image support unknown for this model — an answer that ignores the screenshots can look
   complete; check the review." `SummaryModelOption` gains an optional `acceptsImages` so a model known not to read
   images disables "Suggest changes" while screenshots are attached (none is marked yet). Provider errors are shown as
@@ -96,6 +97,9 @@ flowchart LR
     the addition reuses its `id` and `createdAt`; `kind: null` and the note come from the removed entry (if the group
     removes from exactly one entry; otherwise `kind` is required). Partial removals split as before.
   - `timeOff.kind` may be null only inside such a group.
+  - Only **uniquely paired** groups coalesce: one holiday removed and one added, or one person's removal from one entry
+    and one addition. Any other group (two holidays moved at once, several people, several entries) is **Needs review**
+    and can't be applied as an edit; the owner can ask again one change at a time (R3-1).
 - **Local resolution:** people as today (alias / unique full name; otherwise unmatched); holidays to exact records by
   date (+ name), several candidates → needs review with a picker; overrides target this board's membership, a person
   not on this board → unresolved.
@@ -120,7 +124,8 @@ the weekly band boundaries and floored display; service: holiday add/edit/delete
 cross-board undo checks; removal-only and mixed assistant changes with undo/redo; stale snapshot and clash refusal;
 save failure rollback; schema-2 parse (strict, groups, ambiguous holidays, v1 still accepted); import: holiday preview,
 exception preservation, adoption; v1/v2/v3 backup and board-file fixtures; a real v0.3.0 store migration + reopen;
-grouped edits keep the holiday's id and exceptions and the PTO's kind and note; a work-days change during generation
+grouped edits keep the holiday's id and exceptions and the PTO's kind and note; an ambiguous group (two holidays
+moved at once) is refused into Needs review; a work-days change during generation
 is caught as stale; snapshot renders (light/dark) and CI UI tests for holidays and an instruction-only request,
 including keyboard navigation and VoiceOver labels.
 
