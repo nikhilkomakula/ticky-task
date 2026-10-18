@@ -110,6 +110,15 @@ enum UITestSupport {
         let data = try kanban.createProject(name: "Data", key: "DATA")
         let miaOnData = try kanban.addMembership(miaPerson, to: data, allocationPercent: 60)
         _ = try kanban.createTask(in: data, title: "Load warehouse", column: data.orderedColumns[1], row: .resource(miaOnData.id))
+        // `-uitestKanbanDone`: seven more of Ravi's cards finished 1–7 days ago, so his Done
+        // cell (with Ship v1, finished now) shows five and tucks three away.
+        if ProcessInfo.processInfo.arguments.contains("-uitestKanbanDone") {
+            for index in 1...7 {
+                let card = try kanban.createTask(in: platform, title: "Finished \(index)", column: columns[2], row: .resource(ravi.id))
+                card.completedAt = calendar.date(byAdding: .day, value: -index, to: Date())
+            }
+            try context.save()
+        }
         // `-uitestKanbanWide`: enough columns that the board scrolls sideways.
         if ProcessInfo.processInfo.arguments.contains("-uitestKanbanWide") {
             for index in 1...6 { _ = try kanban.addColumn(to: platform, name: "Stage \(index)", at: 2) }

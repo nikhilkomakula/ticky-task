@@ -14,7 +14,10 @@ final class RecurrenceUITests: XCTestCase {
         } else {
             app = XCUIApplication()
         }
-        app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", "YES", "-showWeekends", "YES"]
+        // Today must not be the week's last day, or no later occurrence is on screen: on a
+        // Sunday the week starts on Sunday.
+        let sunday = Calendar.current.component(.weekday, from: Date()) == 1
+        app.launchArguments = ["-uitest", "-calendarColumns", "7", "-weekStartsMonday", sunday ? "NO" : "YES", "-showWeekends", "YES"]
         app.launchWithMainWindow()
         return app
     }

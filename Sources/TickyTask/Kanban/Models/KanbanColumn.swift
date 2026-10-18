@@ -8,6 +8,8 @@ final class KanbanColumn {
     var name: String = ""
     var sortIndex: Double = 0
     var colorHex: String?
+    /// An SF Symbol chosen for the column; nil picks one from its name or stage.
+    var symbolName: String?
     /// Unset by default; when set, the project's `wipPolicy` applies.
     var wipLimit: Int?
     var kindRaw: String = KanbanColumnKind.active.rawValue

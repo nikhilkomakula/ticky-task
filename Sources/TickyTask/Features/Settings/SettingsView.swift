@@ -154,13 +154,24 @@ private struct ShortcutsSettingsView: View {
 
     var body: some View {
         Form {
-            KeyboardShortcuts.Recorder("Open TickyTask:", name: .openApp)
-            KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
-            KeyboardShortcuts.Recorder("Toggle menu bar:", name: .toggleMenuBar)
-            Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
-            Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Section("From any app") {
+                KeyboardShortcuts.Recorder("Open TickyTask:", name: .openApp)
+                KeyboardShortcuts.Recorder("New task for today:", name: .newTaskToday)
+                KeyboardShortcuts.Recorder("Toggle menu bar:", name: .toggleMenuBar)
+                Toggle("Show only in the menu bar (hide Dock icon)", isOn: $menuBarOnly)
+                Text("Global shortcuts work from any app. The menu-bar icon shows a mini calendar and the selected day’s tasks with quick-add.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("In TickyTask") {
+                ModuleShortcutRecorder(module: .planner)
+                ModuleShortcutRecorder(module: .kanban)
+                Button("Restore ⌘1 and ⌘2") { ModuleShortcuts.shared.restoreDefaults() }
+                    .accessibilityIdentifier("shortcut-restore-modules")
+                Text("Switch the main window between Planner and Kanban (the View menu shows them). Click a shortcut, then press the new keys; Esc cancels. Keys already used by the other module, a global shortcut or another menu item are refused, so to swap the two, clear one first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .padding()

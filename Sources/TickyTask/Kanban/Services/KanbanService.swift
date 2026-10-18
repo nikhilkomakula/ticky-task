@@ -63,11 +63,13 @@ struct KanbanService {
         for (index, column) in template.columns.enumerated() {
             let model = KanbanColumn(name: column.name, kind: column.kind, sortIndex: Double(index))
             model.colorHex = column.colorHex
+            model.symbolName = column.symbolName
             model.wipLimit = column.wipLimit
             context.insert(model)
             model.project = project
         }
-        for (index, label) in template.labels.enumerated() {
+        // Built-in templates take Settings › Kanban's default labels; saved templates keep their own.
+        for (index, label) in (template.isBuiltIn ? defaults.labelsForNewBoard() : template.labels).enumerated() {
             let model = KanbanLabel(name: label.name, colorHex: label.colorHex, sortIndex: Double(index))
             model.symbolName = label.symbolName
             context.insert(model)
@@ -95,12 +97,9 @@ struct KanbanService {
     /// (one entry per board). Opt-in (Settings › Kanban); never deletes; skipped in a
     /// recovery session, like the planner's auto-delete.
     func autoArchive(olderThanDays days: Int, now: Date = Date()) throws {
-        guard days >= 1, !PersistenceRecovery.didRelaunch,
-              let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { return }
+        guard days >= 1, !PersistenceRecovery.didRelaunch else { return }
         for project in try context.fetch(FetchDescriptor<KanbanProject>()) where project.archivedAt == nil {
-            let stale = project.tasks.filter { task in
-                task.archivedAt == nil && task.column?.kind == .done && (task.completedAt.map { $0 < cutoff } ?? false)
-            }
+            let stale = KanbanDoneCards.archivable(in: project, finishedMoreThan: days, now: now)
             if !stale.isEmpty { try setArchived(stale, archived: true) }
         }
     }
@@ -272,7 +271,7 @@ struct KanbanService {
     /// a plain confirmed edit, outside every Change Log (01 §2.2).
     func editPerson(_ person: KanbanPerson, name: String? = nil, initials: String? = nil, employment: KanbanEmployment? = nil) throws {
         try RecurrenceMaterializer.checkpoint(context)
-        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty { throw KanbanServiceError.invariant("A person needs a name.") }
+        if let name, name.trimmingCharacters(in: .whitespaces).isEmpty { throw KanbanServiceError.invariant("A resource needs a name.") }
         if let name { person.name = name }
         if let initials { person.initials = initials }
         if let employment { person.employmentRaw = employment.rawValue }
@@ -440,7 +439,7 @@ struct KanbanService {
     /// Edits a column's name, colour or WIP limit. A kind change is allowed only on an
     /// empty column and can't remove the board's backlog or last Done column.
     func editColumn(_ column: KanbanColumn, name: String? = nil, colorHex: String?? = nil,
-                    wipLimit: Int?? = nil, kind: KanbanColumnKind? = nil) throws {
+                    wipLimit: Int?? = nil, kind: KanbanColumnKind? = nil, symbolName: String?? = nil) throws {
         try RecurrenceMaterializer.checkpoint(context)
         guard let project = column.project else { throw KanbanServiceError.notFound }
         if let kind, kind != column.kind {
@@ -455,13 +454,25 @@ struct KanbanService {
         var changes: [KanbanFieldChange] = []
         if let name, name != column.name { changes.append(.init(entity: .column, id: column.id, field: "name", old: .string(column.name), new: .string(name))) }
         if let colorHex, colorHex != column.colorHex { changes.append(.init(entity: .column, id: column.id, field: "colorHex", old: column.colorHex.map(KanbanValue.string), new: colorHex.map(KanbanValue.string))) }
+        if let symbolName, symbolName != column.symbolName { changes.append(.init(entity: .column, id: column.id, field: "symbolName", old: column.symbolName.map(KanbanValue.string), new: symbolName.map(KanbanValue.string))) }
         if let wipLimit, wipLimit != column.wipLimit { changes.append(.init(entity: .column, id: column.id, field: "wipLimit", old: column.wipLimit.map(KanbanValue.int), new: wipLimit.map(KanbanValue.int))) }
         if let kind, kind != column.kind { changes.append(.init(entity: .column, id: column.id, field: "kind", old: .string(column.kindRaw), new: .string(kind.rawValue))) }
         guard !changes.isEmpty else { return }
         let payload = KanbanActivityPayload(changes: changes)
         let data = try payload.encoded()
         changes.forEach { setColumn($0, in: project) }
-        try save(project, kind: .structure, taskIDs: [], summary: "Edited column \(column.name)", encodedPayload: data)
+        try save(project, kind: .structure, taskIDs: [], summary: Self.columnEditSummary(changes, name: column.name), encodedPayload: data)
+    }
+
+    /// "Changed Review icon", "Reset Review appearance", …; other edits stay "Edited column".
+    static func columnEditSummary(_ changes: [KanbanFieldChange], name: String) -> String {
+        let fields = Set(changes.map(\.field))
+        if fields == ["colorHex"] { return "Changed \(name) colour" }
+        if fields == ["symbolName"] { return "Changed \(name) icon" }
+        if fields == ["colorHex", "symbolName"] {
+            return changes.allSatisfy { $0.new == nil } ? "Reset \(name) appearance" : "Changed \(name) appearance"
+        }
+        return "Edited column \(name)"
     }
 
     /// Moves the backlog role to `column`; both columns must be empty.
@@ -567,6 +578,249 @@ struct KanbanService {
         return task
     }
 
+    /// A copy of `task` right after it in its cell, as one new card (one entry; undo removes it).
+    /// It keeps the card's fields, labels, what it depends on and its steps (not done); not its
+    /// history, completion, planner link or the cards that depend on it.
+    @discardableResult
+    func duplicateCard(_ task: KanbanTask) throws -> KanbanTask {
+        guard let project = task.project, task.archivedAt == nil else { throw KanbanServiceError.invariant("Only a card on the board can be duplicated.") }
+        var draft = KanbanCardDraft()
+        draft.title = "\(task.title) copy"
+        draft.notes = task.notes
+        draft.notesRich = task.notesRich
+        draft.priority = task.priority
+        draft.isCritical = task.isCritical
+        draft.columnID = task.column?.id
+        draft.row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+        draft.dueDate = task.dueDate
+        draft.startDate = task.startDate
+        draft.estimateHours = task.estimateHours
+        draft.complexity = task.complexity
+        draft.jiraURL = task.jiraURL
+        draft.isBlocked = task.isBlocked
+        draft.blockedReason = task.blockedReason
+        draft.labelIDs = task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.id)
+        draft.dependencyIDs = task.dependsOn.map(\.id)
+        // A step's assignee who has left the board isn't carried over.
+        draft.steps = task.subtasks.sorted { $0.sortIndex < $1.sortIndex }.map { step in
+            .init(title: step.title, assigneeID: step.assignee.flatMap { $0.archivedAt == nil ? $0.id : nil })
+        }
+        return try createCard(draft, in: project, after: task.id)
+    }
+
+    /// Creates a card from a complete draft in one transaction. Validates everything
+    /// first; on failure, no model is inserted. Records one `.created` entry with the
+    /// complete graph and sibling shifts; undo removes the whole card. `after` places it right
+    /// after that card in its cell (otherwise last).
+    @discardableResult
+    func createCard(_ draft: KanbanCardDraft, in project: KanbanProject, after anchor: UUID? = nil) throws -> KanbanTask {
+        try RecurrenceMaterializer.checkpoint(context)
+
+        // Refuse archived board
+        guard project.archivedAt == nil else { throw KanbanServiceError.invariant("That board is archived.") }
+
+        // Validate title
+        let trimmedTitle = draft.title.trimmingCharacters(in: .whitespaces)
+        guard !trimmedTitle.isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
+
+        // Validate and resolve column
+        let columnID = draft.columnID ?? project.columns.first(where: { $0.kind == .backlog })?.id
+        guard let columnID, let column = project.columns.first(where: { $0.id == columnID }) else {
+            throw KanbanServiceError.invariant("Pick a column on this board.")
+        }
+
+        // Validate WIP limit
+        if project.wipPolicy == .block, let limit = column.wipLimit,
+           columnCards(column).filter({ $0.archivedAt == nil }).count >= limit {
+            throw KanbanServiceError.wipBlocked([column.id])
+        }
+
+        // Validate and resolve resource (person)
+        let resource = try self.resource(for: draft.row, in: project)
+
+        // Validate labels and dependencies (must be on same board)
+        for labelID in draft.labelIDs {
+            guard project.labels.contains(where: { $0.id == labelID }) else {
+                throw KanbanServiceError.invariant("That label isn't on this board.")
+            }
+        }
+
+        for depID in draft.dependencyIDs {
+            guard let dep = project.tasks.first(where: { $0.id == depID }) else {
+                throw KanbanServiceError.invariant("That dependency isn't on this board.")
+            }
+        }
+
+        // Validate step titles
+        for step in draft.steps {
+            guard !step.title.trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw KanbanServiceError.invariant("A step can't have a blank title.")
+            }
+        }
+
+        // Validate assignee for steps
+        for step in draft.steps {
+            if let assigneeID = step.assigneeID {
+                guard project.resources.contains(where: { $0.id == assigneeID && $0.archivedAt == nil }) else {
+                    throw KanbanServiceError.invariant("That resource isn't an active member of this board.")
+                }
+            }
+        }
+
+        // Validate notes and Jira
+        try Self.checkEdit([
+            .notes: .string(draft.notes),
+            .notesRich: draft.notesRich.map(KanbanValue.data),
+            .priority: .int(draft.priority),
+            .isCritical: .bool(draft.isCritical),
+            .estimateHours: draft.estimateHours.map(KanbanValue.double),
+            .complexity: draft.complexity.map(KanbanValue.int),
+            .jiraURL: draft.jiraURL.map(KanbanValue.string),
+            .isBlocked: .bool(draft.isBlocked),
+            .blockedReason: draft.blockedReason.map(KanbanValue.string),
+        ])
+
+        // All validation passed; now insert
+        let task = KanbanTask(title: trimmedTitle)
+        task.createdAt = now()
+        task.updatedAt = now()
+        task.notes = draft.notes
+        task.notesRich = draft.notesRich
+        task.priority = draft.priority
+        task.isCritical = draft.isCritical
+        task.dueDate = draft.dueDate
+        task.startDate = draft.startDate
+        task.estimateHours = draft.estimateHours
+        task.complexity = draft.complexity
+        task.jiraURL = draft.jiraURL
+        task.isBlocked = draft.isBlocked
+        task.blockedReason = draft.blockedReason
+        if column.kind == .done { task.completedAt = now() }
+
+        // Place in cell and calculate shifts
+        // By the row a card shows in: an archived member's cards show as Unassigned.
+        let siblings = project.tasks.filter { card in
+            card.archivedAt == nil && card.column?.id == column.id && card.resource.flatMap { $0.archivedAt == nil ? $0.id : nil } == resource?.id
+        }
+            .sorted { $0.sortIndex < $1.sortIndex }
+        let position = anchor.flatMap { id in siblings.firstIndex { $0.id == id }.map { $0 + 1 } } ?? siblings.count
+        var shifts: [KanbanTransition] = []
+        for (index, card) in siblings.enumerated() {
+            let newIndex = Double(index < position ? index : index + 1)
+            guard card.sortIndex != newIndex else { continue }
+            var to = placement(card)
+            to.sortIndex = newIndex
+            shifts.append(KanbanTransition(taskID: card.id, from: placement(card), to: to))
+        }
+        task.sortIndex = Double(position)
+
+        // Insert task and set relationships
+        context.insert(task)
+        task.project = project
+        task.column = column
+        task.resource = resource
+
+        // Set labels, dependencies and create steps
+        task.labels = project.labels.filter { draft.labelIDs.contains($0.id) }
+        task.dependsOn = project.tasks.filter { draft.dependencyIDs.contains($0.id) }
+
+        for (index, stepDraft) in draft.steps.enumerated() {
+            let step = KanbanSubtask(id: UUID(), title: stepDraft.title.trimmingCharacters(in: .whitespaces),
+                                     isDone: stepDraft.isDone, sortIndex: Double(index))
+            context.insert(step)
+            step.task = task
+            if let assigneeID = stepDraft.assigneeID, let assignee = project.resources.first(where: { $0.id == assigneeID }) {
+                step.assignee = assignee
+            }
+        }
+
+        // Build activity payload with complete graph
+        var graph = KanbanRemovedGraph(tasks: [KanbanTaskDTO(task)])
+        for step in task.subtasks {
+            graph.subtasks.append(KanbanSubtaskDTO(step))
+        }
+
+        let payload = KanbanActivityPayload(transitions: shifts, graph: graph)
+        applyTransitions(shifts, in: project)
+
+        try save(project, kind: .created, taskIDs: [task.id] + shifts.map(\.taskID),
+                 summary: "Added \(trimmedTitle)", payload: payload)
+        return task
+    }
+
+    /// Applies batched label changes (add, edit, reorder, delete) in one transaction.
+    /// Deletes remove the label from all cards (archived too) and prune it from board filters.
+    /// Returns without saving if there are no effective changes.
+    func applyLabelChanges(_ changes: KanbanLabelChanges, to project: KanbanProject) throws {
+        try RecurrenceMaterializer.checkpoint(context)
+        let current = project.labels.sorted { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }
+        let byID = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let addedIDs = Set(changes.adds.map(\.id))
+        let knownIDs = Set(byID.keys).union(addedIDs)
+        for id in changes.edits.map(\.id) + changes.deleteIDs + changes.orderIDs where !knownIDs.contains(id) {
+            throw KanbanServiceError.invariant("That label isn't on this board.")
+        }
+        let deleted = Set(changes.deleteIDs)
+        let edits = Dictionary(changes.edits.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        func clean(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        // The catalog as it will be. Only names being added or changed must be unique, so an
+        // untouched legacy duplicate doesn't block other edits.
+        let surviving = current.filter { !deleted.contains($0.id) }
+        var finalNames = surviving.map { (id: Optional($0.id), name: clean(edits[$0.id]?.name ?? $0.name), changed: edits[$0.id]?.name != nil) }
+        finalNames += changes.adds.map { (id: nil, name: clean($0.name), changed: true) }
+        for (index, entry) in finalNames.enumerated() where entry.changed {
+            guard !entry.name.isEmpty else { throw KanbanServiceError.invariant("A label needs a name.") }
+            let clash = finalNames.enumerated().contains { $0.offset != index && $0.element.name.caseInsensitiveCompare(entry.name) == .orderedSame }
+            guard !clash else { throw KanbanServiceError.invariant("There's already a label called “\(entry.name)”.") }
+        }
+        let ordered = changes.orderIDs.filter { !deleted.contains($0) }
+        // Listed first (new labels included), then unlisted existing ones as they were, then unlisted new ones.
+        let order = ordered + surviving.map(\.id).filter { !ordered.contains($0) } + changes.adds.map(\.id).filter { !ordered.contains($0) }
+        let position = Dictionary(order.enumerated().map { ($1, Double($0)) }, uniquingKeysWith: { a, _ in a })
+        let affected = project.tasks.filter { task in task.labels.contains { deleted.contains($0.id) } }
+        var state = KanbanBoardState.decode(project.boardState)
+        let prunesFilter = !state.filter.labelIDs.isDisjoint(with: deleted)
+        state.filter.labelIDs.subtract(deleted)
+        let stateData = prunesFilter ? state.encoded() : nil
+        if prunesFilter && stateData == nil { throw KanbanServiceError.invariant("The board's filter couldn't be updated.") }
+
+        var notes: [String] = []
+        for add in changes.adds { notes.append("added \(clean(add.name))") }
+        for label in surviving {
+            guard let edit = edits[label.id] else { continue }
+            if let name = edit.name, clean(name) != label.name { notes.append("renamed \(label.name) to \(clean(name))") }
+            else if (edit.colorHex.map { $0 != label.colorHex } ?? false) || (edit.symbolName.map { $0 != label.symbolName } ?? false)
+                        || (edit.clearsSymbol && label.symbolName != nil) { notes.append("changed \(label.name)") }
+        }
+        for id in changes.deleteIDs { if let label = byID[id] { notes.append("deleted \(label.name)") } }
+        let moved = order.enumerated().contains { byID[$0.element]?.sortIndex != Double($0.offset) }
+        if !changes.orderIDs.isEmpty && moved && notes.isEmpty { notes.append("reordered") }
+        guard !notes.isEmpty || moved || !changes.adds.isEmpty else { return }   // nothing changes, nothing is saved
+        let payload = try KanbanActivityPayload().encoded()   // informational: label edits aren't revertible
+
+        // Nothing below throws until the save.
+        for label in surviving {
+            guard let edit = edits[label.id] else { continue }
+            if let name = edit.name { label.name = clean(name) }
+            if let color = edit.colorHex { label.colorHex = color }
+            if let symbol = edit.symbolName { label.symbolName = symbol } else if edit.clearsSymbol { label.symbolName = nil }
+        }
+        for (id, index) in position { byID[id]?.sortIndex = index }
+        for add in changes.adds {
+            let label = KanbanLabel(id: add.id, name: clean(add.name), colorHex: add.colorHex, sortIndex: position[add.id] ?? Double(order.count))
+            label.symbolName = add.symbolName
+            context.insert(label)
+            label.project = project
+        }
+        for task in affected { task.labels.removeAll { deleted.contains($0.id) } }   // archived cards too
+        if let stateData { project.boardState = stateData }
+        for id in changes.deleteIDs { if let label = byID[id] { context.delete(label) } }   // last
+        try save(project, kind: .structure, taskIDs: affected.map(\.id),
+                 summary: "Edited labels" + (notes.isEmpty ? "" : ": " + notes.joined(separator: ", ")),
+                 encodedPayload: payload, undoable: false)
+    }
+
     /// Applies a move (drag, keyboard, bulk). Returns the WIP outcome so the UI can warn;
     /// a blocking policy throws instead.
     @discardableResult
@@ -600,7 +854,7 @@ struct KanbanService {
 
     /// The editable fields of a card.
     enum TaskField: String, CaseIterable {
-        case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason
+        case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason, complexity
     }
 
     /// Throws what `edit` would throw for `values`, changing nothing (the editor checks
@@ -611,8 +865,9 @@ struct KanbanService {
             case let (.title, .string(t)?): guard !t.trimmingCharacters(in: .whitespaces).isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
             case (.notes, .string?), (.blockedReason, .string?), (.blockedReason, nil), (.isCritical, .bool?), (.isBlocked, .bool?),
                  (.notesRich, .data?), (.notesRich, nil), (.dueDate, .date?), (.dueDate, nil), (.startDate, .date?), (.startDate, nil),
-                 (.estimateHours, nil), (.jiraURL, nil): break
+                 (.estimateHours, nil), (.jiraURL, nil), (.complexity, nil): break
             case let (.priority, .int(p)?) where (0...2).contains(p): break
+            case let (.complexity, .int(c)?) where KanbanComplexity(rawValue: c) != nil: break
             case let (.estimateHours, .double(h)?): guard h.isFinite && h >= 0 else { throw KanbanServiceError.invariant("An estimate can't be negative.") }
             case let (.jiraURL, .string(url)?): guard KanbanMetrics.isWebURL(url) else { throw KanbanServiceError.invariant("The Jira link must be a web address.") }
             default: throw KanbanServiceError.invariant("\(field.rawValue) can't hold that value.")
@@ -1011,10 +1266,13 @@ struct KanbanService {
     }
 
     private func applyTransitions(_ transitions: [KanbanTransition], in project: KanbanProject) {
+        let tasksByID = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let columnsByID = Dictionary(project.columns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let resourcesByID = Dictionary(project.resources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for t in transitions {
-            guard let task = task(t.taskID, in: project) else { continue }
-            if let column = project.columns.first(where: { $0.id == t.to.columnID }) { task.column = column }
-            task.resource = t.to.resourceID.flatMap { id in project.resources.first { $0.id == id } }
+            guard let task = tasksByID[t.taskID] else { continue }
+            if let column = columnsByID[t.to.columnID] { task.column = column }
+            task.resource = t.to.resourceID.flatMap { resourcesByID[$0] }
             task.sortIndex = t.to.sortIndex
             task.completedAt = t.to.completedAt
             task.updatedAt = now()
@@ -1049,7 +1307,7 @@ struct KanbanService {
     private func resource(for row: KanbanRowKey, in project: KanbanProject) throws -> KanbanResource? {
         guard case let .resource(id) = row else { return nil }
         guard let resource = project.resources.first(where: { $0.id == id && $0.archivedAt == nil }) else {
-            throw KanbanServiceError.invariant("That person isn't on this board.")
+            throw KanbanServiceError.invariant("That resource isn't on this board.")
         }
         return resource
     }
@@ -1098,14 +1356,18 @@ struct KanbanService {
                                              old: task.archivedAt.map(KanbanValue.date), new: stamp.map(KanbanValue.date)))
         }
         if !archived {
+            var maxima: [Cell: Double] = [:]
+            for card in project.tasks where !comingBack.contains(card.id) && card.archivedAt == nil {
+                let cell = Cell(column: card.column?.id, resource: card.resource?.id)
+                maxima[cell] = maxima[cell].map { max($0, card.sortIndex) } ?? card.sortIndex
+            }
+            next = maxima.mapValues { $0 + 1 }
             for task in affected.sorted(by: { ($0.sortIndex, $0.id.uuidString) < ($1.sortIndex, $1.id.uuidString) }) {
                 var to = placement(task)
                 if task.column?.kind == .done { to.completedAt = task.completedAt ?? now() } else { to.completedAt = nil }
                 if let resource = task.resource, resource.archivedAt != nil { to.resourceID = nil }
                 let cell = Cell(column: task.column?.id, resource: to.resourceID)
-                let position: Double = next[cell] ?? ((project.tasks.filter { card in
-                    !comingBack.contains(card.id) && card.archivedAt == nil && card.column?.id == cell.column && card.resource?.id == cell.resource
-                }.map(\.sortIndex).max() ?? -1) + 1)
+                let position: Double = next[cell] ?? 0
                 to.sortIndex = position
                 next[cell] = position + 1
                 if to != placement(task) { transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to)) }
@@ -1152,6 +1414,7 @@ struct KanbanService {
         case "dueDate": return task.dueDate.map(KanbanValue.date)
         case "startDate": return task.startDate.map(KanbanValue.date)
         case "estimateHours": return task.estimateHours.map(KanbanValue.double)
+        case "complexity": return task.complexity.map(KanbanValue.int)
         case "jiraURL": return task.jiraURL.map(KanbanValue.string)
         case "isBlocked": return .bool(task.isBlocked)
         case "blockedReason": return task.blockedReason.map(KanbanValue.string)
@@ -1174,6 +1437,7 @@ struct KanbanService {
         case "dueDate": if case let .date(d)? = v { task.dueDate = d } else { task.dueDate = nil }
         case "startDate": if case let .date(d)? = v { task.startDate = d } else { task.startDate = nil }
         case "estimateHours": if case let .double(d)? = v { task.estimateHours = d } else { task.estimateHours = nil }
+        case "complexity": if case let .int(i)? = v, KanbanComplexity(rawValue: i) != nil { task.complexity = i } else { task.complexity = nil }
         case "jiraURL": if case let .string(s)? = v { task.jiraURL = s } else { task.jiraURL = nil }
         case "isBlocked": if case let .bool(b)? = v { task.isBlocked = b }
         case "blockedReason": if case let .string(s)? = v { task.blockedReason = s } else { task.blockedReason = nil }
@@ -1190,6 +1454,7 @@ struct KanbanService {
         switch field {
         case "name": return .string(column.name)
         case "colorHex": return column.colorHex.map(KanbanValue.string)
+        case "symbolName": return column.symbolName.map(KanbanValue.string)
         case "wipLimit": return column.wipLimit.map(KanbanValue.int)
         case "kind": return .string(column.kindRaw)
         case "sortIndex": return .double(column.sortIndex)
@@ -1203,6 +1468,8 @@ struct KanbanService {
         case let ("name", .string(s)?): column.name = s
         case let ("colorHex", .string(s)?): column.colorHex = s
         case ("colorHex", nil): column.colorHex = nil
+        case let ("symbolName", .string(s)?): column.symbolName = s
+        case ("symbolName", nil): column.symbolName = nil
         case let ("wipLimit", .int(i)?): column.wipLimit = i
         case ("wipLimit", nil): column.wipLimit = nil
         case let ("kind", .string(s)?): column.kindRaw = s
@@ -1555,7 +1822,7 @@ struct KanbanService {
         let people = try context.fetch(FetchDescriptor<KanbanPerson>())
         for dto in graph.resources {
             guard let person = people.first(where: { $0.id == dto.personId }), person.archivedAt == nil
-            else { throw KanbanServiceError.conflict("Restore that person in People first.") }
+            else { throw KanbanServiceError.conflict("Restore that resource in Resources first.") }
         }
         for dto in graph.subtasks where !(graph.tasks.contains { $0.id == dto.taskId } || project.tasks.contains { $0.id == dto.taskId }) {
             throw KanbanServiceError.conflict("“\(dto.title)”’s card no longer exists.")
@@ -1566,7 +1833,7 @@ struct KanbanService {
             var columns = Dictionary(uniqueKeysWithValues: project.columns.map { ($0.id, $0) })
             for dto in graph.columns {
                 let column = KanbanColumn(id: dto.id, name: dto.name, kind: KanbanColumnKind(rawValue: dto.kindRaw) ?? .active, sortIndex: dto.sortIndex)
-                column.colorHex = dto.colorHex; column.wipLimit = dto.wipLimit
+                column.colorHex = dto.colorHex; column.symbolName = dto.symbolName; column.wipLimit = dto.wipLimit
                 context.insert(column); column.project = project
                 columns[column.id] = column
             }
@@ -1584,6 +1851,7 @@ struct KanbanService {
                 let task = KanbanTask(id: dto.id, title: dto.title, priority: dto.priority, sortIndex: dto.sortIndex)
                 task.notes = dto.notes; task.notesRich = dto.notesRich; task.isCritical = dto.isCritical
                 task.dueDate = dto.dueDate; task.startDate = dto.startDate; task.estimateHours = dto.estimateHours
+                task.complexity = dto.complexity.flatMap { KanbanComplexity(rawValue: $0)?.rawValue }
                 task.jiraURL = dto.jiraURL; task.isBlocked = dto.isBlocked; task.blockedReason = dto.blockedReason
                 task.linkedPlannerTaskID = dto.linkedPlannerTaskID.flatMap { planner.contains($0) ? $0 : nil }
                 task.createdAt = dto.createdAt; task.updatedAt = dto.updatedAt; task.completedAt = dto.completedAt; task.archivedAt = dto.archivedAt

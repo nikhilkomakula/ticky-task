@@ -6,7 +6,12 @@ import SwiftData
 /// which validates everything first, then applies the move, the field edit, labels,
 /// dependencies and steps through `KanbanService`.
 struct KanbanTaskEditor: View {
-    let task: KanbanTask
+    enum Mode {
+        case edit(KanbanTask)
+        case create(project: KanbanProject, column: UUID?, row: KanbanRowKey)
+    }
+
+    let mode: Mode
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -32,6 +37,7 @@ struct KanbanTaskEditor: View {
     @State private var due = Date()
     @State private var hasEstimate = false
     @State private var estimate = 4.0
+    @State private var complexity: Int?
     @State private var jiraURL = ""
     @State private var isBlocked = false
     @State private var blockedReason = ""
@@ -43,8 +49,43 @@ struct KanbanTaskEditor: View {
     @State private var confirmDelete = false
     @State private var schedulingDay: Date?
     @State private var scheduledNote: String?
+    @FocusState private var titleFocused: Bool
+    @State private var showLabelManager = false
+    // Optional sections start collapsed, and open on load when they have content (design: the
+    // editor fits a laptop screen); the choice lasts for this presentation only.
+    @State private var showSteps = false
+    @State private var showDetails = false
+    @State private var showSchedule = false
+    @State private var showLinks = false
+    @State private var showHistory = false
 
-    private var project: KanbanProject? { task.project }
+    // MARK: - Initialization
+
+    init(task: KanbanTask) {
+        self.mode = .edit(task)
+    }
+
+    init(newCardIn project: KanbanProject, column: UUID?, row: KanbanRowKey) {
+        self.mode = .create(project: project, column: column ?? project.orderedColumns.first(where: { $0.kind == .backlog })?.id, row: row)
+    }
+
+    private var task: KanbanTask? {
+        guard case .edit(let t) = mode else { return nil }
+        return t
+    }
+
+    private var project: KanbanProject? {
+        switch mode {
+        case .edit(let t): return t.project
+        case .create(let p, _, _): return p
+        }
+    }
+
+    private var isCreateMode: Bool {
+        guard case .create = mode else { return false }
+        return true
+    }
+
     private var trimmedJira: String { jiraURL.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -59,21 +100,37 @@ struct KanbanTaskEditor: View {
                         .lineLimit(1...10)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kanban-editor-title")
+                        .focused($titleFocused)
                 }
-                Section("Details") { RichNotesEditor(text: $notes) }
                 placementSection
                 attributesSection
+                stepsSection
+                Section {
+                    KanbanEditorDisclosure("Details", summary: detailsSummary, isExpanded: $showDetails, id: "details") {
+                        RichNotesEditor(text: $notes)
+                            .frame(minHeight: 120, idealHeight: 140, maxHeight: 220)
+                    }
+                }
                 datesSection
                 linksSection
-                stepsSection
-                historySection
+                if !isCreateMode { historySection }
             }
             .formStyle(.grouped)
-            footer
+            if isCreateMode {
+                Divider()
+            } else {
+                footer
+            }
         }
-        .frame(minWidth: 580, minHeight: 640)
-        .onAppear(perform: load)
-        .alert("Couldn’t save the card", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .frame(minWidth: 580, idealWidth: 600, minHeight: 560, idealHeight: 680)
+        .onAppear {
+            load()
+            expandSectionsWithContent()
+            if isCreateMode {
+                titleFocused = true
+            }
+        }
+        .alert("Couldn't save the card", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your changes are still here. \(error ?? "")")
@@ -82,12 +139,14 @@ struct KanbanTaskEditor: View {
             Button("Move to Done") { moveToDone() }
             Button("Not now", role: .cancel) { dismiss() }
         } message: {
-            Text("Move “\(task.title)” to Done?")
+            if let task { Text("Move \"\(task.title)\" to Done?") }
         }
-        .confirmationDialog("Delete “\(task.title)”?", isPresented: $confirmDelete) {
-            Button("Delete Card", role: .destructive) { perform { try $0.deleteTask(task) } }
+        .confirmationDialog("Delete card?", isPresented: $confirmDelete) {
+            if let task {
+                Button("Delete Card", role: .destructive) { perform { try $0.deleteTask(task) } }
+            }
         } message: {
-            Text("You can bring it back from the Change Log.")
+            if let task { Text("You can bring it back from the Change Log.") }
         }
     }
 
@@ -99,9 +158,10 @@ struct KanbanTaskEditor: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("kanban-editor-cancel")
             Spacer()
-            Text(project?.name ?? "").font(.headline)
+            Text(isCreateMode ? "New card" : (project?.name ?? "")).font(.headline)
             Spacer()
             Button("Done", action: save)
+                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty && isCreateMode)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("kanban-editor-done")
         }
@@ -111,18 +171,45 @@ struct KanbanTaskEditor: View {
     private var placementSection: some View {
         Section("On the board") {
             Picker("Column", selection: $columnID) {
-                ForEach(project?.orderedColumns ?? []) { Text($0.name).tag(Optional($0.id)) }
+                ForEach(project?.orderedColumns ?? []) { column in
+                    let style = KanbanColumnStyle(column)
+                    HStack(spacing: 4) {
+                        Image(systemName: style.symbol)
+                            .font(.system(size: 11))
+                            .foregroundStyle(style.effectiveAccent)
+                        Text(column.name)
+                    }
+                    .tag(Optional(column.id))
+                }
             }
+            .help(selectedColumn.map { "Column: \(KanbanColumnStyle($0).kindName)" } ?? "")
             .accessibilityIdentifier("kanban-editor-column")
             Picker("Assignee", selection: $row) {
                 Text("Unassigned").tag(KanbanRowKey.unassigned)
                 ForEach(activeMemberships) { Text($0.displayName).tag(KanbanRowKey.resource($0.id)) }
             }
             .accessibilityIdentifier("kanban-editor-assignee")
-            if let labels = project?.labels.sorted(by: { $0.sortIndex < $1.sortIndex }), !labels.isEmpty {
+            if let labels = project?.labels.sorted(by: { $0.sortIndex < $1.sortIndex }) {
                 LabeledContent("Labels") {
-                    FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !labels.isEmpty {
+                            FlowChips(items: labels.map { ($0.id, $0.name, KanbanUI.color($0.colorHex) ?? .gray) }, selected: $labelIDs)
+                        }
+                        Button("Edit labels…") { showLabelManager = true }
+                            .font(.caption)
+                            .accessibilityIdentifier("kanban-editor-edit-labels")
+                    }
                 }
+            }
+        }
+        .sheet(isPresented: $showLabelManager) {
+            if let project {
+                KanbanLabelManagerSheet(project: project, fromCardEditor: true)
+                    .onDisappear {
+                        // Intersect selected label IDs with the board's current labels in case any were deleted
+                        let currentLabelIDs = Set(project.labels.map(\.id))
+                        labelIDs = labelIDs.intersection(currentLabelIDs)
+                    }
             }
         }
     }
@@ -131,6 +218,11 @@ struct KanbanTaskEditor: View {
         Section {
             PriorityPicker(selection: $priority)
             CriticalToggle(isOn: $isCritical, help: "Mark this card critical — shown with a red flag before its priority.")
+            Picker("Complexity", selection: $complexity) {
+                Text("None").tag(Int?.none)
+                ForEach(KanbanComplexity.allCases) { Text($0.label).tag(Int?.some($0.rawValue)) }
+            }
+            .accessibilityIdentifier("kanban-editor-complexity")
             Toggle("Blocked", isOn: $isBlocked)
                 .accessibilityIdentifier("kanban-editor-blocked")
             if isBlocked {
@@ -141,7 +233,8 @@ struct KanbanTaskEditor: View {
     }
 
     private var datesSection: some View {
-        Section("Schedule") {
+        Section {
+          KanbanEditorDisclosure("Schedule", summary: scheduleSummary, isExpanded: $showSchedule, id: "schedule") {
             Toggle("Start date", isOn: $hasStart)
             if hasStart { DatePicker("Starts", selection: $start, displayedComponents: .date) }
             Toggle("Due date", isOn: $hasDue)
@@ -152,11 +245,13 @@ struct KanbanTaskEditor: View {
                 TextField("Hours", value: $estimate, format: .number)
                     .accessibilityIdentifier("kanban-editor-estimate")
             }
+          }
         }
     }
 
     private var linksSection: some View {
         Section {
+          KanbanEditorDisclosure("Jira & dependencies", summary: linksSummary, isExpanded: $showLinks, id: "links") {
             TextField("Jira link", text: $jiraURL, prompt: Text("https://…/browse/KEY-123"))
                 .accessibilityIdentifier("kanban-editor-jira")
             if !trimmedJira.isEmpty {
@@ -178,11 +273,13 @@ struct KanbanTaskEditor: View {
                 .fixedSize()
                 .accessibilityIdentifier("kanban-editor-dependencies")
             }
+          }
         }
     }
 
     private var stepsSection: some View {
-        Section("Subtasks") {
+        Section {
+          KanbanEditorDisclosure("Subtasks", summary: stepsSummary, isExpanded: $showSteps, id: "subtasks") {
             ForEach(orderedSteps) { step in
                 if let index = steps.firstIndex(where: { $0.id == step.id }) {
                     ChecklistRow(title: $steps[index].title, isDone: $steps[index].isDone,
@@ -197,13 +294,18 @@ struct KanbanTaskEditor: View {
                     .onSubmit(addStep)
                     .accessibilityIdentifier("kanban-editor-add-subtask")
             }
+          }
         }
     }
 
     /// This card's change-log entries, newest first, each with Revert.
     private var historySection: some View {
-        let entries = (project?.activities ?? []).filter { $0.taskIDs.contains(task.id) }.sorted { $0.seq > $1.seq }
-        return Section("History") {
+        let entries: [KanbanActivity] = task.map { card in
+            (card.project?.activities ?? []).filter { $0.taskIDs.contains(card.id) }.sorted { $0.seq > $1.seq }
+        } ?? []
+        return Section {
+          KanbanEditorDisclosure("History", summary: entries.isEmpty ? "No changes" : "\(entries.count) change\(entries.count == 1 ? "" : "s")",
+                                 isExpanded: $showHistory, id: "history") {
             if entries.isEmpty {
                 Text("No changes yet.").foregroundStyle(.secondary)
             }
@@ -223,29 +325,68 @@ struct KanbanTaskEditor: View {
                     }
                 }
             }
+          }
         }
+    }
+
+    // MARK: - Collapsible sections
+
+    /// Opens the optional sections that already hold something (a new card has none).
+    private func expandSectionsWithContent() {
+        showSteps = !steps.isEmpty
+        showDetails = !String(notes.characters).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        showSchedule = hasStart || hasDue || hasEstimate
+        showLinks = !trimmedJira.isEmpty || !dependencyIDs.isEmpty
+    }
+
+    private var stepsSummary: String {
+        steps.isEmpty ? "None" : "\(steps.filter(\.isDone).count)/\(steps.count) done"
+    }
+
+    private var detailsSummary: String {
+        let lines = String(notes.characters).split(whereSeparator: \.isNewline)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        return lines == 0 ? "None" : "\(lines) line\(lines == 1 ? "" : "s")"
+    }
+
+    private var scheduleSummary: String {
+        let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        var parts: [String] = []
+        if hasStart { parts.append("starts \(start.formatted(day))") }
+        if hasDue { parts.append("due \(due.formatted(day))") }
+        if hasEstimate { parts.append("\(estimate.formatted(.number.precision(.fractionLength(0...1))))h") }
+        return parts.isEmpty ? "Not set" : parts.joined(separator: " · ")
+    }
+
+    private var linksSummary: String {
+        var parts: [String] = []
+        if !trimmedJira.isEmpty { parts.append(jiraKey(trimmedJira) ?? "Jira link") }
+        if !dependencyIDs.isEmpty { parts.append("depends on \(dependencyIDs.count) card\(dependencyIDs.count == 1 ? "" : "s")") }
+        return parts.isEmpty ? "None" : parts.joined(separator: " · ")
     }
 
     private var footer: some View {
         HStack {
-            Button("Archive") { perform { try $0.archiveTask(task) } }
-                .accessibilityIdentifier("kanban-editor-archive")
-            Button("Delete…", role: .destructive) { confirmDelete = true }
-                .accessibilityIdentifier("kanban-editor-delete")
-            Button("Schedule to day…") { schedulingDay = task.dueDate ?? Date() }
-                .help("Put this card on a day in the planner (once linked, rescheduling moves that task)")
-                .accessibilityIdentifier("kanban-editor-schedule")
-                .popover(isPresented: Binding(get: { schedulingDay != nil }, set: { if !$0 { schedulingDay = nil } })) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        DatePicker("Day", selection: Binding(get: { schedulingDay ?? Date() }, set: { schedulingDay = $0 }), displayedComponents: .date)
-                            .datePickerStyle(.graphical)
-                        Button("Schedule") { schedule() }
-                            .keyboardShortcut(.defaultAction)
-                            .accessibilityIdentifier("kanban-editor-schedule-confirm")
+            if let task {
+                Button("Archive") { perform { try $0.archiveTask(task) } }
+                    .accessibilityIdentifier("kanban-editor-archive")
+                Button("Delete…", role: .destructive) { confirmDelete = true }
+                    .accessibilityIdentifier("kanban-editor-delete")
+                Button("Schedule to day…") { schedulingDay = task.dueDate ?? Date() }
+                    .help("Put this card on a day in the planner (once linked, rescheduling moves that task)")
+                    .accessibilityIdentifier("kanban-editor-schedule")
+                    .popover(isPresented: Binding(get: { schedulingDay != nil }, set: { if !$0 { schedulingDay = nil } })) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            DatePicker("Day", selection: Binding(get: { schedulingDay ?? Date() }, set: { schedulingDay = $0 } ), displayedComponents: .date)
+                                .datePickerStyle(.graphical)
+                            Button("Schedule") { schedule() }
+                                .keyboardShortcut(.defaultAction)
+                                .accessibilityIdentifier("kanban-editor-schedule-confirm")
+                        }
+                        .padding(12)
                     }
-                    .padding(12)
-                }
-            if let scheduledNote { Text(scheduledNote).font(.caption).foregroundStyle(.secondary) }
+                if let scheduledNote { Text(scheduledNote).font(.caption).foregroundStyle(.secondary) }
+            }
             Spacer()
         }
         .padding(12)
@@ -257,9 +398,15 @@ struct KanbanTaskEditor: View {
         (project?.resources ?? []).filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
     }
 
+    private var selectedColumn: KanbanColumn? {
+        guard let columnID else { return nil }
+        return project?.orderedColumns.first { $0.id == columnID }
+    }
+
     /// Live cards, plus archived ones this card still depends on (so they can be removed).
     private var otherCards: [KanbanTask] {
-        (project?.tasks ?? []).filter { $0.id != task.id && ($0.archivedAt == nil || dependencyIDs.contains($0.id)) }
+        let taskID = task?.id
+        return (project?.tasks ?? []).filter { taskID == nil || ($0.id != taskID && ($0.archivedAt == nil || dependencyIDs.contains($0.id))) }
             .sorted { $0.title < $1.title }
     }
 
@@ -277,26 +424,39 @@ struct KanbanTaskEditor: View {
     }
 
     private func load() {
-        title = task.title
-        let document = NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
-        notes = NotesAttributedString.attributedString(from: document)
-        loadedNotes = notes
-        priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
-        isCritical = task.isCritical
-        columnID = task.column?.id
-        row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
-        labelIDs = Set(task.labels.map(\.id))
-        hasStart = task.startDate != nil
-        start = task.startDate ?? Date()
-        hasDue = task.dueDate != nil
-        due = task.dueDate ?? Date()
-        hasEstimate = task.estimateHours != nil
-        estimate = task.estimateHours ?? (project?.defaultEstimateHours ?? 4)
-        jiraURL = task.jiraURL ?? ""
-        isBlocked = task.isBlocked
-        blockedReason = task.blockedReason ?? ""
-        dependencyIDs = Set(task.dependsOn.map(\.id))
-        steps = KanbanService.orderedSubtasks(task).map { StepDraft(id: $0.id, title: $0.title, isDone: $0.isDone) }
+        if let task {
+            // Edit mode: load from existing task
+            title = task.title
+            let document = NotesCodec.resolved(fromRich: task.notesRich, markdown: task.notes)
+            notes = NotesAttributedString.attributedString(from: document)
+            loadedNotes = notes
+            priority = TaskPriority(rawValue: min(max(task.priority, 0), 2)) ?? .low
+            isCritical = task.isCritical
+            columnID = task.column?.id
+            row = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
+            labelIDs = Set(task.labels.map(\.id))
+            hasStart = task.startDate != nil
+            start = task.startDate ?? Date()
+            hasDue = task.dueDate != nil
+            due = task.dueDate ?? Date()
+            hasEstimate = task.estimateHours != nil
+            estimate = task.estimateHours ?? (project?.defaultEstimateHours ?? 4)
+            complexity = task.complexity
+            jiraURL = task.jiraURL ?? ""
+            isBlocked = task.isBlocked
+            blockedReason = task.blockedReason ?? ""
+            dependencyIDs = Set(task.dependsOn.map(\.id))
+            steps = KanbanService.orderedSubtasks(task).map { StepDraft(id: $0.id, title: $0.title, isDone: $0.isDone) }
+        } else {
+            // Create mode: use initial values from mode
+            if case .create(_, let col, let r) = mode {
+                columnID = col
+                row = r
+            }
+            priority = .low
+            isCritical = false
+            estimate = project?.defaultEstimateHours ?? 4
+        }
     }
 
     private func addStep() {
@@ -320,6 +480,57 @@ struct KanbanTaskEditor: View {
     private func save() {
         if let problem = problem() { error = problem; return }
         guard let project else { return dismiss() }
+
+        if isCreateMode {
+            saveCreate(project)
+        } else {
+            saveEdit(project)
+        }
+    }
+
+    private func saveCreate(_ project: KanbanProject) {
+        let service = app.kanbanService(context)
+        let day = Calendar.current.startOfDay
+
+        var draft = KanbanCardDraft()
+        draft.title = title.trimmingCharacters(in: .whitespaces)
+        draft.columnID = columnID
+        draft.row = row
+        draft.priority = priority.rawValue
+        draft.isCritical = isCritical
+        draft.startDate = hasStart ? day(start) : nil
+        draft.dueDate = hasDue ? day(due) : nil
+        draft.estimateHours = hasEstimate ? estimate : nil
+        draft.complexity = complexity
+        draft.jiraURL = trimmedJira.isEmpty ? nil : trimmedJira
+        draft.isBlocked = isBlocked
+        draft.blockedReason = isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
+            ? blockedReason.trimmingCharacters(in: .whitespaces) : nil
+        draft.labelIDs = Array(labelIDs)
+        draft.dependencyIDs = Array(dependencyIDs)
+        draft.steps = steps.map { KanbanCardDraft.Step(title: $0.title, isDone: $0.isDone, assigneeID: nil) }
+
+        if notes != loadedNotes {
+            let document = NotesAttributedString.document(from: notes)
+            do {
+                draft.notesRich = try NotesCodec.encode(document)
+                draft.notes = document.plainText
+            } catch {
+                self.error = error.localizedDescription
+                return
+            }
+        }
+
+        do {
+            _ = try service.createCard(draft, in: project)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func saveEdit(_ project: KanbanProject) {
+        guard let task else { return dismiss() }
         let service = app.kanbanService(context)
         let day = Calendar.current.startOfDay
         let currentRow: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
@@ -333,6 +544,7 @@ struct KanbanTaskEditor: View {
             .startDate: hasStart ? .date(day(start)) : nil,
             .dueDate: hasDue ? .date(day(due)) : nil,
             .estimateHours: hasEstimate ? .double(estimate) : nil,
+            .complexity: complexity.map(KanbanValue.int),
             .jiraURL: trimmedJira.isEmpty ? nil : .string(trimmedJira),
             .isBlocked: .bool(isBlocked),
             .blockedReason: isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
@@ -373,6 +585,7 @@ struct KanbanTaskEditor: View {
     /// once, so pressing Done again never adds it twice. Suggests Done only when a tick
     /// finished the list and every step on the card is done afterwards.
     private func saveSteps(_ service: KanbanService, saved: inout [String]) throws -> Bool {
+        guard let task else { return false }
         var ticked = false
         let kept = Set(steps.map(\.id))
         for subtask in task.subtasks where !kept.contains(subtask.id) {
@@ -403,12 +616,11 @@ struct KanbanTaskEditor: View {
     }
 
     private func schedule() {
-        guard let day = schedulingDay else { return }
+        guard let day = schedulingDay, let task else { return }
         do {
             try app.kanbanService(context).schedule(task, on: WeekMath.dayKey(for: day))
             scheduledNote = "On the planner for \(day.formatted(date: .abbreviated, time: .omitted))."
             schedulingDay = nil
-            // A linked task that moved keeps its alarm on the new day.
             Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
         } catch {
             self.error = error.localizedDescription
@@ -416,12 +628,13 @@ struct KanbanTaskEditor: View {
     }
 
     private func moveToDone() {
-        guard let project, let done = project.orderedColumns.first(where: { $0.kind == .done }) else { return dismiss() }
+        guard let project, let done = project.orderedColumns.first(where: { $0.kind == .done }), let task else { return dismiss() }
         let row: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
         perform { try $0.move(.cards([task.id], to: .cell(columnID: done.id, row: row, beforeCardID: nil)), in: project) }
     }
 
     private func revert(_ entry: KanbanActivity) {
+        guard let task else { return }
         let id = task.id, project = self.project
         do {
             _ = try app.kanbanService(context).revert(entry)
@@ -473,31 +686,124 @@ struct FlowChips: View {
     }
 }
 
-/// A simple wrapping row layout.
+/// A simple wrapping row layout; `trailing` right-aligns each line (the card's markers).
 struct FlowLayout: Layout {
+    /// Between items on a line.
     var spacing: CGFloat = 4
+    /// Between lines; the same as `spacing` unless set.
+    var lineSpacing: CGFloat?
+    var trailing = false
+
+    private struct Item {
+        let index: Int
+        let size: CGSize
+        /// From the item's top to its first text baseline, so mixed items line up on it.
+        let baseline: CGFloat
+    }
+
+    private var rowGap: CGFloat { lineSpacing ?? spacing }
+
+    /// The subviews broken into lines that fit `width`, measured as they'll be placed.
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [[Item]] {
+        var lines: [[Item]] = [[]]
+        var x: CGFloat = 0
+        for (index, view) in subviews.enumerated() {
+            var proposal = ProposedViewSize.unspecified
+            var size = view.sizeThatFits(proposal)
+            if size.width > width {
+                // An oversized item wraps inside itself; measure its height at the width it gets.
+                proposal = ProposedViewSize(width: width, height: nil)
+                size = view.sizeThatFits(proposal)
+            }
+            let baseline = view.dimensions(in: ProposedViewSize(size))[VerticalAlignment.firstTextBaseline]
+            if x > 0, x + size.width > width { lines.append([]); x = 0 }
+            lines[lines.count - 1].append(Item(index: index, size: size, baseline: baseline))
+            x += size.width + spacing
+        }
+        return lines.filter { !$0.isEmpty }
+    }
+
+    private func lineWidth(_ line: [Item]) -> CGFloat {
+        var total: CGFloat = 0
+        for item in line { total += item.size.width }
+        return total + spacing * CGFloat(max(line.count - 1, 0))
+    }
+
+    /// The line's tallest part above and below the shared baseline.
+    private func metrics(_ line: [Item]) -> (ascent: CGFloat, height: CGFloat) {
+        var ascent: CGFloat = 0, descent: CGFloat = 0
+        for item in line {
+            ascent = max(ascent, item.baseline)
+            descent = max(descent, item.size.height - item.baseline)
+        }
+        return (ascent, ascent + descent)
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width { y += line + spacing; x = 0; line = 0 }
-            x += size.width + spacing
-            line = max(line, size.height)
-            widest = max(widest, x - spacing)
+        let all = lines(subviews, width: width)
+        var widest: CGFloat = 0, height: CGFloat = 0
+        for line in all {
+            widest = max(widest, lineWidth(line))
+            height += metrics(line).height
         }
-        return CGSize(width: min(widest, width), height: y + line)
+        height += rowGap * CGFloat(max(all.count - 1, 0))
+        return CGSize(width: trailing && width.isFinite ? width : min(widest, width), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX { y += line + spacing; x = bounds.minX; line = 0 }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            line = max(line, size.height)
+        var y = bounds.minY
+        for line in lines(subviews, width: bounds.width) {
+            let (ascent, height) = metrics(line)
+            var x = trailing ? bounds.maxX - lineWidth(line) : bounds.minX
+            for item in line {
+                subviews[item.index].place(at: CGPoint(x: x, y: y + ascent - item.baseline), proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += height + rowGap
         }
+    }
+}
+
+/// A section header that collapses its content: chevron, title and a one-line summary of
+/// what's inside, so the editor fits a laptop screen with everything optional closed.
+struct KanbanEditorDisclosure<Content: View>: View {
+    let title: String
+    let summary: String
+    @Binding var isExpanded: Bool
+    let id: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, summary: String, isExpanded: Binding<Bool>, id: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.summary = summary
+        self._isExpanded = isExpanded
+        self.id = id
+        self.content = content
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                Text(title).font(.headline)
+                Spacer()
+                if !isExpanded {
+                    Text(summary).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isExpanded ? "Collapse \(title)" : "Expand \(title)")
+        .accessibilityLabel(title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed, \(summary)")
+        .accessibilityIdentifier("kanban-editor-\(id)-disclosure")
+        if isExpanded { content() }
     }
 }

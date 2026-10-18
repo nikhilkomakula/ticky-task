@@ -204,6 +204,8 @@ final class WeeklySummaryUITests: XCTestCase {
         app.menuItems["ChatGPT account"].firstMatch.click()
     }
 
+    /// The two-row header: Settings on row 1 at the trailing edge; row 2 has ‹ Today › on the
+    /// left and Search · Weekly Summary · New task on the right.
     func testToolbarRightSideOrderEndsWithTodayNavigation() throws {
         let app = launchedApp()
         let summary = app.buttons["toolbar-weekly-summary"].firstMatch
@@ -211,11 +213,13 @@ final class WeeklySummaryUITests: XCTestCase {
         let search = app.buttons["toolbar-search"].firstMatch
         let settings = app.buttons["toolbar-settings"].firstMatch
         let today = app.buttons["toolbar-today"].firstMatch
-        XCTAssertTrue(settings.exists && search.exists && today.exists, "toolbar buttons should exist")
+        let newTask = app.buttons["toolbar-new-task"].firstMatch
+        XCTAssertTrue(settings.exists && search.exists && today.exists && newTask.exists, "header buttons should exist")
         XCTAssertGreaterThan(summary.frame.minX, search.frame.minX, "Weekly Summary follows Search")
-        XCTAssertGreaterThan(settings.frame.minX, summary.frame.minX, "Settings follows Weekly Summary")
-        XCTAssertGreaterThan(today.frame.minX, settings.frame.minX, "‹ Today › is at the far right")
+        XCTAssertGreaterThan(newTask.frame.minX, summary.frame.minX, "New task follows Weekly Summary")
+        XCTAssertLessThan(today.frame.maxX, search.frame.minX, "‹ Today › is on the left of row 2")
+        XCTAssertLessThan(settings.frame.maxY, summary.frame.minY + 1, "Settings is on the row above")
         let window = app.windows.firstMatch.frame
-        XCTAssertLessThan(window.maxX - today.frame.maxX, 80, "‹ Today › hugs the right edge")
+        XCTAssertLessThan(window.maxX - settings.frame.maxX, 80, "Settings hugs the right edge")
     }
 }

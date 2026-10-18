@@ -13,7 +13,7 @@ struct KanbanListView: View {
     /// The header sort lives in the board state, so it's remembered and follows the toolbar's Sort.
     private static let keys: [(String, PartialKeyPath<Row>)] = [
         ("title", \Row.title), ("column", \Row.columnIndex), ("assignee", \Row.assignee), ("priority", \Row.priority),
-        ("due", \Row.due), ("labels", \Row.labels), ("estimate", \Row.estimate),
+        ("due", \Row.due), ("labels", \Row.labels), ("estimate", \Row.estimate), ("complexity", \Row.complexity),
     ]
 
     private static func comparator(_ key: String, ascending: Bool) -> KeyPathComparator<Row> {
@@ -25,6 +25,7 @@ struct KanbanListView: View {
         case "due": return KeyPathComparator(\Row.due, order: order)
         case "labels": return KeyPathComparator(\Row.labels, order: order)
         case "estimate": return KeyPathComparator(\Row.estimate, order: order)
+        case "complexity": return KeyPathComparator(\Row.complexity, order: order)
         default: return KeyPathComparator(\Row.columnIndex, order: order)
         }
     }
@@ -55,6 +56,8 @@ struct KanbanListView: View {
         let hasDue: Bool
         let labels: String
         let estimate: Double
+        /// The level's raw value, 0 when not set (sorts first ascending).
+        let complexity: Int
         let archived: Bool
         var dueText: String { hasDue ? due.formatted(date: .abbreviated, time: .omitted) : "—" }
         var estimateText: String { estimate < 0 ? "—" : "\(estimate.formatted(.number.precision(.fractionLength(0...1))))h" }
@@ -73,6 +76,7 @@ struct KanbanListView: View {
             hasDue = task.dueDate != nil
             labels = task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name).joined(separator: ", ")
             estimate = task.estimateHours ?? -1
+            complexity = task.complexity ?? 0
             archived = task.archivedAt != nil
         }
     }
@@ -107,12 +111,27 @@ struct KanbanListView: View {
                     .foregroundStyle(row.archived ? Color.secondary : Color.primary)
                     .accessibilityIdentifier("kanban-list-row-\(row.title)")
             }
-            TableColumn("Column", value: \Row.columnIndex) { (row: Row) in Text(row.column) }
+            TableColumn("Column", value: \Row.columnIndex) { (row: Row) in
+                if let column = row.task.column {
+                    let style = KanbanColumnStyle(column)
+                    HStack(spacing: 3) {
+                        Image(systemName: style.symbol)
+                            .font(.system(size: 11))
+                            .foregroundStyle(style.effectiveAccent)
+                        Text(row.column).lineLimit(1)
+                    }
+                } else {
+                    Text(row.column)
+                }
+            }
             TableColumn("Assignee", value: \Row.assignee) { (row: Row) in Text(row.assignee) }
             TableColumn("Priority", value: \Row.priority) { (row: Row) in Text(row.priorityLabel) }
             TableColumn("Due", value: \Row.due) { (row: Row) in Text(row.dueText) }
             TableColumn("Labels", value: \Row.labels) { (row: Row) in Text(row.labels) }
             TableColumn("Estimate", value: \Row.estimate) { (row: Row) in Text(hours ? row.estimateText : "—") }
+            TableColumn("Complexity", value: \Row.complexity) { (row: Row) in
+                Text(KanbanComplexity(rawValue: row.complexity)?.label ?? "—")
+            }
         }
     }
 }
@@ -175,6 +194,13 @@ struct KanbanBulkMenu: View {
                 Divider()
                 let critical = live.allSatisfy(\.isCritical)
                 Button(critical ? "Clear Critical" : "Mark Critical") { app.runKanban { try service.editMany(live, [.isCritical: .bool(!critical)]) } }
+            }
+            Menu("Complexity") {
+                ForEach(KanbanComplexity.allCases) { level in
+                    Button(level.label) { app.runKanban { try service.editMany(live, [.complexity: .int(level.rawValue)]) } }
+                }
+                Divider()
+                Button("None") { app.runKanban { try service.editMany(live, [.complexity: nil]) } }
             }
             Divider()
             Button(live.count == 1 ? "Archive" : "Archive \(live.count) cards") { app.runKanban { try service.setArchived(live, true) } }

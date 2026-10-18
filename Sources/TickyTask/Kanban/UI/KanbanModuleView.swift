@@ -6,14 +6,29 @@ import SwiftData
 struct KanbanModuleView: View {
     @Environment(AppState.self) private var app
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @AppStorage(KanbanWidthPolicy.sidebarKey) private var sidebarWidth = KanbanWidthPolicy.sidebar.defaultWidth
+    @State private var live = KanbanLiveWidth()
+
+    private var activeBoardID: UUID? {
+        guard case let .project(id) = app.kanban.selection, projects.contains(where: { $0.id == id && $0.archivedAt == nil }) else { return nil }
+        return id
+    }
 
     var body: some View {
         @Bindable var app = app
         HStack(spacing: 0) {
             if app.kanban.showSidebar {
+                let width = CGFloat(KanbanWidthPolicy.sidebar.clamp(sidebarWidth))
                 KanbanSidebar(projects: projects)
-                    .frame(width: 230)
+                    .modifier(KanbanLiveWidthFrame(live: live, slots: [.sidebar], base: { _ in width }))
                 Divider()
+                    // Centred on the divider, above the content on both sides.
+                    .overlay {
+                        KanbanResizeHandle(name: "Sidebar", slot: .sidebar, width: width, policy: .sidebar, live: live,
+                                           onCommit: { sidebarWidth = $0 },
+                                           onReset: { sidebarWidth = KanbanWidthPolicy.sidebar.defaultWidth })
+                    }
+                    .zIndex(1)
             }
             Group {
                 switch app.kanban.selection {
@@ -42,6 +57,10 @@ struct KanbanModuleView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .onAppear(perform: openDefaultBoard)
+        .onChange(of: projects.isEmpty) { _, _ in openDefaultBoard() }
+        .onChange(of: activeBoardID, initial: true) { _, id in app.kanbanActiveBoardID = id }
+        .onDisappear { app.kanbanActiveBoardID = nil }
         .onChange(of: app.kanban.selection, initial: true) { _, selection in
             if case let .project(id) = selection { UserDefaults.standard.set(id.uuidString, forKey: KanbanPopover.lastProjectKey) }
         }
@@ -50,6 +69,21 @@ struct KanbanModuleView: View {
         } message: {
             Text(app.kanbanError ?? "")
         }
+    }
+}
+
+extension KanbanModuleView {
+    /// The first time the module shows boards each session, it opens the default board, unless
+    /// something (a card opened from the menu bar or search) already chose one.
+    fileprivate func openDefaultBoard() {
+        // Boards that haven't loaded yet don't use up the session's turn.
+        guard !app.kanban.openedDefault, !projects.isEmpty else { return }
+        app.kanban.openedDefault = true
+        guard app.kanban.selection == .allProjects else { return }
+        let defaults = UserDefaults.standard
+        // UI tests start from the first board, whatever an earlier run opened last.
+        app.kanban.selection = KanbanDefaultBoard.item(projects, choice: defaults.string(forKey: KanbanDefaultBoard.key),
+                                                       lastOpened: UITestSupport.isRunning ? nil : defaults.string(forKey: KanbanPopover.lastProjectKey))
     }
 }
 
@@ -103,9 +137,6 @@ extension AppState {
 }
 
 enum KanbanUI {
-    static let rowHeaderWidth: CGFloat = 230
-    static let columnWidth: CGFloat = 250
-
     /// The user's calendar with their week start, for the metrics.
     static func calendar(weekStartsMonday: Bool) -> Calendar {
         var calendar = Calendar.current
@@ -192,60 +223,10 @@ struct KanbanToolbarLeading: View {
     }
 }
 
-/// Toolbar, trailing (before the global buttons): row expand/collapse and + Card (⌘N)
-/// for the open board.
+/// Deprecated: KanbanToolbarTrailing has been moved into MainWindowHeader for P3.
+/// Keeping this as a stub to avoid breaking existing code references.
 struct KanbanToolbarTrailing: View {
-    @Environment(AppState.self) private var app
-    @Environment(\.modelContext) private var context
-    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
-    @State private var prompt: KanbanTextPrompt?
-    @State private var changeLog: KanbanProject?
-    @State private var summary: KanbanProject?
-
     var body: some View {
-        if case let .project(id) = app.kanban.selection, let project = projects.first(where: { $0.id == id }) {
-            KanbanViewControls(project: project)
-            Button { summary = project } label: { Image(systemName: "text.badge.star") }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Kanban Summary")
-                .accessibilityLabel("Kanban Summary")
-                .accessibilityIdentifier("kanban-summary")
-                .sheet(item: $summary) { KanbanSummaryPresenter(project: $0) }
-            Button { changeLog = project } label: { Image(systemName: "clock.arrow.circlepath") }
-                .buttonStyle(.borderless)
-                .frame(width: 28, height: 28)
-                .help("Change Log")
-                .accessibilityIdentifier("kanban-change-log")
-                .sheet(item: $changeLog) { KanbanChangeLogView(project: $0) }
-            Button {
-                prompt = .init(title: "New card", placeholder: "Title") { title in
-                    _ = try app.kanbanService(context).createTask(in: project, title: title)
-                }
-            } label: {
-                Label("Card", systemImage: "plus")
-            }
-            .keyboardShortcut("n", modifiers: .command)
-            .help("New card in the backlog (⌘N)")
-            .accessibilityIdentifier("kanban-new-card")
-            .sheet(item: $prompt) { KanbanTextPromptSheet(prompt: $0) }
-            Menu {
-                Button("Expand all rows") { setAll(project, collapsed: false) }
-                    .keyboardShortcut(.downArrow, modifiers: [.control, .command])
-                Button("Collapse all rows") { setAll(project, collapsed: true) }
-                    .keyboardShortcut(.upArrow, modifiers: [.control, .command])
-            } label: {
-                Image(systemName: "rectangle.expand.vertical")
-            }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
-            .fixedSize()
-            .help("Expand or collapse rows (⌃⌘↓ / ⌃⌘↑)")
-            .accessibilityIdentifier("kanban-expand-collapse")
-        }
-    }
-
-    private func setAll(_ project: KanbanProject, collapsed: Bool) {
-        app.runKanban { try app.kanbanService(context).setAllRowsCollapsed(project, collapsed) }
+        EmptyView()
     }
 }

@@ -215,6 +215,7 @@ struct KanbanBackupTests {
         task1.dueDate = t0_plus_week
         task1.startDate = t0
         task1.estimateHours = 8
+        task1.complexity = KanbanComplexity.medium.rawValue
         task1.jiraURL = "https://jira.example.com/browse/ALPHA-123"
         task1.isBlocked = false
         task1.linkedPlannerTaskID = oneOffId
@@ -446,6 +447,7 @@ struct KanbanBackupTests {
         let task1 = kanban.tasks.first { $0.title == "Implement API endpoint" }
         #expect(task1?.isCritical == true)
         #expect(task1?.estimateHours == 8)
+        #expect(task1?.complexity == 2)
     }
 
     // MARK: - (h) Restore into fresh store
@@ -473,6 +475,8 @@ struct KanbanBackupTests {
         #expect(tasks.count == 3)
         #expect(subtasks.count == 3)
         #expect(activities.count == 1)
+        #expect(tasks.first { $0.title == "Implement API endpoint" }?.complexity == 2)
+        #expect(tasks.first { $0.title == "Beta testing" }?.complexity == nil, "unset stays unset")
     }
 
     // MARK: - (i) Close and reopen

@@ -371,6 +371,7 @@ enum BackupStore {
         for dto in kanban.columns {
             let column = KanbanColumn(id: dto.id, name: dto.name, sortIndex: dto.sortIndex)
             column.colorHex = dto.colorHex
+            column.symbolName = dto.symbolName
             column.wipLimit = dto.wipLimit
             column.kindRaw = dto.kindRaw
             column.project = dto.projectId.flatMap { projectMap[$0] }
@@ -416,6 +417,7 @@ enum BackupStore {
             task.dueDate = dto.dueDate
             task.startDate = dto.startDate
             task.estimateHours = dto.estimateHours
+            task.complexity = dto.complexity.flatMap { KanbanComplexity(rawValue: $0)?.rawValue }
             task.jiraURL = dto.jiraURL
             task.isBlocked = dto.isBlocked
             task.blockedReason = dto.blockedReason

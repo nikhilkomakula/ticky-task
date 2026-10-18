@@ -15,14 +15,17 @@ struct KanbanSettingsView: View {
     @AppStorage(KanbanBoardDefaults.openTaskTargetKey) private var openTaskTarget = 5.0
     @AppStorage(KanbanBoardDefaults.dueSoonKey) private var dueSoon = 3
     @AppStorage(KanbanBoardDefaults.suggestDoneKey) private var suggestDone = true
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = false
     @AppStorage("kanban.notifyDueDates") private var notifyDueDates = false
     @AppStorage("kanban.notifyDueMinutes") private var notifyDueMinutes = 9 * 60
     @AppStorage(KanbanBoardDefaults.autoArchiveEnabledKey) private var autoArchive = false
     @AppStorage(KanbanBoardDefaults.autoArchiveDaysKey) private var autoArchiveDays = 30
     @AppStorage(KanbanPopover.projectKey) private var popoverProjectID = ""
+    @AppStorage(KanbanDefaultBoard.key) private var defaultBoard = ""
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @State private var templates = KanbanTemplateStore.saved()
     @State private var message: String?
+    @State private var showDefaultLabelsSheet = false
 
     var body: some View {
         let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
@@ -38,12 +41,34 @@ struct KanbanSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("Boards") {
+                Picker("Default board", selection: $defaultBoard) {
+                    Text("The last opened board").tag("")
+                    Text("All projects").tag(KanbanDefaultBoard.allProjects)
+                    ForEach(projects.filter { $0.archivedAt == nil || $0.id.uuidString == defaultBoard }) {
+                        // An archived choice is kept but not opened.
+                        Text($0.archivedAt == nil ? $0.name : "\($0.name) (archived; not opened)").tag($0.id.uuidString)
+                    }
+                    if UUID(uuidString: defaultBoard) != nil, !projects.contains(where: { $0.id.uuidString == defaultBoard }) {
+                        Text("A deleted board (opens the last opened)").tag(defaultBoard)
+                    }
+                }
+                .accessibilityIdentifier("settings-default-board")
+                Text("Where Kanban opens the first time you go to it after TickyTask starts. You can also right-click a board in the sidebar and choose Default Board.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Show allocation in row headers", isOn: $showAllocation)
+                    .accessibilityIdentifier("settings-show-allocation")
+                Text("The part-time icon and percentage beside each name. Allocation still sets capacity and stays in Edit membership.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("New boards") {
                 Picker("Measure load in", selection: $loadMeasure) {
                     Text("Open tasks").tag(KanbanLoadMeasure.taskCount.rawValue)
                     Text("Hours").tag(KanbanLoadMeasure.hours.rawValue)
                 }
-                TextField("Open-task target per person", value: $openTaskTarget, format: .number)
+                TextField("Open-task target per resource", value: $openTaskTarget, format: .number)
                 Toggle("Weight Critical and High cards", isOn: $weightedLoad)
                 Picker("Over a WIP limit", selection: $wipPolicy) {
                     Text("Warn").tag(KanbanWIPPolicy.warn.rawValue)
@@ -51,6 +76,12 @@ struct KanbanSettingsView: View {
                 }
                 Stepper("Due soon: within \(dueSoon) day\(dueSoon == 1 ? "" : "s")", value: $dueSoon, in: 0...30)
                 Toggle("Offer to move a card to Done when its steps are done", isOn: $suggestDone)
+                HStack {
+                    Text("Default labels for new boards")
+                    Spacer()
+                    Button("Edit…", action: { showDefaultLabelsSheet = true })
+                        .accessibilityIdentifier("settings-kanban-default-labels")
+                }
             }
             Section("Menu bar") {
                 Picker("Quick add files cards in", selection: $popoverProjectID) {
@@ -123,6 +154,9 @@ struct KanbanSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { templates = KanbanTemplateStore.saved() }
+        .sheet(isPresented: $showDefaultLabelsSheet) {
+            KanbanLabelManagerSheet(defaults: ())
+        }
     }
 
     private static func time(_ minutes: Int) -> Date {

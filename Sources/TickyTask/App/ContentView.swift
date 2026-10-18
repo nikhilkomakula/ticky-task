@@ -44,9 +44,12 @@ struct ContentView: View {
         @Bindable var app = app
         ZStack {
             VStack(spacing: 0) {
-                TopToolbar(onSearch: { app.isSearchPresented = true },
-                           onWeeklySummary: { app.isWeeklySummaryPresented = true })
-                Divider()
+                MainWindowHeader(
+                    onSearch: { app.isSearchPresented = true },
+                    onWeeklySummary: { app.isWeeklySummaryPresented = true },
+                    onNewTask: { app.presentPlannerNewTask() },
+                    onNewCard: { app.presentKanbanNewCard() }
+                )
                 switch ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).resolve(app.module) {
                 case .planner: PlannerModuleView()
                 case .kanban: KanbanModuleView().id(app.kanbanRestoreToken)
@@ -119,11 +122,7 @@ struct ContentView: View {
             app.refreshKanbanClock()
             carryForwardIfDayChanged()
         }
-        .sheet(isPresented: $app.isSearchPresented) { SearchView() }
-        .sheet(isPresented: $app.isWeeklySummaryPresented) {
-            WeeklySummarySheet(weekAnchor: app.weekAnchor)
-        }
-        .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
+        .modifier(ContentViewSheetModifier())
     }
 
     /// Keep the drag controller's persistence context + sort config current.
@@ -278,6 +277,19 @@ struct ContentView: View {
     }
 }
 
+/// Helper view for new card sheet content.
+private struct NewCardSheetContent: View {
+    @Environment(AppState.self) private var app
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+
+    var body: some View {
+        if case let .project(projectID) = app.kanban.selection,
+           let project = projects.first(where: { $0.id == projectID }) {
+            KanbanTaskEditor(newCardIn: project, column: nil, row: .unassigned)
+        }
+    }
+}
+
 /// The planner: the week or month view.
 private struct PlannerModuleView: View {
     @Environment(AppState.self) private var app
@@ -292,143 +304,104 @@ private struct PlannerModuleView: View {
     }
 }
 
-/// The single shared toolbar row: centered navigation (‹ Today ›) with the
-/// current week range or month label, and the Week/Month switcher on the right.
-/// Navigation and label adapt to the active view mode.
-private struct TopToolbar: View {
+/// Container for label manager sheet.
+private struct KanbanLabelManagerContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @Environment(AppState.self) private var app
-    @Environment(\.openSettings) private var openSettings
-    @AppStorage("weekStartsMonday") private var weekStartsMonday = true
-    @AppStorage("calendarColumns") private var calendarColumns = 5
-    @AppStorage("showWeekends") private var showWeekends = false
-    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
-    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
-    var onSearch: () -> Void = {}
-    var onWeeklySummary: () -> Void = {}
-
-    private var columns: Int { max(1, min(12, calendarColumns)) }
 
     var body: some View {
-        @Bindable var app = app
-        let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
-        let module = policy.resolve(app.module)
-        ZStack {
-            // Center: current week range / month label (truly window-centered).
-            if module == .planner {
-                Text(navLabel)
-                    .font(.headline.weight(.semibold))
-            }
-
-            HStack(spacing: 12) {
-                if policy.showsSwitcher {
-                    Picker("Module", selection: $app.module) {
-                        ForEach(policy.visible) { module in
-                            Label(module.label, systemImage: module.symbol).tag(module)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Planner (⌘1) · Kanban (⌘2)")
-                    .accessibilityIdentifier("module-switcher")
-                }
-
-                if module == .planner {
-                    // Left: Week / Month switcher.
-                    Picker("View", selection: $app.viewMode) {
-                        ForEach(ViewMode.allCases) { mode in
-                            Label(mode.label, systemImage: mode.symbol).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                } else {
-                    KanbanToolbarLeading()
-                }
-
-                Spacer()
-
-                if module == .kanban { KanbanToolbarTrailing() }
-
-                // Right: search, Weekly Summary, Settings, then ‹ Today › at the far right.
-                HStack(spacing: 6) {
-                    Button(action: onSearch) {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help("Search tasks (⌘F)")
-                    .accessibilityIdentifier("toolbar-search")
-
-                    Button(action: onWeeklySummary) {
-                        Image(systemName: "text.badge.star")
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help("Weekly Summary (⇧⌘Y)")
-                    .accessibilityLabel("Weekly Summary")
-                    .accessibilityIdentifier("toolbar-weekly-summary")
-
-                    // Always-available Settings entry — the only way to reach
-                    // Settings when the Dock icon is hidden (accessory mode).
-                    // Activate explicitly so it comes frontmost in accessory mode.
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openSettings()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
-                    .help("Settings")
-                    .accessibilityIdentifier("toolbar-settings")
-
-                    if module == .planner {
-                        Button { navigate(-1) } label: { Image(systemName: "chevron.left") }
-                            .buttonStyle(.borderless)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                            .help(app.viewMode == .week ? "Previous week" : "Previous month")
-                            .accessibilityIdentifier("toolbar-previous")
-                        Button("Today") { app.goToToday() }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .accessibilityIdentifier("toolbar-today")
-                        Button { navigate(1) } label: { Image(systemName: "chevron.right") }
-                            .buttonStyle(.borderless)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                            .help(app.viewMode == .week ? "Next week" : "Next month")
-                            .accessibilityIdentifier("toolbar-next")
-                    }
-                }
-            }
-        }
-        .frame(height: 44)
-        .padding(.horizontal, 12)
-    }
-
-    private func navigate(_ delta: Int) {
-        switch app.viewMode {
-        case .week:
-            if delta < 0 { app.previousWeek() } else { app.nextWeek() }
-        case .calendar:
-            if delta < 0 { app.previousMonth() } else { app.nextMonth() }
-        }
-    }
-
-    private var navLabel: String {
-        switch app.viewMode {
-        case .week:
-            let days = app.weekDays(columns: columns, weekStartsMonday: weekStartsMonday, showWeekends: showWeekends)
-            guard let first = days.first, let last = days.last else { return "" }
-            return "\(first.formatted(.dateTime.month(.abbreviated).day())) – \(last.formatted(.dateTime.month(.abbreviated).day()))"
-        case .calendar:
-            return app.weekAnchor.formatted(.dateTime.month(.wide).year())
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanLabelManagerSheet(project: project)
         }
     }
 }
+
+/// Container for change log sheet.
+private struct KanbanChangeLogContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanChangeLogView(project: project)
+        }
+    }
+}
+
+/// Container for summary sheet.
+private struct KanbanSummaryContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanSummaryPresenter(project: project)
+        }
+    }
+}
+
+/// Container for archive done cards sheet.
+private struct KanbanArchiveDoneContainer: View {
+    let projectID: UUID
+    @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let project = projects.first(where: { $0.id == projectID }) {
+            KanbanArchiveDoneSheet(project: project)
+        }
+    }
+}
+
+/// A board id as a sheet item (rather than making UUID itself Identifiable app-wide).
+private struct BoardSheet: Identifiable {
+    let id: UUID
+}
+
+private extension Binding where Value == UUID? {
+    var boardSheet: Binding<BoardSheet?> {
+        Binding<BoardSheet?>(get: { wrappedValue.map(BoardSheet.init) }, set: { wrappedValue = $0?.id })
+    }
+}
+
+/// Sheet modifiers for ContentView to reduce type-checking complexity.
+private struct ContentViewSheetModifier: ViewModifier {
+    @Environment(AppState.self) private var app
+
+    func body(content: Content) -> some View {
+        @Bindable var app = app
+        return content
+            .sheet(isPresented: $app.isSearchPresented) { SearchView() }
+            .sheet(isPresented: $app.isWeeklySummaryPresented) {
+                WeeklySummarySheet(weekAnchor: app.weekAnchor)
+            }
+            .sheet(isPresented: $app.isShortcutsPresented) { ShortcutsSheet() }
+            .sheet(isPresented: $app.isPlannerNewTaskPresented) {
+                TaskEditorView(newTaskWithDayKey: app.selectedDayKey)
+            }
+            .sheet(isPresented: $app.isKanbanNewCardPresented) {
+                NewCardSheetContent()
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanLabelManagerProjectID.boardSheet) { sheet in
+                KanbanLabelManagerContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanChangeLogProjectID.boardSheet) { sheet in
+                KanbanChangeLogContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanSummaryProjectID.boardSheet) { sheet in
+                KanbanSummaryContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+            .sheet(item: $app.kanbanArchiveDoneProjectID.boardSheet) { sheet in
+                KanbanArchiveDoneContainer(projectID: sheet.id)
+                    .environment(app as AppState)
+            }
+    }
+}
+

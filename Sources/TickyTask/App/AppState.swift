@@ -42,7 +42,7 @@ final class AppState {
     /// in Settings › General.
     var availableUpdate: AppRelease?
 
-    /// The module the main window shows (⌘1 / ⌘2).
+    /// The module the main window shows (View › Planner / Kanban).
     var module: AppModule = .planner
     var kanban = KanbanNavigation()
     /// A board card to briefly highlight after a reveal (Attention, search).
@@ -59,6 +59,8 @@ final class AppState {
     var kanbanClock = AppState.currentKanbanClock()
     /// The menu-bar popover's Planner | Kanban choice, kept until relaunch (nil: the Default view).
     var popoverModule: AppModule?
+    /// The open, unarchived board the Kanban module is showing (nil otherwise), for ⌘N.
+    var kanbanActiveBoardID: UUID?
 
     static func currentKanbanClock() -> String { "\(WeekMath.dayKey(for: Date()))|\(TimeZone.current.identifier)" }
 
@@ -205,5 +207,30 @@ final class AppState {
     /// custom-lists row uses this to size its cards to line up under the columns.
     static func visibleColumnCount(columns: Int, showWeekends: Bool) -> Int {
         showWeekends ? 7 : max(1, min(12, columns))
+    }
+
+    // MARK: - Sheet Presentations (P2 stubs and P4 stubs)
+
+    /// Planner: new task editor sheet presentation.
+    var isPlannerNewTaskPresented = false
+    /// Kanban: new card editor sheet presentation.
+    var isKanbanNewCardPresented = false
+    /// Kanban: label manager sheet presentation (project ID).
+    var kanbanLabelManagerProjectID: UUID?
+    /// Kanban: change log sheet presentation (project ID).
+    var kanbanChangeLogProjectID: UUID?
+    /// Kanban: summary sheet presentation (project ID).
+    var kanbanSummaryProjectID: UUID?
+    /// Kanban: archive done cards sheet presentation (project ID).
+    var kanbanArchiveDoneProjectID: UUID?
+
+    /// Present the planner's new task editor in create mode for the selected day.
+    func presentPlannerNewTask() {
+        isPlannerNewTaskPresented = true
+    }
+
+    /// Present the Kanban card editor in create mode for the active board's backlog.
+    func presentKanbanNewCard() {
+        isKanbanNewCardPresented = true
     }
 }

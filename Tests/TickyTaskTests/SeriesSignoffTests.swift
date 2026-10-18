@@ -26,13 +26,18 @@ struct SeriesSignoffTests {
         var tags: [UUID: String] = [:]
     }
 
-    /// Milliseconds: the backup format's date precision.
-    private func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSinceReferenceDate * 1000).rounded()) }
+    /// Use the backup codec's millisecond precision: ISO formatting can round
+    /// differently from Double.rounded() near a half-millisecond boundary.
+    private func ms(_ date: Date) throws -> Int64 {
+        let encoded = try BackupCoding.encoder().encode(date)
+        let decoded = try BackupCoding.decoder().decode(Date.self, from: encoded)
+        return Int64((decoded.timeIntervalSinceReferenceDate * 1000).rounded())
+    }
 
     private func graph(_ context: ModelContext) throws -> Graph {
         var g = Graph()
         for t in try context.fetch(FetchDescriptor<TaskItem>()) {
-            g.tasks[t.id] = TaskRow(title: t.title, notes: t.notes, notesRich: t.notesRich, isDone: t.isDone,
+            g.tasks[t.id] = try TaskRow(title: t.title, notes: t.notes, notesRich: t.notesRich, isDone: t.isDone,
                                     completedAt: t.completedAt.map(ms), dayKey: t.dayKey, listID: t.customList?.id,
                                     timeMinutes: t.timeMinutes, colorHex: t.colorHex, priority: t.priority,
                                     sortIndex: t.sortIndex, alarmEnabled: t.alarmEnabled, isCritical: t.isCritical,
@@ -221,6 +226,27 @@ struct SeriesSignoffTests {
     }
 
     // MARK: - 2. Schema-2 backup: disk → backup → disk, exactly
+
+    @Test("Backup graph timestamps use the codec's millisecond precision", arguments: [false, true])
+    func backupTimestampPrecision(encrypted: Bool) throws {
+        let source = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let task = TaskItem(title: "Weekly")
+        // .6 ms rounds up; the half-ms boundary exposes the old helper's
+        // disagreement with ISO formatting without depending on Date().
+        task.createdAt = Date(timeIntervalSinceReferenceDate: 813_932_260.0006)
+        task.updatedAt = Date(timeIntervalSinceReferenceDate: 813_932_260.8675)
+        source.insert(task)
+        try source.save()
+        let original = try graph(source)
+        #expect(original.tasks[task.id]?.createdAt == 813_932_260_001)
+        #expect(original.tasks[task.id]?.updatedAt == 813_932_260_867)
+        let passphrase = encrypted ? "round-trip-passphrase" : nil
+        let file = try BackupService().makeFile(store: BackupStore.makeSnapshot(context: source), passphrase: passphrase)
+        let store = try BackupService().readFile(file, passphrase: passphrase)
+        let restored = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        try BackupStore.restore(store, context: restored)
+        #expect(try graph(restored) == original)
+    }
 
     @Test("A new-format backup restores the exact graph into a fresh on-disk store", arguments: [false, true])
     func backupRoundTrip(encrypted: Bool) throws {

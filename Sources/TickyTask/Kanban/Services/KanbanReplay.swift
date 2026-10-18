@@ -255,13 +255,18 @@ enum KanbanReplay {
                 if from == .done, to != .done { reopens.append(event.at) }
             }
         }
-        func week(_ date: Date) -> Date { s.weekStart(date) }
-        return starts.map { start in
-            Week(start: start,
-                 completed: latest.filter { doneNow.contains($0.key) && week($0.value) == start }.count,
-                 reopened: reopens.filter { week($0) == start }.count,
-                 partial: start == current)
+        var completed: [Date: Int] = [:]
+        var reopened: [Date: Int] = [:]
+        for (id, date) in latest where doneNow.contains(id) {
+            let week = s.weekStart(date)
+            completed[week, default: 0] += 1
         }
+        for date in reopens {
+            let week = s.weekStart(date)
+            reopened[week, default: 0] += 1
+        }
+        return starts.map { Week(start: $0, completed: completed[$0, default: 0],
+                                 reopened: reopened[$0, default: 0], partial: $0 == current) }
     }
 
     struct Aging: Equatable, Sendable {

@@ -18,6 +18,8 @@ final class KanbanTask {
     var dueDate: Date?
     var startDate: Date?
     var estimateHours: Double?
+    /// `KanbanComplexity` raw value (1 low … 3 high); nil = not set.
+    var complexity: Int?
     var jiraURL: String?
     var isBlocked: Bool = false
     var blockedReason: String?
@@ -54,5 +56,15 @@ final class KanbanTask {
         guard let jiraURL, let range = jiraURL.range(of: #"[A-Z][A-Z0-9]+-\d+"#, options: .regularExpression)
         else { return nil }
         return String(jiraURL[range])
+    }
+
+    /// Whether the card has content in its notes. Rich notes are decoded and checked
+    /// for non-whitespace plaintext; otherwise plain notes are checked. A valid empty
+    /// rich document wins over stale plain-text projection.
+    var hasNotes: Bool {
+        if let notesRich, !notesRich.isEmpty, let document = try? NotesCodec.decode(notesRich) {
+            return !document.plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

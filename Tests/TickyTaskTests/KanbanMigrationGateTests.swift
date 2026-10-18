@@ -56,6 +56,7 @@ struct KanbanMigrationGateTests {
         var dueDate: Int64?
         var startDate: Int64?
         var estimateHours: Double?
+        var complexity: Int?
         var jiraURL: String?
         var isBlocked: Bool
         var blockedReason: String?
@@ -189,7 +190,7 @@ struct KanbanMigrationGateTests {
                 title: t.title, notes: t.notes, notesRich: t.notesRich,
                 priority: t.priority, isCritical: t.isCritical,
                 sortIndex: t.sortIndex, dueDate: t.dueDate.map(ms), startDate: t.startDate.map(ms),
-                estimateHours: t.estimateHours, jiraURL: t.jiraURL,
+                estimateHours: t.estimateHours, complexity: t.complexity, jiraURL: t.jiraURL,
                 isBlocked: t.isBlocked, blockedReason: t.blockedReason,
                 linkedPlannerTaskID: t.linkedPlannerTaskID,
                 createdAt: ms(t.createdAt), updatedAt: ms(t.updatedAt),
@@ -555,6 +556,7 @@ struct KanbanMigrationGateTests {
             task1.dueDate = Date().addingTimeInterval(86400 * 3)
             task1.startDate = Date()
             task1.estimateHours = 8.5
+            task1.complexity = KanbanComplexity.high.rawValue   // task2 leaves it unset
             task1.jiraURL = "https://jira.example.com/PLAT-142"
             task1.isBlocked = false
             task1.project = proj1

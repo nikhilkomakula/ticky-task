@@ -9,13 +9,15 @@ struct KanbanAddPersonSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \KanbanPerson.name) private var people: [KanbanPerson]
+    @State private var source = Source.new
     @State private var personID: UUID?
     @State private var name = ""
     @State private var initials = ""
     @State private var employment = KanbanEmployment.fte
     @State private var allocation = 100
-    @State private var assignment = KanbanAssignment.fullTime
     @State private var error: String?
+
+    private enum Source: Hashable { case new, existing }
 
     private var available: [KanbanPerson] {
         people.filter { person in
@@ -25,14 +27,27 @@ struct KanbanAddPersonSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Add person to \(project.name)").font(.headline)
+            Text("Add resource to \(project.name)").font(.headline)
             Form {
-                Picker("Person", selection: $personID) {
-                    Text("New person…").tag(UUID?.none)
-                    ForEach(available) { Text($0.name).tag(Optional($0.id)) }
+                // Only offered when there's someone to pick: people on other boards, or removed from this one.
+                if !available.isEmpty {
+                    Picker("Add", selection: $source) {
+                        Text("New resource").tag(Source.new)
+                        Text("Existing resource").tag(Source.existing)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("kanban-person-source")
                 }
-                .accessibilityIdentifier("kanban-person-picker")
-                if personID == nil {
+                if source == .existing, !available.isEmpty {
+                    Picker("Resource", selection: $personID) {
+                        ForEach(available) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    .accessibilityIdentifier("kanban-person-picker")
+                    Text("Someone already in TickyTask, such as on another board. Their name and employment are the same on every board.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
                     TextField("Name", text: $name)
                         .accessibilityIdentifier("kanban-person-name")
                         .onChange(of: name) { _, value in initials = Self.initials(value) }
@@ -42,13 +57,16 @@ struct KanbanAddPersonSheet: View {
                         Text("Contractor").tag(KanbanEmployment.contractor)
                     }
                 }
-                Picker("Assignment", selection: $assignment) {
-                    Text("Full-time").tag(KanbanAssignment.fullTime)
-                    Text("Part-time").tag(KanbanAssignment.partTime)
+                VStack(alignment: .leading, spacing: 4) {
+                    Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100, step: 1)
+                        .accessibilityIdentifier("kanban-membership-allocation")
+                    Text(allocation == 100 ? "100% · Full-time" : "\(allocation)% · Part-time")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Stepper("Allocation: \(allocation)%", value: $allocation, in: 5...100, step: 5)
             }
             .frame(width: 380)
+            .onChange(of: source) { _, source in personID = source == .existing ? available.first?.id : nil }
             if let error {
                 Text(error).font(.callout).foregroundStyle(.red)
             }
@@ -58,12 +76,14 @@ struct KanbanAddPersonSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Add", action: add)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(personID == nil && name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(isExisting ? personID == nil : name.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("kanban-person-add")
             }
         }
         .padding(20)
     }
+
+    private var isExisting: Bool { source == .existing && !available.isEmpty }
 
     static func initials(_ name: String) -> String {
         String(name.split(separator: " ").prefix(2).compactMap(\.first)).uppercased()
@@ -72,9 +92,10 @@ struct KanbanAddPersonSheet: View {
     private func add() {
         let service = app.kanbanService(context)
         do {
-            let person = try available.first { $0.id == personID }
+            let person = try (isExisting ? available.first { $0.id == personID } : nil)
                 ?? service.createPerson(name: name.trimmingCharacters(in: .whitespaces), initials: initials, employment: employment)
-            _ = try service.addMembership(person, to: project, allocationPercent: allocation, assignment: assignment)
+            let derivedAssignment = allocation == 100 ? KanbanAssignment.fullTime : .partTime
+            _ = try service.addMembership(person, to: project, allocationPercent: allocation, assignment: derivedAssignment)
             dismiss()
         } catch {
             self.error = error.localizedDescription
@@ -93,7 +114,6 @@ struct KanbanMembershipSheet: View {
     @State private var initials = ""
     @State private var employment = KanbanEmployment.fte
     @State private var role = ""
-    @State private var assignment = KanbanAssignment.fullTime
     @State private var allocation = 100
     @State private var hasHours = false
     @State private var hours = 40.0
@@ -109,7 +129,7 @@ struct KanbanMembershipSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("\(resource.displayName) on \(resource.project?.name ?? "")").font(.headline)
             Form {
-                Section("Person (every board)") {
+                Section("Resource (every board)") {
                     TextField("Name", text: $name)
                     TextField("Initials", text: $initials)
                     Picker("Employment", selection: $employment) {
@@ -119,12 +139,13 @@ struct KanbanMembershipSheet: View {
                 }
                 Section("On this board") {
                     TextField("Role", text: $role)
-                    Picker("Assignment", selection: $assignment) {
-                        Text("Full-time").tag(KanbanAssignment.fullTime)
-                        Text("Part-time").tag(KanbanAssignment.partTime)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100, step: 1)
+                            .accessibilityIdentifier("kanban-membership-allocation")
+                        Text(allocation == 100 ? "100% · Full-time" : "\(allocation)% · Part-time")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    Stepper("Allocation: \(allocation)%", value: $allocation, in: 1...100)
-                        .accessibilityIdentifier("kanban-membership-allocation")
                     Toggle("Weekly hours override", isOn: $hasHours)
                     if hasHours { TextField("Hours per week", value: $hours, format: .number) }
                     Toggle("Open-task target override", isOn: $hasTarget)
@@ -157,7 +178,6 @@ struct KanbanMembershipSheet: View {
         initials = resource.person?.initials ?? ""
         employment = resource.person?.employment ?? .fte
         role = resource.role ?? ""
-        assignment = resource.assignment
         allocation = resource.allocationPercent
         hasHours = resource.capacityHoursPerWeekOverride != nil
         hours = resource.capacityHoursPerWeekOverride ?? 40
@@ -173,9 +193,10 @@ struct KanbanMembershipSheet: View {
         let service = app.kanbanService(context)
         let day = Calendar.current.startOfDay
         let trimmedRole = role.trimmingCharacters(in: .whitespaces)
+        let derivedAssignment = allocation == 100 ? KanbanAssignment.fullTime : .partTime
         let values: [KanbanService.MembershipField: KanbanValue?] = [
             .role: trimmedRole.isEmpty ? nil : .string(trimmedRole),
-            .assignmentRaw: .string(assignment.rawValue),
+            .assignmentRaw: .string(derivedAssignment.rawValue),
             .allocationPercent: .int(allocation),
             .capacityHoursPerWeekOverride: hasHours ? .double(hours) : nil,
             .openTaskTargetOverride: hasTarget ? .double(target) : nil,
@@ -184,7 +205,7 @@ struct KanbanMembershipSheet: View {
         ]
         // Check the person's fields first, so a refused name can't leave the membership saved.
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
-            error = "A person needs a name."
+            error = "A resource needs a name."
             return
         }
         do {

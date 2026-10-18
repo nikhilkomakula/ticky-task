@@ -113,4 +113,12 @@ struct KanbanBoardStateTests {
         #expect(state.effectiveListSort == ("title", false))
         #expect(KanbanBoardState.decode(state.encoded()).effectiveListSort == ("title", false))
     }
+
+    @Test("A board saved by a preview build with rows kept sorted by priority opens with its other settings")
+    func retiredRowSort() {
+        let state = KanbanBoardState.decode(Data(#"{"sort":"title","prioritySortedRows":["unassigned"]}"#.utf8))
+        #expect(state.sort == .title)
+        let written = state.encoded().map { String(decoding: $0, as: UTF8.self) } ?? ""
+        #expect(written.contains("title") && !written.contains("prioritySortedRows"), "not written back")
+    }
 }

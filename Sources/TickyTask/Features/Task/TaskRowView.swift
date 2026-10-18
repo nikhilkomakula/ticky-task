@@ -72,15 +72,18 @@ struct TaskRowView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
+                        .help("Notes")
                         .accessibilityLabel("Has notes")
                         .accessibilityIdentifier("notesIcon")
                 }
 
                 if !task.subtasks.isEmpty {
                     let done = task.subtasks.filter(\.isDone).count
-                    Text("\(done)/\(task.subtasks.count)")
+                    Label("\(done)/\(task.subtasks.count)", systemImage: "checklist")
+                        .labelStyle(.titleAndIcon)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .help("Subtasks")
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(.quaternary, in: Capsule())
@@ -119,9 +122,10 @@ struct TaskRowView: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         // Edit/Delete float over the trailing metadata on hover, so the row never
-        // reflows and the title keeps its full width when not hovering. Real
-        // Buttons consume the click, so the row's tap-to-edit never double-fires.
-        .overlay(alignment: .trailing) {
+        // reflows and the title keeps its full width when not hovering. Pinned to the
+        // first line, so a title wrapped in a narrow column stays clickable below them.
+        // Real Buttons consume the click, so the row's tap-to-edit never double-fires.
+        .overlay(alignment: .topTrailing) {
             if isHovering {
                 HStack(spacing: 2) {
                     Button { onEdit?() } label: { Image(systemName: "pencil") }
@@ -137,6 +141,7 @@ struct TaskRowView: View {
                 .padding(.vertical, 4)
                 .background(.regularMaterial, in: Capsule())
                 .padding(.trailing, 6)
+                .padding(.top, compactView ? 1 : 3)
             }
         }
         .onHover { isHovering = $0 }

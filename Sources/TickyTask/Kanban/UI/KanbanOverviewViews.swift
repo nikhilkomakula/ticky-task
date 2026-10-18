@@ -8,7 +8,7 @@ struct KanbanAllProjectsView: View {
     @AppStorage("weekStartsMonday") private var weekStartsMonday = true
     @State private var tab = Tab.boards
 
-    enum Tab: String, CaseIterable { case boards = "Boards", people = "People" }
+    enum Tab: String, CaseIterable { case boards = "Boards", people = "Resources" }
 
     var body: some View {
         let calendar = KanbanUI.calendar(weekStartsMonday: weekStartsMonday)
@@ -31,7 +31,7 @@ struct KanbanAllProjectsView: View {
             } else {
                 switch tab {
                 case .boards: boards(zip(live, snapshots).map { ($0, $1) })
-                case .people: people(KanbanMetrics.peopleRollup(snapshots), snapshots: snapshots)
+                case .people: people(app.kanbanMetrics.peopleOrdered(live, key: key, calendar: calendar), snapshots: snapshots)
                 }
             }
         }
@@ -46,6 +46,7 @@ struct KanbanAllProjectsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: project.symbolName).foregroundStyle(KanbanUI.color(project.colorHex) ?? .accentColor)
+                                    .accessibilityHidden(true)
                                 Text(project.name).font(.headline)
                                 Spacer()
                             }
@@ -88,6 +89,7 @@ struct KanbanAllProjectsView: View {
                 HStack(spacing: 8) {
                     Circle().fill(KanbanUI.utilisationColor(person.headline))
                         .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                     Text(person.name).font(.headline)
                     Text("\(person.totalAllocation)% allocated").foregroundStyle(person.overAllocated ? .red : .secondary)
                     if person.overAllocated {

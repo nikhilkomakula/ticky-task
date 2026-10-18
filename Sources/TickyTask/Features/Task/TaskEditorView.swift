@@ -9,9 +9,14 @@ import SwiftData
 /// changing one updates every occurrence. Details and subtasks belong to the opened
 /// occurrence only, and the repeat rule can be changed or stopped from any of them.
 struct TaskEditorView: View {
+    enum Mode {
+        case edit(TaskItem)
+        case create(dayKey: String?, customList: CustomList?)
+    }
+
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    let task: TaskItem
+    let mode: Mode
 
     @State private var shared: SharedAttributes
     @State private var originalShared: SharedAttributes
@@ -20,6 +25,8 @@ struct TaskEditorView: View {
     @State private var subtasks: [SubtaskDraft]
     @State private var originalSubtasks: [SubtaskDraft]
     @State private var newSubtask = ""
+    @State private var createDayKey: String?
+    @State private var createCustomList: CustomList?
 
     /// The owning series' rule when `task` is an occurrence; `nil` for a one-off.
     @State private var seriesRule: RecurrenceRule?
@@ -27,9 +34,12 @@ struct TaskEditorView: View {
     @State private var rule: RecurrenceDraft
     @State private var loadedRule: RecurrenceDraft
     @State private var saveError: String?
+    @FocusState private var titleFocused: Bool
+
+    // MARK: - Initialization
 
     init(task: TaskItem) {
-        self.task = task
+        self.mode = .edit(task)
         let attributes = SharedAttributes(task)
         _shared = State(initialValue: attributes)
         _originalShared = State(initialValue: attributes)
@@ -48,10 +58,45 @@ struct TaskEditorView: View {
             ?? RecurrenceDraft(newOn: task.dayKey.flatMap { WeekMath.date(fromDayKey: $0) })
         _rule = State(initialValue: draft)
         _loadedRule = State(initialValue: draft)
+        _createDayKey = State(initialValue: nil)
+        _createCustomList = State(initialValue: nil)
+    }
+
+    init(newTaskWithDayKey dayKey: String?, customList: CustomList? = nil) {
+        self.mode = .create(dayKey: dayKey, customList: customList)
+        let attributes = SharedAttributes.default
+        _shared = State(initialValue: attributes)
+        _originalShared = State(initialValue: attributes)
+        _notesText = State(initialValue: AttributedString())
+        _loadedNotes = State(initialValue: AttributedString())
+        _subtasks = State(initialValue: [])
+        _originalSubtasks = State(initialValue: [])
+        _createDayKey = State(initialValue: dayKey)
+        _createCustomList = State(initialValue: customList)
+        _seriesRule = State(initialValue: nil)
+        let draft = RecurrenceDraft(newOn: dayKey.flatMap { WeekMath.date(fromDayKey: $0) })
+        _rule = State(initialValue: draft)
+        _loadedRule = State(initialValue: draft)
+    }
+
+    private var task: TaskItem? {
+        guard case .edit(let t) = mode else { return nil }
+        return t
+    }
+
+    private var isCreateMode: Bool {
+        guard case .create = mode else { return false }
+        return true
     }
 
     /// An occurrence of a series (it shares attributes and has a rule to edit).
     private var isSeriesOccurrence: Bool { seriesRule != nil }
+
+    /// Effective day key for display/operations.
+    private var effectiveDayKey: String? {
+        if isCreateMode { return createDayKey }
+        return task?.dayKey
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,13 +105,17 @@ struct TaskEditorView: View {
             Form {
                 titleSection
                 notesSection
+                if isCreateMode { dateSection }
                 attributesSection
-                if isSeriesOccurrence || task.dayKey != nil { recurrenceSection }
+                if isSeriesOccurrence || effectiveDayKey != nil { recurrenceSection }
                 subtasksSection
             }
             .formStyle(.grouped)
         }
         .frame(minWidth: 560, minHeight: 580)
+        .onAppear {
+            if isCreateMode { titleFocused = true }
+        }
         .alert("Couldn’t save the task", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -81,11 +130,12 @@ struct TaskEditorView: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("editor-cancel")
             Spacer()
-            Text("Edit Task").font(.system(size: 15, weight: .semibold))
+            Text(isCreateMode ? "New task" : "Edit Task").font(.system(size: 15, weight: .semibold))
             Spacer()
             Button("Done") { finish() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .disabled(shared.title.trimmingCharacters(in: .whitespaces).isEmpty && isCreateMode)
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("editor-done")
         }
@@ -105,6 +155,21 @@ struct TaskEditorView: View {
                 .lineLimit(1...10)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("editor-title")
+                .focused($titleFocused)
+        }
+    }
+
+    private var dateSection: some View {
+        Section {
+            DatePicker("Date", selection: Binding(
+                get: {
+                    createDayKey.flatMap { WeekMath.date(fromDayKey: $0) } ?? Date()
+                },
+                set: { date in
+                    createDayKey = WeekMath.dayKey(for: date)
+                }
+            ), displayedComponents: .date)
+            .accessibilityIdentifier("planner-create-date")
         }
     }
 
@@ -305,11 +370,63 @@ struct TaskEditorView: View {
             guard !rule.isEquivalent(to: loadedRule) else { return .unchanged }
             return .replace(rule.rule(replacing: seriesRule, startDate: seriesRule.startDate))
         }
-        guard repeatEnabled, let day = task.dayKey.flatMap({ WeekMath.date(fromDayKey: $0) }) else { return .unchanged }
+        guard repeatEnabled, let day = (task?.dayKey ?? effectiveDayKey).flatMap({ WeekMath.date(fromDayKey: $0) }) else { return .unchanged }
         return .startSeries(rule.rule(replacing: nil, startDate: day))
     }
 
     private func finish() {
+        if isCreateMode {
+            finishCreate()
+        } else {
+            finishEdit()
+        }
+    }
+
+    private func finishCreate() {
+        let trimmed = shared.title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            saveError = "A task needs a title."
+            return
+        }
+
+        var draft = TaskCreationDraft()
+        draft.title = trimmed
+        draft.notes = ""
+        draft.notesRich = nil
+        draft.location = createCustomList.flatMap { .customList($0) } ?? .day(createDayKey ?? WeekMath.dayKey(for: Date()))
+        draft.dayKey = createDayKey ?? WeekMath.dayKey(for: Date())
+        draft.timeMinutes = shared.timeMinutes
+        draft.alarmEnabled = shared.alarmEnabled
+        draft.priority = shared.priority
+        draft.isCritical = shared.isCritical
+        draft.repeatRule = repeatEnabled ? rule.rule(replacing: nil, startDate: createDayKey.flatMap({ WeekMath.date(fromDayKey: $0) }) ?? Date()) : nil
+        draft.steps = subtasks.map { TaskCreationDraft.Step(title: $0.title, isDone: $0.isDone) }
+
+        if notesText != loadedNotes {
+            let document = NotesAttributedString.document(from: notesText)
+            do {
+                draft.notesRich = try NotesCodec.encode(document)
+                draft.notes = document.plainText
+            } catch {
+                saveError = error.localizedDescription
+                return
+            }
+        }
+
+        let horizon = Calendar.current.date(byAdding: .day, value: RecurrenceMaterializer.defaultHorizonDays,
+                                            to: Date()) ?? Date()
+        do {
+            _ = try TaskCreateCommit.commit(draft, context: context, horizon: horizon)
+            Task { @MainActor in await NotificationService.syncTaskReminders(context: context) }
+            dismiss()
+        } catch {
+            NSLog("TickyTask: creating task failed: \(error.localizedDescription)")
+            saveError = error.localizedDescription
+        }
+    }
+
+    private func finishEdit() {
+        guard let task else { return dismiss() }
         let edit = TaskEdit(
             originalShared: originalShared,
             editedShared: shared,

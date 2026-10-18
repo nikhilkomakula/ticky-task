@@ -44,4 +44,10 @@ final class KanbanResource {
     var initials: String { person?.initials ?? "" }
     /// The board's collapse key for this row.
     var rowKey: String { id.uuidString }
+
+    /// Derived allocation classification: exactly 100% → fullTime, otherwise partTime.
+    /// Stored `assignmentRaw` is never modified; this computes based on `allocationPercent`.
+    var effectiveAssignment: KanbanAssignment {
+        allocationPercent == 100 ? .fullTime : .partTime
+    }
 }

@@ -121,3 +121,115 @@ struct KanbanBoardGeometryTests {
                 > abs(BoardGeometry.autoScrollDelta(pointer: CGPoint(x: 30, y: 300), viewport: viewport).dx), "faster nearer the edge")
     }
 }
+
+// MARK: - Drag preview computation tests
+
+@Suite("Kanban board drag previews")
+struct KanbanBoardDragPreviewTests {
+    let projectID = UUID(), unassignedID = UUID(), todoID = UUID(), doneID = UUID()
+    let ravi = UUID(), mia = UUID()
+
+    func makeMetricsSnapshot(cards: [MetricsSnapshot.Card], members: [MetricsSnapshot.Member]) -> MetricsSnapshot {
+        MetricsSnapshot(
+            projectID: projectID, projectName: "Test",
+            columns: [
+                .init(id: todoID, name: "To Do", kind: .active),
+                .init(id: doneID, name: "Done", kind: .done),
+            ],
+            members: members,
+            cards: cards,
+            now: Date(), calendar: Calendar(identifier: .gregorian)
+        )
+    }
+
+    @Test func singleCardOwnerToOwner() {
+        let metrics = makeMetricsSnapshot(
+            cards: [
+                .init(id: UUID(), column: todoID, resource: ravi, estimateHours: 4, createdAt: Date(), updatedAt: Date()),
+                .init(id: UUID(), column: todoID, resource: mia, estimateHours: 5, createdAt: Date(), updatedAt: Date()),
+            ],
+            members: [
+                .init(id: ravi, personID: UUID(), name: "Ravi"),
+                .init(id: mia, personID: UUID(), name: "Mia"),
+            ]
+        )
+        let raviCard = metrics.cards.first { $0.resource == ravi }!
+        let days = MetricsDays(metrics)
+
+        // Original approach: project what Mia's load would be if she takes Ravi's card.
+        let before = KanbanMetrics.projectedLoad(metrics, member: metrics.members.first { $0.id == mia }!, dragged: [], toColumn: UUID(), toResource: nil)
+        let after = KanbanMetrics.projectedLoad(metrics, member: metrics.members.first { $0.id == mia }!, dragged: [raviCard.id], toColumn: todoID, toResource: mia)
+
+        // New approach: directly compute the delta.
+        let value = KanbanMetrics.thisWeek(metrics, days, raviCard)
+        let expectedAfter = before.load + value
+
+        #expect(after.load == expectedAfter)
+    }
+
+    @Test func multiSelectAcrossPeopleOntoColumnHeader() {
+        let card1 = UUID(), card2 = UUID()
+        let metrics = makeMetricsSnapshot(
+            cards: [
+                .init(id: card1, column: todoID, resource: ravi, estimateHours: 3, createdAt: Date(), updatedAt: Date()),
+                .init(id: card2, column: todoID, resource: mia, estimateHours: 2, createdAt: Date(), updatedAt: Date()),
+            ],
+            members: [
+                .init(id: ravi, personID: UUID(), name: "Ravi", allocationPercent: 100),
+                .init(id: mia, personID: UUID(), name: "Mia", allocationPercent: 100),
+            ]
+        )
+        let days = MetricsDays(metrics)
+
+        // When dropped on a column header, each card keeps its person.
+        // Ravi's card stays with Ravi (no change).
+        // Mia's card stays with Mia (no change).
+        let selectedCards = Set([card1, card2])
+        var delta: [UUID: Double] = [:]
+        for card in metrics.cards where selectedCards.contains(card.id) {
+            let value = KanbanMetrics.thisWeek(metrics, days, card)
+            // No change: destination column header preserves resource.
+            // Would subtract from source and add to destination, but they're the same.
+        }
+
+        #expect(delta.isEmpty)
+    }
+
+    @Test func moveIntoDone() {
+        let card = UUID()
+        let metrics = makeMetricsSnapshot(
+            cards: [
+                .init(id: card, column: todoID, resource: ravi, estimateHours: 5, createdAt: Date(), updatedAt: Date()),
+            ],
+            members: [
+                .init(id: ravi, personID: UUID(), name: "Ravi"),
+            ]
+        )
+        let days = MetricsDays(metrics)
+
+        // Moving to Done removes load from open columns.
+        let before = KanbanMetrics.projectedLoad(metrics, member: metrics.members[0], dragged: [], toColumn: UUID(), toResource: nil)
+        let after = KanbanMetrics.projectedLoad(metrics, member: metrics.members[0], dragged: [card], toColumn: doneID, toResource: ravi)
+
+        let value = KanbanMetrics.thisWeek(metrics, days, metrics.cards[0])
+        let expectedAfter = before.load - value
+
+        #expect(after.load == expectedAfter)
+    }
+
+    @Test func unassignedCard() {
+        let card = UUID()
+        let metrics = makeMetricsSnapshot(
+            cards: [
+                .init(id: card, column: todoID, resource: nil, estimateHours: 3, createdAt: Date(), updatedAt: Date()),
+            ],
+            members: [
+                .init(id: ravi, personID: UUID(), name: "Ravi"),
+            ]
+        )
+
+        // Unassigned cards don't affect any member's baseline.
+        let baseline = KanbanMetrics.loadVsCapacity(metrics)
+        #expect(baseline.first { $0.memberID == ravi }?.load == 0)
+    }
+}

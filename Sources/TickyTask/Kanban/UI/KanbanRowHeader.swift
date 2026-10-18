@@ -14,6 +14,7 @@ struct KanbanRowHeader: View {
     var onEdit: () -> Void
     var onRemove: () -> Void
     @Environment(AppState.self) private var app
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = false
 
     var body: some View {
         let _ = app.kanbanClock   // the roll-off badge counts days from today
@@ -25,16 +26,13 @@ struct KanbanRowHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .help(collapsed ? "Expand (⌥-click: all rows)" : "Collapse (⌥-click: all rows)")
+            .help(collapsed ? "Expand row" : "Collapse row")
             .accessibilityLabel(collapsed ? "Expand \(row.name)" : "Collapse \(row.name)")
             .accessibilityIdentifier("kanban-row-toggle-\(row.name)")
 
             avatar
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text(row.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    if let resource { icons(resource) }
-                }
+                name
                 if let load { gauge(load) }
                 badges
             }
@@ -57,6 +55,7 @@ struct KanbanRowHeader: View {
             Image(systemName: "tray")
                 .frame(width: 28, height: 28)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         } else {
             Text(resource?.initials.isEmpty == false ? resource!.initials : String(row.name.prefix(2)).uppercased())
                 .font(.caption.weight(.bold))
@@ -66,22 +65,39 @@ struct KanbanRowHeader: View {
         }
     }
 
-    private func icons(_ resource: KanbanResource) -> some View {
-        let contractor = resource.person?.employment == .contractor
-        let partTime = resource.assignment == .partTime
-        return HStack(spacing: 3) {
-            Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark")
-                .help(contractor ? "Contractor" : "Employee")
-                .accessibilityLabel(contractor ? "Contractor" : "Employee")
-            Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
-                .help(partTime ? "Part-time" : "Full-time")
-                .accessibilityLabel(partTime ? "Part-time" : "Full-time")
-            if resource.allocationPercent < 100 {
-                Text("\(resource.allocationPercent)%").monospacedDigit()
-            }
+    /// The whole name, wrapping onto more lines in a narrow column, with the employment icon
+    /// (and the allocation, if shown) after its last word so the name gets the full width;
+    /// no-break spaces keep the icons with that word.
+    @ViewBuilder
+    private var name: some View {
+        let title = Text(row.name).font(.subheadline.weight(.semibold))
+        if let resource {
+            let info = icons(resource)
+            Text("\(title)\u{00A0}\(info.icons.font(.caption2).foregroundStyle(.secondary))")
+                .fixedSize(horizontal: false, vertical: true)
+                .help(info.help)
+                // What's spoken matches what's shown; the name stays the element's label.
+                .accessibilityLabel(row.name)
+                .accessibilityValue(info.spoken)
+        } else {
+            title.fixedSize(horizontal: false, vertical: true)
         }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
+    }
+
+    private func icons(_ resource: KanbanResource) -> (icons: Text, help: String, spoken: String) {
+        let contractor = resource.person?.employment == .contractor
+        let partTime = resource.effectiveAssignment == .partTime
+        let employment = contractor ? "Contractor" : "Employee"
+        let assignment = partTime ? "Part-time" : "Full-time"
+        var icons = Text(Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark"))
+        guard showAllocation else { return (icons, employment, employment) }
+        icons = Text("\(icons)\u{00A0}\(Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill"))")
+        var spoken = "\(employment), \(assignment)"
+        if resource.allocationPercent < 100 {
+            icons = Text("\(icons)\u{00A0}\(Text("\(resource.allocationPercent)%").monospacedDigit())")
+            spoken += ", \(resource.allocationPercent)%"
+        }
+        return (icons, "\(employment), \(assignment)", spoken)
     }
 
     /// A bar filled to the utilisation (capped at the bar's end), coloured by band.
@@ -94,33 +110,47 @@ struct KanbanRowHeader: View {
         case nil: 0
         }
         let color = KanbanUI.utilisationColor(load.utilisation)
-        return HStack(spacing: 6) {
-            if load.target != nil {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(color).frame(width: geo.size.width * fill)
-                    }
-                }
-                .frame(width: 70, height: 6)
+        // A narrow People column drops the bar before the numbers.
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                if load.target != nil { bar(fill: fill, color: color) }
+                loadLabel(load, hours: hours)
             }
-            if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
-                // While a drag hovers: "4 → 6/5".
-                let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
-                Text("\(projection.before.formatted(format)) → \(projection.after.formatted(format))/\(projection.target.formatted(format))\(hours ? "h" : "")")
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(KanbanUI.utilisationColor(projection.utilisation))
-                    .accessibilityIdentifier("kanban-projected-\(row.name)")
-            } else {
-                Text(shortLoad(load, hours: hours))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
+            loadLabel(load, hours: hours)
         }
         .help(text + (load.backlogCoverageWeeks.map { " · backlog covers \($0.formatted(.number.precision(.fractionLength(1)))) weeks" } ?? ""))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Load: \(text)")
         .accessibilityIdentifier("kanban-gauge-\(row.name)")
+    }
+
+    private func bar(fill: Double, color: Color) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule().fill(color).frame(width: geo.size.width * fill)
+            }
+        }
+        .frame(minWidth: 24, idealWidth: 24, maxWidth: 70)
+        .frame(height: 6)
+    }
+
+    @ViewBuilder
+    private func loadLabel(_ load: KanbanMetrics.LoadRow, hours: Bool) -> some View {
+        if let projection = resource.flatMap({ drag?.projected[$0.id] }) {
+            // While a drag hovers: "4 → 6/5".
+            let format = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
+            Text("\(projection.before.formatted(format)) → \(projection.after.formatted(format))/\(projection.target.formatted(format))\(hours ? "h" : "")")
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(KanbanUI.utilisationColor(projection.utilisation))
+                .fixedSize()
+                .accessibilityIdentifier("kanban-projected-\(row.name)")
+        } else {
+            Text(shortLoad(load, hours: hours))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .fixedSize()
+        }
     }
 
     private func shortLoad(_ load: KanbanMetrics.LoadRow, hours: Bool) -> String {

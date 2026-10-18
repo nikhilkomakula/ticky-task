@@ -16,6 +16,12 @@ final class KanbanIntegrationsUITests: XCTestCase {
         return app
     }
 
+    private func eventually(timeout: TimeInterval = 5, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        return condition()
+    }
+
     private func element(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         app.descendants(matching: .any)[id].firstMatch
     }
@@ -46,6 +52,41 @@ final class KanbanIntegrationsUITests: XCTestCase {
         XCTAssertTrue(demo.waitForExistence(timeout: 10), "the demo board is in the sidebar")
         demo.click()
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the demo board opens")
+    }
+
+    /// Settings › Shortcuts changes the Kanban shortcut: the new keys switch module and ⌘2 no
+    /// longer does; Restore brings ⌘1 and ⌘2 back. (Under -uitest the shortcuts live in a store
+    /// emptied at each launch, so a failure here can't leave ⌘2 changed for other tests.)
+    func testChangeTheKanbanShortcut() {
+        let app = launch()
+        func openShortcuts() {
+            app.typeKey(",", modifierFlags: .command)
+            let tab = app.toolbars.buttons["Shortcuts"].firstMatch
+            XCTAssertTrue(tab.waitForExistence(timeout: 10), "Settings has a Shortcuts tab")
+            tab.click()
+            XCTAssertTrue(element(app, "shortcut-restore-modules").waitForExistence(timeout: 5))
+        }
+        openShortcuts()
+        let recorder = element(app, "shortcut-show-kanban")
+        XCTAssertTrue(recorder.exists, "the Kanban recorder is there")
+        recorder.click()
+        app.typeKey("k", modifierFlags: [.command, .option, .control])
+        XCTAssertTrue(eventually { (recorder.value as? String) == "⌃⌥⌘K" || recorder.label.contains("⌃⌥⌘K") }, "the new keys are recorded")
+        app.typeKey("w", modifierFlags: .command)   // close Settings
+
+        let board = element(app, "kanban-sidebar-Platform")
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertFalse(board.waitForExistence(timeout: 2), "⌘2 no longer opens Kanban")
+        app.typeKey("k", modifierFlags: [.command, .option, .control])
+        XCTAssertTrue(board.waitForExistence(timeout: 5), "the new shortcut opens Kanban")
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Alpha"].waitForExistence(timeout: 5), "⌘1 still opens the Planner")
+
+        openShortcuts()
+        element(app, "shortcut-restore-modules").click()
+        app.typeKey("w", modifierFlags: .command)
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertTrue(board.waitForExistence(timeout: 5), "restored: ⌘2 opens Kanban again")
     }
 
     func testSummarySheetListsTheBoardsCards() {

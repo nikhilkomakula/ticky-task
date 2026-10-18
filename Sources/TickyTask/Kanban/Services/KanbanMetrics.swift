@@ -633,7 +633,7 @@ extension MetricsSnapshot {
             columns: project.orderedColumns.map { Column(id: $0.id, name: $0.name, kind: $0.kind) },
             members: project.resources.sorted { $0.sortIndex < $1.sortIndex }.map { r in
                 Member(id: r.id, personID: r.person?.id ?? r.id, name: r.displayName, employment: r.person?.employment ?? .fte,
-                       assignment: r.assignment, allocationPercent: r.allocationPercent,
+                       assignment: r.effectiveAssignment, allocationPercent: r.allocationPercent,
                        capacityHoursOverride: r.capacityHoursPerWeekOverride, openTaskTargetOverride: r.openTaskTargetOverride,
                        startDate: r.startDate, endDate: r.endDate, archived: r.archivedAt != nil)
             },

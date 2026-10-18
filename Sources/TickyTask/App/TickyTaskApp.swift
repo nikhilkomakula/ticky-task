@@ -49,6 +49,7 @@ struct TickyTaskApp: App {
             CommandGroup(after: .textEditing) {
                 FindTaskCommand(appState: appState)
                 WeeklySummaryCommand(appState: appState)
+                NewItemCommand(appState: appState)
             }
             CommandGroup(after: .help) {
                 ShortcutsCommand(appState: appState)
@@ -57,8 +58,8 @@ struct TickyTaskApp: App {
                 KanbanUndoCommands(appState: appState)
             }
             CommandGroup(before: .toolbar) {
-                ModuleCommand(appState: appState, module: .planner, key: "1")
-                ModuleCommand(appState: appState, module: .kanban, key: "2")
+                ModuleCommand(appState: appState, module: .planner)
+                ModuleCommand(appState: appState, module: .kanban)
                 Divider()
             }
         }
@@ -115,14 +116,15 @@ private struct ShortcutsCommand: View {
     }
 }
 
-/// View › Planner (⌘1) / Kanban (⌘2); disabled while the module is hidden.
+/// View › Planner / Kanban (⌘1 / ⌘2 unless changed in Settings › Shortcuts); disabled while
+/// the module is hidden.
 private struct ModuleCommand: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
     @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
     let appState: AppState
     let module: AppModule
-    let key: KeyEquivalent
+    private let shortcuts = ModuleShortcuts.shared
 
     var body: some View {
         Button(module.label) {
@@ -130,7 +132,7 @@ private struct ModuleCommand: View {
             NSApp.activate(ignoringOtherApps: true)
             appState.module = module
         }
-        .keyboardShortcut(key, modifiers: .command)
+        .keyboardShortcut(shortcuts.menuShortcut(for: module))
         .disabled(!ModulePolicy(showPlanner: showPlanner, showKanban: showKanban).isVisible(module))
     }
 }
@@ -148,5 +150,38 @@ private struct WeeklySummaryCommand: View {
             appState.isWeeklySummaryPresented = true
         }
         .keyboardShortcut("y", modifiers: [.command, .shift])
+    }
+}
+
+/// The ⌘N "New item" command: creates a new task in Planner or a new card in Kanban,
+/// based on the visible module. In Kanban, disabled when no board is active.
+private struct NewItemCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage(ModulePolicy.showPlannerKey) private var showPlanner = true
+    @AppStorage(ModulePolicy.showKanbanKey) private var showKanban = true
+    let appState: AppState
+
+    var body: some View {
+        let policy = ModulePolicy(showPlanner: showPlanner, showKanban: showKanban)
+        let module = policy.resolve(appState.module)
+        let isKanbanWithActiveBoard = module == .kanban && isActiveBoard()
+
+        Button(module == .planner ? "New Task" : "New Card") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+            if module == .planner {
+                appState.presentPlannerNewTask()
+            } else {
+                appState.presentKanbanNewCard()
+            }
+        }
+        .keyboardShortcut("n", modifiers: .command)
+        .disabled(module == .kanban && !isKanbanWithActiveBoard)
+    }
+
+    /// Commands get no model context, so the Kanban module publishes the board it shows.
+    private func isActiveBoard() -> Bool {
+        if case let .project(projectID) = appState.kanban.selection { return appState.kanbanActiveBoardID == projectID }
+        return false
     }
 }

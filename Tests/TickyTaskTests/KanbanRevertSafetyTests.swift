@@ -523,4 +523,22 @@ struct KanbanRevertSafetyTests {
         try b.service.undo(in: b.project)
         #expect(back.title == "T", "later edits still undo")
     }
+
+    @Test("Reverting several deletions into one cell gives each card its own position")
+    func restoreMultiplePlacedCardsCollisionDetection() throws {
+        let b = try board()
+        let cards = try ["A", "C", "D"].map { try b.service.createTask(in: b.project, title: $0, column: b.doing, row: .resource(b.ravi.id)) }
+        let ids = cards.map(\.id)
+        for card in cards { try b.service.deleteTask(card) }
+        let pid = b.project.id
+        let context = try #require(b.project.modelContext)
+        let deletions = try context.fetch(FetchDescriptor<KanbanActivity>(predicate: #Predicate { $0.project?.id == pid }))
+            .filter { $0.kindRaw == KanbanActivityKind.deleted.rawValue }.sorted { $0.seq > $1.seq }
+        #expect(deletions.count == 3)
+        for entry in deletions { try b.service.revert(entry) }
+        let restored = try context.fetch(FetchDescriptor<KanbanTask>()).filter { ids.contains($0.id) }
+        #expect(restored.count == 3)
+        #expect(restored.allSatisfy { $0.column?.id == b.doing.id && $0.resource?.id == b.ravi.id })
+        #expect(Set(restored.map(\.sortIndex)).count == 3, "each has a distinct position")
+    }
 }
