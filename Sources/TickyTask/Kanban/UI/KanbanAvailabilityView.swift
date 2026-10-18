@@ -35,7 +35,8 @@ struct KanbanAvailabilityView: View {
     struct Row: Identifiable {
         let resource: KanbanResource
         let cells: [KanbanAvailability.Cell]
-        let holidays: [String]  // Holiday names for each cell
+        /// Per cell, the holidays it excludes, for VoiceOver.
+        let holidays: [[String]]
         var id: UUID { resource.id }
     }
 
@@ -50,17 +51,15 @@ struct KanbanAvailabilityView: View {
         let members = project.resources.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
         let holidays = KanbanAvailability.Holidays(allHolidays)
         let holidaysByID = Dictionary(allHolidays.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let holidaysByWeek = Dictionary(grouping: allHolidays) { holiday in
-            KanbanDay(key: holiday.day)?.monday ?? KanbanDay.today()
+        // Only holidays on the board's work days matter: a Saturday holiday on a weekday board changes nothing.
+        let holidaysByWeek = Dictionary(grouping: allHolidays.filter { h in KanbanDay(key: h.day).map { board.workWeekDays.contains($0.weekday) } ?? false }) {
+            KanbanDay(key: $0.day)!.monday
         }
-        let holidayNamesPerWeek = holidaysByWeek.mapValues { holidays in holidays.map { $0.name } }
+        let holidayNamesPerWeek = holidaysByWeek.mapValues { $0.map(\.name) }
         let rows = members.map { resource in
             let member = KanbanAvailability.Member(resource)
             let cells = weeks.map { KanbanAvailability.cell(week: $0, board: board, member: member, holidays: holidays) }
-            // Map cells to holiday names for VoiceOver; one name per cell for the spoken format
-            let holidayNames = cells.map { cell in
-                cell.holidayIDs.compactMap { holidaysByID[$0]?.name }.first ?? ""
-            }
+            let holidayNames = cells.map { $0.holidayIDs.compactMap { holidaysByID[$0]?.name } }
             return Row(resource: resource, cells: cells, holidays: holidayNames)
         }
         VStack(spacing: 0) {
@@ -105,9 +104,9 @@ struct KanbanAvailabilityView: View {
                         }
                     } header: {
                         VStack(alignment: .leading, spacing: 0) {
-                            KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX, holidays: allHolidays)
+                            KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX, holidaysByWeek: holidaysByWeek)
                             Divider()
-                            weeklyAvailabilityRow(rows: rows, weeks: weeks, today: today)
+                            KanbanAvailabilityWeeklyRow(cells: rows.map(\.cells), weeks: weeks, today: today, scrollX: scrollX)
                         }
                     }
                 }
@@ -122,59 +121,6 @@ struct KanbanAvailabilityView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .kanbanAvailabilityToday)) { _ in
                 if weeks.contains(today.monday) { withAnimation { proxy.scrollTo(today.monday, anchor: .center) } }
-            }
-        }
-    }
-
-    private func accessibility(total: (available: Int, possible: Int)?, percentage: Int) -> String {
-        guard let total else { return "No working days" }
-        return "\(percentage) percent, \(KanbanAvailability.days(total.available)) of \(KanbanAvailability.days(total.possible)) days available"
-    }
-
-    @ViewBuilder
-    private func weeklyAvailabilityContent(total: (available: Int, possible: Int)?, percentage: Int, band: KanbanAvailability.Band?) -> some View {
-        let textColor = band.flatMap { KanbanAvailabilityPalette.text($0) } ?? KanbanAvailabilityPalette.inactiveText
-        VStack(spacing: 2) {
-            if let total {
-                Text("\(percentage)%")
-                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
-                Text("\(KanbanAvailability.days(total.available)) days")
-                    .font(.system(size: 10).monospacedDigit())
-            } else {
-                Text("—")
-                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
-            }
-        }
-        .foregroundStyle(textColor)
-        .frame(width: 80, height: 48)
-        .background(RoundedRectangle(cornerRadius: 6).fill(band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill))
-    }
-
-    private func weeklyAvailabilityRow(rows: [Row], weeks: [KanbanDay], today: KanbanDay) -> some View {
-        HStack(spacing: 0) {
-            Text("Weekly availability")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: Self.headerWidth - 16, alignment: .leading)
-                .padding(.horizontal, 8)
-                .frame(height: 56)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .offset(x: scrollX)
-                .zIndex(1)
-            ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
-                let total = KanbanAvailability.total(rows.map { $0.cells[index] })
-                let band: KanbanAvailability.Band? = total.flatMap { KanbanAvailability.teamBand(available: $0.available, possible: $0.possible) }
-                let percentage = total.map { KanbanAvailability.percent($0.available, of: $0.possible) } ?? 0
-                ZStack {
-                    if week == today.monday {
-                        Color.accentColor.opacity(0.1)
-                    }
-                    weeklyAvailabilityContent(total: total, percentage: percentage, band: band)
-                }
-                .frame(width: Self.weekWidth, height: 56)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Weekly availability, week of \(KanbanAvailabilityFormat.long(week))")
-                .accessibilityValue(accessibility(total: total, percentage: percentage))
-                .accessibilityIdentifier("kanban-availability-weekly-\(week.key)")
             }
         }
     }
@@ -219,7 +165,7 @@ struct KanbanAvailabilityView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(row.resource.displayName), week of \(KanbanAvailabilityFormat.long(week))")
                 .accessibilityValue(KanbanAvailabilityFormat.spoken(row.cells[index], timeOff: row.resource.person?.timeOff ?? [],
-                                                                    holidays: row.holidays[index].isEmpty ? [] : [row.holidays[index]]))
+                                                                    holidays: row.holidays[index]))
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("kanban-availability-\(row.resource.displayName)-\(week.key)")
             }
@@ -332,22 +278,8 @@ struct KanbanAvailabilityHeader: View {
     let weeks: [KanbanDay]
     let today: KanbanDay
     let scrollX: CGFloat
-    let holidaysByWeek: [KanbanDay: [String]]  // Holiday names per week
-
-    init(weeks: [KanbanDay], today: KanbanDay, scrollX: CGFloat, holidays: [KanbanHoliday] = []) {
-        self.weeks = weeks
-        self.today = today
-        self.scrollX = scrollX
-        // Group holidays by week Monday
-        var byWeek: [KanbanDay: [String]] = [:]
-        for holiday in holidays {
-            if let day = KanbanDay(key: holiday.day) {
-                let monday = day.monday
-                byWeek[monday, default: []].append(holiday.name)
-            }
-        }
-        self.holidaysByWeek = byWeek
-    }
+    /// Holiday names by week, on the board's work days.
+    var holidaysByWeek: [KanbanDay: [String]] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -372,33 +304,35 @@ struct KanbanAvailabilityHeader: View {
                         .overlay(alignment: .leading) {
                             if firstOfMonth && index > 0 { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1) }
                         }
-                    HStack(spacing: 4) {
-                        VStack(spacing: week == today.monday ? 1 : 2) {
-                            if week == today.monday {
-                                Text("This week")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.85)
-                            }
-                            Text(KanbanAvailabilityFormat.week(week))
-                                .font(.system(size: week.month == week.adding(days: 6).month ? 12 : 11,
-                                              weight: week == today.monday ? .semibold : .regular).monospacedDigit())
+                    VStack(spacing: week == today.monday ? 1 : 2) {
+                        if week == today.monday {
+                            Text("This week")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.accentColor)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
-                            Rectangle()
-                                .fill(week == today.monday ? Color.accentColor : .clear)
-                                .frame(width: 40, height: 2)
                         }
-                        if hasHoliday {
-                            Image(systemName: "star.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
-                                .help("Includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")")
-                                .accessibilityLabel("Includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")")
-                        }
+                        Text(KanbanAvailabilityFormat.week(week))
+                            .font(.system(size: week.month == week.adding(days: 6).month ? 12 : 11,
+                                          weight: week == today.monday ? .semibold : .regular).monospacedDigit())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        Rectangle()
+                            .fill(week == today.monday ? Color.accentColor : .clear)
+                            .frame(width: 40, height: 2)
                     }
                     .frame(width: KanbanAvailabilityView.weekWidth, height: 40)
+                }
+                // In the corner, so the dates keep their width.
+                .overlay(alignment: .topTrailing) {
+                    if hasHoliday {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                            .padding(.top, 22)
+                            .padding(.trailing, 6)
+                            .help("Includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")")
+                    }
                 }
                 .id(week)
                 .overlay(alignment: .center) {
@@ -451,6 +385,8 @@ struct KanbanAvailabilityLegend: View {
                         Text(text).font(.caption)
                     }
                 }
+                Label("Public holiday that week", systemImage: "star.fill").font(.caption).foregroundStyle(.secondary)
+                    .labelStyle(KanbanLegendGlyphStyle())
             }
         }
         .padding(.horizontal, 12)
@@ -538,6 +474,76 @@ struct KanbanAvailabilityCellView: View {
     }
 }
 
+/// The pinned Weekly availability row (design 04): Σ effective / Σ possible over everyone who
+/// can work that week (holidays are already out of possible), floored, on its own colour scale.
+struct KanbanAvailabilityWeeklyRow: View {
+    /// Per member, a cell per week.
+    let cells: [[KanbanAvailability.Cell]]
+    let weeks: [KanbanDay]
+    let today: KanbanDay
+    let scrollX: CGFloat
+
+    private func accessibility(total: (available: Int, possible: Int)?, percentage: Int) -> String {
+        guard let total else { return "No working days" }
+        return "\(percentage) percent, \(KanbanAvailability.days(total.available)) of \(KanbanAvailability.days(total.possible)) days available"
+    }
+
+    @ViewBuilder
+    private func content(total: (available: Int, possible: Int)?, percentage: Int, band: KanbanAvailability.Band?) -> some View {
+        let textColor = band.flatMap { KanbanAvailabilityPalette.text($0) } ?? KanbanAvailabilityPalette.inactiveText
+        VStack(spacing: 2) {
+            if let total {
+                Text("\(percentage)%")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                Text("\(KanbanAvailability.days(total.available)) days")
+                    .font(.system(size: 10).monospacedDigit())
+            } else {
+                Text("—")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+            }
+        }
+        .foregroundStyle(textColor)
+        .frame(width: 80, height: 48)
+        .background(RoundedRectangle(cornerRadius: 6).fill(band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill))
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("Weekly availability")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: KanbanAvailabilityView.headerWidth - 16, alignment: .leading)
+                .padding(.horizontal, 8)
+                .frame(height: 56)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .offset(x: scrollX)
+                .zIndex(1)
+            ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
+                let total = KanbanAvailability.total(cells.map { $0[index] })
+                let band: KanbanAvailability.Band? = total.flatMap { KanbanAvailability.teamBand(available: $0.available, possible: $0.possible) }
+                let percentage = total.map { KanbanAvailability.percent($0.available, of: $0.possible) } ?? 0
+                ZStack {
+                    if week == today.monday {
+                        Color.accentColor.opacity(0.1)
+                    }
+                    content(total: total, percentage: percentage, band: band)
+                }
+                .frame(width: KanbanAvailabilityView.weekWidth, height: 56)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Weekly availability, week of \(KanbanAvailabilityFormat.long(week))")
+                .accessibilityValue(accessibility(total: total, percentage: percentage))
+                .accessibilityIdentifier("kanban-availability-weekly-\(week.key)")
+            }
+        }
+    }
+}
+
+/// A legend entry whose glyph is drawn as it is in the grid.
+private struct KanbanLegendGlyphStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) { configuration.icon.font(.system(size: 9)).foregroundStyle(.orange); configuration.title }
+    }
+}
+
 // MARK: - Palette and wording
 
 /// Named availability colours (design 03), light and dark; each text colour is ≥ 4.5:1 on its fill.
@@ -614,10 +620,9 @@ enum KanbanAvailabilityFormat {
                 let kinds = Set(timeOff.filter { cell.absenceIDs.contains($0.id) }.map(\.kind.label)).sorted().joined(separator: ", ")
                 fragments.append("\(KanbanAvailability.days(cell.absentHalfDays)) days off (\(kinds))")
             }
-            if !holidays.isEmpty {
-                let count = holidays.count
-                let holidayText = count == 1 ? "half a day" : "\(count) public holiday\(count > 1 ? "s" : "")"
-                fragments.append("\(holidayText) excluded (\(holidays.joined(separator: ", ")))")
+            if cell.holidayHalfDays > 0 {
+                let amount = cell.holidayHalfDays == 1 ? "Half a day" : "\(KanbanAvailability.days(cell.holidayHalfDays)) \(cell.holidayHalfDays == 2 ? "day" : "days")"
+                fragments.append("\(amount) of public holidays excluded\(holidays.isEmpty ? "" : " (\(holidays.joined(separator: ", ")))")")
             }
             parts.append(fragments.joined(separator: "; "))
         }

@@ -170,19 +170,31 @@ struct KanbanCardSnapshotTests {
         try s.addTimeOff(KanbanTimeOffDTO(personId: mia.id, startDay: "20261104", endDay: "20261104", portion: .pm), on: project)
         try s.addTimeOff(KanbanTimeOffDTO(personId: mia.id, startDay: "20261116", endDay: "20261120"), on: project)
         try s.setOverride(resources[2], week: KanbanDay(key: "20261102")!, halfDays: 5, note: "Conference")
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: project)
+        for day in ["20261130", "20261201", "20261202", "20261203", "20261204"] {   // a shutdown week Ravi works
+            try s.addHoliday(KanbanHolidayDTO(day: day, name: "Shutdown", workedBy: [ravi.id]), on: project)
+        }
         let board = KanbanAvailability.Board(project)
         let today = KanbanDay(key: "20261028")!
         let weeks = KanbanAvailability.window(board: board, today: today)
-        let rows = resources.map { r in (r, weeks.map { KanbanAvailability.cell(week: $0, board: board, member: KanbanAvailability.Member(r)) }) }
+        let holidays = try s.holidays()
+        let rows = resources.map { r in (r, weeks.map { KanbanAvailability.cell(week: $0, board: board, member: KanbanAvailability.Member(r), holidays: holidays) }) }
+        let holidayNames = Dictionary(grouping: try context.fetch(FetchDescriptor<KanbanHoliday>()), by: { KanbanDay(key: $0.day)!.monday }).mapValues { Array(Set($0.map(\.name))) }
         let app = AppState()
         for scheme in [ColorScheme.light, .dark] {
             let grid = VStack(alignment: .leading, spacing: 0) {
-                KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: 0)
+                KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: 0, holidaysByWeek: holidayNames)
+                Divider()
+                KanbanAvailabilityWeeklyRow(cells: rows.map(\.1), weeks: weeks, today: today, scrollX: 0)
+                Divider()
                 ForEach(rows, id: \.0.id) { resource, cells in
                     HStack(spacing: 0) {
                         KanbanAvailabilityRowHeader(resource: resource, showAllocation: true)
                             .frame(width: KanbanAvailabilityView.headerWidth, height: 60, alignment: .leading)
-                        ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in KanbanAvailabilityCellView(cell: cell, focused: false) }
+                        ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                            KanbanAvailabilityCellView(cell: cell, focused: false)
+                                .background(weeks[index] == today.monday ? Color.accentColor.opacity(0.08) : .clear)
+                        }
                     }
                     Divider()
                 }

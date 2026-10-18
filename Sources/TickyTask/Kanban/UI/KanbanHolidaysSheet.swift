@@ -72,9 +72,7 @@ struct KanbanHolidaysSheet: View {
         }
         .padding(20)
         .frame(minWidth: 500, minHeight: 400)
-        .sheet(item: $editing) { draft in
-            KanbanHolidayEditor(draft: .init(get: { editing }, set: { editing = $0 }), project: project, people: allPeople)
-        }
+        .sheet(item: $editing) { KanbanHolidayEditor(draft: $0, project: project, people: allPeople) }
         .accessibilityIdentifier("kanban-holidays-sheet")
     }
 }
@@ -104,7 +102,7 @@ struct KanbanHolidayDraft: Identifiable {
 
 /// Adds or edits one public holiday.
 struct KanbanHolidayEditor: View {
-    @Binding var draft: KanbanHolidayDraft?
+    @State var draft: KanbanHolidayDraft
     let project: KanbanProject
     let people: [KanbanPerson]
     @Environment(AppState.self) private var app
@@ -113,76 +111,48 @@ struct KanbanHolidayEditor: View {
     @State private var error: String?
 
     var body: some View {
-        guard var draft = draft else { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 12) {
-                Text(draft.holiday == nil ? "Add public holiday" : "Edit public holiday").font(.headline)
-                Form {
-                    DatePicker("Date", selection: Binding(
-                        get: { draft.day },
-                        set: { draft.day = $0; self.draft?.day = $0 }
-                    ), displayedComponents: .date)
-                        .accessibilityIdentifier("kanban-holiday-date")
-                    TextField("Name", text: Binding(
-                        get: { draft.name },
-                        set: { draft.name = $0; self.draft?.name = $0 }
-                    ))
-                        .accessibilityIdentifier("kanban-holiday-name")
-                    Picker("Duration", selection: Binding(
-                        get: { draft.portion },
-                        set: { draft.portion = $0; self.draft?.portion = $0 }
-                    )) {
-                        ForEach(KanbanTimeOffPortion.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("People who work it").font(.callout.weight(.semibold))
-                        ForEach(people.sorted { $0.name < $1.name }) { person in
-                            Toggle(isOn: Binding(
-                                get: { draft.workedBy.contains(person.id) },
-                                set: { newValue in
-                                    if newValue && !draft.workedBy.contains(person.id) {
-                                        draft.workedBy.append(person.id)
-                                        self.draft?.workedBy = draft.workedBy
-                                    } else if !newValue {
-                                        draft.workedBy.removeAll { $0 == person.id }
-                                        self.draft?.workedBy = draft.workedBy
-                                    }
-                                }
-                            )) {
-                                Text(person.name)
-                            }
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 12) {
+            Text(draft.holiday == nil ? "Add public holiday" : "Edit public holiday").font(.headline)
+            Form {
+                DatePicker("Date", selection: $draft.day, displayedComponents: .date)
+                    .accessibilityIdentifier("kanban-holiday-date")
+                TextField("Name", text: $draft.name)
+                    .accessibilityIdentifier("kanban-holiday-name")
+                Picker("Duration", selection: $draft.portion) {
+                    ForEach(KanbanTimeOffPortion.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .formStyle(.grouped)
-                .frame(width: 400)
-                if let error { Text(error).font(.callout).foregroundStyle(.red) }
-                HStack {
-                    Spacer()
-                    Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                    Button(draft.holiday == nil ? "Add" : "Save", action: { save(draft) })
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .accessibilityIdentifier("kanban-holiday-save")
+                Section("People who work it") {
+                    ForEach(people) { person in
+                        Toggle(person.name, isOn: Binding(
+                            get: { draft.workedBy.contains(person.id) },
+                            set: { works in
+                                draft.workedBy.removeAll { $0 == person.id }
+                                if works { draft.workedBy.append(person.id) }
+                            }))
+                    }
                 }
             }
-            .padding(20)
-        )
+            .formStyle(.grouped)
+            .frame(width: 420, height: 360)
+            if let error { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(draft.holiday == nil ? "Add" : "Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityIdentifier("kanban-holiday-save")
+            }
+        }
+        .padding(20)
     }
 
-    private func save(_ draft: KanbanHolidayDraft) {
-        let name = draft.name.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        let day = KanbanDay(draft.day)
-        let dto = KanbanHolidayDTO(id: draft.holiday?.id ?? UUID(), day: day.key, name: name, portion: draft.portion,
-                                   workedBy: draft.workedBy)
+    private func save() {
+        let dto = KanbanHolidayDTO(id: draft.holiday?.id ?? UUID(), day: KanbanDay(draft.day).key,
+                                   name: draft.name.trimmingCharacters(in: .whitespaces), portion: draft.portion, workedBy: draft.workedBy)
         do {
             let service = app.kanbanService(context)
-            if let holiday = draft.holiday {
-                try service.editHoliday(holiday, to: dto, on: project)
-            } else {
-                try service.addHoliday(dto, on: project)
-            }
+            if let holiday = draft.holiday { try service.editHoliday(holiday, to: dto, on: project) } else { try service.addHoliday(dto, on: project) }
             dismiss()
         } catch {
             self.error = error.localizedDescription
