@@ -67,10 +67,21 @@ struct KanbanImportSheet: View {
         return lines
     }
 
+    /// " · 4 time-off entries (applies to those people on every board)".
+    private var availabilityText: String {
+        let timeOff = request.plan.kanban.timeOff?.count ?? 0
+        let overrides = request.plan.kanban.availabilityOverrides?.count ?? 0
+        guard timeOff + overrides > 0 else { return "" }
+        var parts: [String] = []
+        if timeOff > 0 { parts.append("\(timeOff) time-off \(timeOff == 1 ? "entry" : "entries") (for those people on every board; ones already here are skipped)") }
+        if overrides > 0 { parts.append("\(overrides) availability \(overrides == 1 ? "override" : "overrides")") }
+        return " · " + parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Import “\(request.fileName)”").font(.headline)
-            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) resources. Imported boards start a fresh history.")
+            Text("\(request.plan.boards.count) board\(request.plan.boards.count == 1 ? "" : "s") · \(request.plan.kanban.tasks.count) cards · \(request.plan.people.count) resources\(availabilityText). Imported boards start a fresh history.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Form {
@@ -81,6 +92,11 @@ struct KanbanImportSheet: View {
                             ForEach(projects.filter { $0.archivedAt == nil }) { Text("Merge into \($0.name)").tag(Optional($0.id)) }
                         }
                         .accessibilityIdentifier("kanban-import-board-\(board.name)")
+                        if board.mergeInto != nil, let file = request.plan.kanban.projects.first(where: { $0.id == board.id }),
+                           file.startDay != nil || file.endDay != nil {
+                            Toggle("Use the file's board dates", isOn: $board.useImportedDates)
+                                .help("Otherwise this board keeps its own start and end dates")
+                        }
                         let reused = request.plan.reusedMemberships(projects: projects, people: people)[board.id] ?? []
                         if !reused.isEmpty {
                             Text("One membership per resource on a board, so these join an existing one and keep its allocation, role and dates: \(reused.joined(separator: ", ")).")

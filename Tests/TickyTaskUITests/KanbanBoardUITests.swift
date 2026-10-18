@@ -99,6 +99,30 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue((element(app, "kanban-availability-dates").label).hasPrefix("From"), "the range chip shows the start")
     }
 
+    /// Update availability with the UI-test stub (the first person by name, Mia Chen, off on Tuesday): review, Apply.
+    func testUpdateAvailabilityFromPastedText() {
+        let app = launch(["-kanban.defaultBoard", ""])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10))
+        selectView(app, "Availability")
+        let update = element(app, "kanban-availability-update")
+        XCTAssertTrue(update.waitForExistence(timeout: 10))
+        update.click()
+        let text = element(app, "kanban-assistant-text")
+        XCTAssertTrue(text.waitForExistence(timeout: 5), "the sheet opens")
+        text.click()
+        text.typeText("Mia off Tuesday")
+        element(app, "kanban-assistant-extract").click()
+        let apply = element(app, "kanban-assistant-apply")
+        XCTAssertTrue(apply.waitForExistence(timeout: 15), "Codex's suggestions are shown for review")
+        XCTAssertTrue(apply.isEnabled, "the new entry is selected")
+        apply.click()
+        XCTAssertFalse(apply.waitForExistence(timeout: 3), "the sheet closes after Apply")
+        let cell = element(app, "kanban-availability-Mia Chen-\(thisMonday())")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        let off = expectation(for: NSPredicate(format: "value CONTAINS 'days off'"), evaluatedWith: cell)
+        wait(for: [off], timeout: 5)
+    }
+
     func testSwitchModulesAndSeeTheBoard() {
         let app = launch()
         openPlatform(app)

@@ -188,7 +188,28 @@ The **Team** row adds everyone's days, for example *12.5 of 15 · 83%*. The numb
 
 **Override a week.** Click a cell (or focus it and press **Return**) to see the possible days, the time off counted and the result. **Override…** replaces that week's available days for this board (in half days), with an optional note; a small pencil marks the cell. **Clear override** goes back to the worked-out value. If you later change the board's or the person's dates so the week has fewer days than the override, the override is kept, marked with a warning, and not used until you change or clear it.
 
+**Update from your PTO list (Update availability…).** If your team keeps PTO somewhere else (a Slack canvas, a spreadsheet, an email), you don't have to retype it:
+1. Click **Update availability…**, or drop screenshots onto the grid.
+2. Paste the text (select the canvas and copy it), and/or add screenshots with **Paste image**, **Choose files…** or drag and drop. Text usually reads more accurately than a screenshot.
+3. Check the dates and people shown, read the note about what's sent, and click **Extract with Codex**. It uses the same Codex connection, model and privacy settings as the summaries (**Settings › AI**). Only what's shown is sent: the text, the images, the date range and the board's people's names.
+4. Review the suggestions, grouped as:
+   - **New**: ticked.
+   - **Overlaps recorded time off**: not ticked. Applying it replaces only its own days and half days, keeping the rest of what's recorded.
+   - **Name not matched**: pick the person; tick **Remember this name** to match it next time.
+   - **Needs review**: can't be applied as read, for example a half day over several days.
+   - **Already recorded**: identical, so nothing to do.
+   - **Couldn't be read**: unclear rows, with the reason.
+
+   If something was misread, type a correction (*"Ravi means Ravindra"*, *"those dates are in November"*) and click **Refine** to read it again.
+5. Click **Apply**. The line above it says how many entries, people and boards it affects. It's one change in the Change Log, so **⌘Z** undoes it.
+
+Nothing is applied without your review, nothing is ever removed because it's missing from the list, and the screenshots aren't kept. Re-pasting the same list later adds only what's new.
+
+**Export it.** **⋯ › Export availability CSV…** saves one row per resource and week: possible, worked-out, overridden and effective days, allocation and status.
+
 Every change here is one entry in the board's **Change Log**, and **⌘Z** undoes it. Undo refuses if the same time off was changed again since, on any board.
+
+**Backups and board files.** Full backups include board dates, all time off, overrides and remembered names. A board file (**Export board…**) includes the board's dates and overrides, and its people's time off that overlaps the board's dates (or the next 12 weeks for an undated board). Importing it adds time off to the matched people without duplicating what's already there. When merging into an existing board, you choose whether to use the file's board dates. Restoring a backup from before availability existed removes the time off recorded here, and the restore confirmation says so.
 
 Arrow keys move between cells, **Return** opens the details and **Esc** closes them.
 

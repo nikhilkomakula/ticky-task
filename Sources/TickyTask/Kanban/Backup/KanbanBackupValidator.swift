@@ -53,6 +53,32 @@ enum KanbanBackupValidator {
         try requireUnique(kanban.tasks.map(\.id), "card")
         try requireUnique(kanban.subtasks.map(\.id), "step")
         try requireUnique(kanban.activities.map(\.id), "change-log entry")
+        try requireUnique((kanban.timeOff ?? []).map(\.id), "time-off entry")
+        try requireUnique((kanban.availabilityOverrides ?? []).map(\.id), "availability override")
+        // Availability (v2): each record points at what's in the file and holds real values.
+        for project in kanban.projects {
+            if KanbanAvailability.boardDatesProblem(project.startDay, project.endDay) != nil {
+                throw BackupError.validationFailed(reason: "Board \(project.id) has invalid dates")
+            }
+        }
+        for entry in kanban.timeOff ?? [] {
+            guard entry.personId.map(personIds.contains) ?? false else {
+                throw BackupError.validationFailed(reason: "Time off \(entry.id) names a person that isn't in the backup")
+            }
+            do { try AvailabilityRecords.check(entry) } catch {
+                throw BackupError.validationFailed(reason: "Time off \(entry.id) is invalid")
+            }
+        }
+        var overriddenWeeks = Set<String>()
+        for override in kanban.availabilityOverrides ?? [] {
+            guard let resource = override.resourceId, resourceIds.contains(resource) else {
+                throw BackupError.validationFailed(reason: "Override \(override.id) names a membership that isn't in the backup")
+            }
+            guard let monday = KanbanDay(key: override.weekStart), monday.monday == monday, (0...14).contains(override.halfDays),
+                  overriddenWeeks.insert("\(resource)|\(override.weekStart)").inserted else {
+                throw BackupError.validationFailed(reason: "Override \(override.id) is invalid")
+            }
+        }
         for column in kanban.columns where KanbanColumnKind(rawValue: column.kindRaw) == nil {
             throw BackupError.validationFailed(reason: "Column \(column.id) has an unknown kind")
         }

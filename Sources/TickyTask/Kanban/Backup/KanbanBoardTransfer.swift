@@ -51,32 +51,22 @@ enum KanbanBoardTransfer {
         let personIDs = Set(dto.resources.compactMap(\.personId))
         dto.people = all.people.filter { personIDs.contains($0.id) }
 
-        // Export availability data (v2+): overrides for the board's memberships,
-        // and time off for its people that overlaps the export range.
+        // Availability (v2+): the boards' overrides, and their people's time off that overlaps a
+        // board's dates (whole entries, even those running past them). For a board without both
+        // dates, the range given, or else the Availability tab's 12 weeks from this week.
         let resourceIDs = Set(dto.resources.map(\.id))
-        dto.availabilityOverrides = (all.availabilityOverrides ?? []).filter { resourceIDs.contains($0.resourceId ?? UUID()) }
-
-        // Determine time off export range: board dates if present, otherwise the provided range, otherwise none.
-        var timeOffToExport: [KanbanTimeOffDTO]? = nil
-        if !dto.people.isEmpty {
-            var rangeStart: String? = nil
-            var rangeEnd: String? = nil
-            if let start = dto.projects.first?.startDay, let end = dto.projects.first?.endDay {
-                rangeStart = start
-                rangeEnd = end
-            } else if let userRange = timeOffRange {
-                rangeStart = userRange.start
-                rangeEnd = userRange.end
-            }
-            if let rangeStart = rangeStart, let rangeEnd = rangeEnd {
-                timeOffToExport = (all.timeOff ?? []).filter { entry in
-                    personIDs.contains(entry.personId ?? UUID()) && (entry.startDay <= rangeEnd && entry.endDay >= rangeStart)
-                }
-            }
+        let overrides = (all.availabilityOverrides ?? []).filter { $0.resourceId.map(resourceIDs.contains) ?? false }
+        dto.availabilityOverrides = overrides.isEmpty ? nil : overrides
+        let ranges: [(String, String)] = dto.projects.map { board in
+            if let start = board.startDay, let end = board.endDay { return (start, end) }
+            if let timeOffRange { return timeOffRange }
+            let weeks = KanbanAvailability.window(board: .init(start: nil, end: nil, workWeekDays: []), today: KanbanDay.today())
+            return (weeks.first?.key ?? "", (weeks.last ?? KanbanDay.today()).adding(days: 6).key)
         }
-        if timeOffToExport?.isEmpty == false {
-            dto.timeOff = timeOffToExport
+        let timeOff = (all.timeOff ?? []).filter { entry in
+            (entry.personId.map(personIDs.contains) ?? false) && ranges.contains { entry.startDay <= $0.1 && entry.endDay >= $0.0 }
         }
+        dto.timeOff = timeOff.isEmpty ? nil : timeOff
 
         return try BackupCoding.encoder().encode(Envelope(format: format, version: version, kanban: dto.deterministicallySorted()))
     }
@@ -92,6 +82,8 @@ enum KanbanBoardTransfer {
         /// Merge into this existing board instead of adding a new one.
         var mergeInto: UUID?
         let cards: Int
+        /// When merging: take the file's board dates instead of keeping this board's.
+        var useImportedDates = false
     }
 
     struct PersonChoice: Equatable, Identifiable {
@@ -241,6 +233,10 @@ enum KanbanBoardTransfer {
             if let target = board.mergeInto, let existing = existingProjects[target] {
                 project = existing
                 merging = true
+                if board.useImportedDates, KanbanAvailability.boardDatesProblem(dto.startDay, dto.endDay) == nil {
+                    project.startDay = dto.startDay
+                    project.endDay = dto.endDay
+                }
             } else {
                 project = KanbanProject(name: board.name, key: board.key, sortIndex: nextSort)
                 nextSort += 1
@@ -442,30 +438,38 @@ enum KanbanBoardTransfer {
             step.assignee = dto.assigneeId.flatMap { resources[$0] }.flatMap { $0.archivedAt == nil ? $0 : nil }
         }
 
-        // Import availability overrides (v2+): map through the resource map (reused and new).
-        for overrideDTO in k.availabilityOverrides ?? [] {
-            guard let resource = overrideDTO.resourceId.flatMap({ resources[$0] }) else { continue }
-            let override = KanbanAvailabilityOverride(id: overrideDTO.id, weekStart: overrideDTO.weekStart, halfDays: overrideDTO.halfDays)
-            override.note = overrideDTO.note
-            override.createdAt = overrideDTO.createdAt
-            override.updatedAt = overrideDTO.updatedAt
-            override.resource = resource
+        // Availability (v2+). Overrides follow the membership map (new or reused rows); one that
+        // collides with a week this membership already overrides keeps the existing one. Time off
+        // belongs to the destination person: an entry already here (same id, or the same person,
+        // days, half and type) isn't added twice, and the same id with other content keeps
+        // what's here (counted for the preview).
+        for dto in k.availabilityOverrides ?? [] {
+            guard let resource = dto.resourceId.flatMap({ resources[$0] }), let monday = KanbanDay(key: dto.weekStart),
+                  monday.monday == monday, (0...14).contains(dto.halfDays) else { continue }
+            guard !resource.availabilityOverrides.contains(where: { $0.weekStart == dto.weekStart }) else { continue }
+            let override = KanbanAvailabilityOverride(weekStart: dto.weekStart, halfDays: dto.halfDays)
+            override.note = dto.note
+            override.createdAt = dto.createdAt
+            override.updatedAt = now
             context.insert(override)
+            override.resource = resource
         }
-
-        // Import time off (v2+) for people on this board.
-        let boardPersonIDs = Set(resources.values.compactMap { $0.person?.id })
-        for timeOffDTO in k.timeOff ?? [] {
-            guard boardPersonIDs.contains(timeOffDTO.personId ?? UUID()) else { continue }
-            let entry = KanbanTimeOff(id: timeOffDTO.id, startDay: timeOffDTO.startDay, endDay: timeOffDTO.endDay,
-                                     portion: KanbanTimeOffPortion(rawValue: timeOffDTO.portionRaw) ?? .full,
-                                     kind: KanbanTimeOffKind(rawValue: timeOffDTO.kindRaw) ?? .pto,
-                                     origin: KanbanTimeOffOrigin(rawValue: timeOffDTO.originRaw) ?? .manual)
-            entry.note = timeOffDTO.note
-            entry.createdAt = timeOffDTO.createdAt
-            entry.updatedAt = timeOffDTO.updatedAt
-            entry.person = timeOffDTO.personId.flatMap { people[$0] }
+        for dto in k.timeOff ?? [] {
+            guard let person = dto.personId.flatMap({ people[$0] }), (try? AvailabilityRecords.check(dto)) != nil else { continue }
+            if person.timeOff.contains(where: { $0.id == dto.id }) { continue }
+            var mapped = dto
+            mapped.personId = person.id
+            guard !person.timeOff.contains(where: { KanbanTimeOffDTO($0).meaning == mapped.meaning }) else { continue }
+            let taken = (try? context.fetchCount(FetchDescriptor<KanbanTimeOff>(predicate: #Predicate { $0.id == dto.id }))) ?? 0 > 0
+            let entry = KanbanTimeOff(id: taken ? UUID() : dto.id, startDay: dto.startDay, endDay: dto.endDay,
+                                      portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,
+                                      kind: KanbanTimeOffKind(rawValue: dto.kindRaw) ?? .other,
+                                      origin: KanbanTimeOffOrigin(rawValue: dto.originRaw) ?? .manual)
+            entry.note = dto.note
+            entry.createdAt = dto.createdAt
+            entry.updatedAt = now
             context.insert(entry)
+            entry.person = person
         }
     }
 

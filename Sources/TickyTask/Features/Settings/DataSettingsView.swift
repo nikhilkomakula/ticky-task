@@ -201,6 +201,14 @@ private struct RestoreConfirmSheet: View {
                 }
                 .font(.callout.monospacedDigit())
                 .padding(.vertical, 4)
+                // A backup from before availability replaces the Kanban data without any.
+                if let kanban = diff.kanban, kanban.timeOff.removed + kanban.availabilityOverrides.removed > 0 {
+                    Text("This removes \(kanban.timeOff.removed) time-off \(kanban.timeOff.removed == 1 ? "entry" : "entries") and \(kanban.availabilityOverrides.removed) availability \(kanban.availabilityOverrides.removed == 1 ? "override" : "overrides") recorded here that aren't in the backup.")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("restore-availability-warning")
+                }
             }
 
             HStack {

@@ -196,6 +196,15 @@ enum KanbanAvailability {
         }
     }
 
+    /// Why a board's optional dates can't be used, or nil.
+    static func boardDatesProblem(_ startDay: String?, _ endDay: String?) -> String? {
+        let start = startDay.map(KanbanDay.init(key:)), end = endDay.map(KanbanDay.init(key:))
+        if start == .some(nil) { return "That start date isn't a real day." }
+        if end == .some(nil) { return "That end date isn't a real day." }
+        if let start = start ?? nil, let end = end ?? nil, end < start { return "A board can't end before it starts." }
+        return nil
+    }
+
     /// "4.5", "5", "0": at most one decimal.
     static func days(_ halfDays: Int) -> String {
         halfDays % 2 == 0 ? "\(halfDays / 2)" : "\(halfDays / 2).5"

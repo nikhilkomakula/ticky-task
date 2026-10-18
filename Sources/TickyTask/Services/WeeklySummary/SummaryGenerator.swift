@@ -62,10 +62,17 @@ struct LiveSummaryGenerator: SummaryGenerating {
             let servers = try await mcpServers(executable, env: env, workingDirectory: runDirectory, version: version)
             try await verifyIsolation(executable, env: env, workingDirectory: runDirectory, servers: servers, version: version)
             let lastMessage = runDirectory.appendingPathComponent("last-message.txt")
+            // Images are copied in, so the CLI reads only this run's private directory.
+            var imagePaths: [String] = []
+            for (index, image) in request.images.enumerated() {
+                let copy = runDirectory.appendingPathComponent("image-\(index + 1).\(image.pathExtension.isEmpty ? "png" : image.pathExtension)")
+                try FileManager.default.copyItem(at: image, to: copy)
+                imagePaths.append(copy.path)
+            }
             let arguments: [String]
             do {
                 arguments = try CodexSummaryAdapter.arguments(config: request.config, lastMessagePath: lastMessage.path,
-                                                              mcpServerNames: servers, hasAPIKey: apiKey != nil)
+                                                              mcpServerNames: servers, hasAPIKey: apiKey != nil, imagePaths: imagePaths)
             } catch {
                 // Never fall back to a bare invocation: that would drop the isolation flags.
                 throw WeeklySummaryError.configurationRejected(.codex, SummaryErrorDetail(
@@ -75,7 +82,7 @@ struct LiveSummaryGenerator: SummaryGenerating {
             let output = try await runner.run(CLIInvocation(
                 executableURL: executable,
                 arguments: arguments,
-                stdin: SummaryPrompt.codexStdin(instructions: request.instructions, payload: request.payload),
+                stdin: SummaryPrompt.codexStdin(instructions: request.instructions, payload: request.payload, label: request.payloadLabel),
                 workingDirectory: runDirectory,
                 environment: env,
                 timeout: Self.generationTimeout

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import UniformTypeIdentifiers
 
 /// A board's Availability tab (design 03): a row per member, a column per Monday–Sunday week
 /// from the board's start to its end, each cell the member's available days after recorded
@@ -15,11 +16,18 @@ struct KanbanAvailabilityView: View {
     @State private var popover: CellID?
     @State private var timeOffFor: KanbanPerson?
     @State private var newTimeOff: KanbanTimeOffDraft?
+    @State private var assistant: AssistantInput?
     @FocusState private var focus: CellID?
 
     struct CellID: Hashable {
         let resourceID: UUID
         let week: KanbanDay
+    }
+
+    /// Opens Update availability, with any screenshots dropped on the grid.
+    struct AssistantInput: Identifiable {
+        let id = UUID()
+        var images: [URL] = []
     }
 
     struct Row: Identifiable {
@@ -42,8 +50,9 @@ struct KanbanAvailabilityView: View {
             return Row(resource: resource, cells: weeks.map { KanbanAvailability.cell(week: $0, board: board, member: member) })
         }
         VStack(spacing: 0) {
-            KanbanAvailabilityToolbar(project: project, board: board, today: today, shift: $shift,
-                                      onAddTimeOff: { newTimeOff = KanbanTimeOffDraft(person: members.first?.person, week: today.monday) })
+            KanbanAvailabilityToolbar(project: project, board: board, today: today, weeks: weeks, shift: $shift,
+                                      onAddTimeOff: { newTimeOff = KanbanTimeOffDraft(person: members.first?.person, week: today.monday) },
+                                      onUpdate: { assistant = AssistantInput() })
             Divider()
             if members.isEmpty {
                 ContentUnavailableView("Add resources to see weekly availability", systemImage: "person.2",
@@ -57,6 +66,14 @@ struct KanbanAvailabilityView: View {
         .accessibilityIdentifier("kanban-availability")
         .sheet(item: $timeOffFor) { KanbanTimeOffSheet(person: $0, project: project) }
         .sheet(item: $newTimeOff) { KanbanTimeOffEditor(draft: $0, project: project) }
+        .sheet(item: $assistant) { KanbanAvailabilityAssistantSheet(project: project, window: weeks, images: $0.images) }
+        // Dropping screenshots opens Update availability with them; nothing is sent until Extract.
+        .dropDestination(for: URL.self) { urls, _ in
+            let pictures = urls.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
+            guard !pictures.isEmpty else { return false }
+            assistant = AssistantInput(images: pictures)
+            return true
+        }
     }
 
     private func grid(rows: [Row], weeks: [KanbanDay], today: KanbanDay) -> some View {
@@ -182,8 +199,10 @@ struct KanbanAvailabilityToolbar: View {
     let project: KanbanProject
     let board: KanbanAvailability.Board
     let today: KanbanDay
+    let weeks: [KanbanDay]
     @Binding var shift: Int
     var onAddTimeOff: () -> Void
+    var onUpdate: () -> Void
     @Environment(AppState.self) private var app
 
     var body: some View {
@@ -220,6 +239,24 @@ struct KanbanAvailabilityToolbar: View {
             Button(action: onAddTimeOff) { Label("Add time off", systemImage: "plus") }
                 .buttonStyle(.borderless)
                 .accessibilityIdentifier("kanban-availability-add-time-off")
+            Button(action: onUpdate) { Label("Update availability…", systemImage: "sparkles") }
+                .buttonStyle(.borderedProminent)
+                .help("Paste text or screenshots of your team's PTO list; review Codex's suggestions before applying")
+                .accessibilityIdentifier("kanban-availability-update")
+            Menu {
+                Button("Export availability CSV…") {
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [.commaSeparatedText]
+                    panel.nameFieldStringValue = "\(project.name) availability.csv"
+                    guard panel.runModal() == .OK, let url = panel.url else { return }
+                    app.runKanban { try Data(KanbanAvailabilityCSV.csv(project, weeks: weeks, calendar: .current).utf8).write(to: url, options: .atomic) }
+                }
+            } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.button)
+                .buttonStyle(.borderless)
+                .fixedSize()
+                .help("More")
+                .accessibilityIdentifier("kanban-availability-more")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

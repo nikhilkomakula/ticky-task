@@ -96,9 +96,7 @@ extension KanbanService {
     }
 
     static func checkBoardDates(_ startDay: String?, _ endDay: String?) throws {
-        let start = try startDay.map { key in try KanbanDay(key: key).orThrow("That start date isn't a real day.") }
-        let end = try endDay.map { key in try KanbanDay(key: key).orThrow("That end date isn't a real day.") }
-        if let start, let end, end < start { throw KanbanServiceError.invariant("A board can't end before it starts.") }
+        if let problem = KanbanAvailability.boardDatesProblem(startDay, endDay) { throw KanbanServiceError.invariant(problem) }
     }
 
     // MARK: Labels
@@ -128,13 +126,6 @@ extension KanbanService {
                             overrides: Dictionary(try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()).map { ($0.id, $0) },
                                                   uniquingKeysWith: { a, _ in a }),
                             people: Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
-    }
-}
-
-private extension Optional {
-    func orThrow(_ message: String) throws -> Wrapped {
-        guard let self else { throw KanbanServiceError.invariant(message) }
-        return self
     }
 }
 

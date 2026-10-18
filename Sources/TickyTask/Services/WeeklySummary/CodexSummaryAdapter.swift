@@ -24,7 +24,7 @@ enum CodexSummaryAdapter {
 
     /// Throws when a local server's address is missing or unsafe to embed.
     static func arguments(config: SummaryRunConfig, lastMessagePath: String, mcpServerNames: [String],
-                          hasAPIKey: Bool = false) throws -> [String] {
+                          hasAPIKey: Bool = false, imagePaths: [String] = []) throws -> [String] {
         var args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral",
                     "-s", "read-only", "--color", "never"]
         args += try SummaryConnectionArguments.codexArguments(for: config.connection, hasAPIKey: hasAPIKey)
@@ -35,6 +35,7 @@ enum CodexSummaryAdapter {
         if let effort = config.effort, isSafeConfigToken(effort) {
             args += ["-c", "model_reasoning_effort=\"\(effort)\""]
         }
+        for path in imagePaths { args += ["-i", path] }
         args += ["-o", lastMessagePath, "-"]
         return args
     }

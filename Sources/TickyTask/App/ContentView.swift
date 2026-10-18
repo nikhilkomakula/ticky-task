@@ -159,6 +159,7 @@ struct ContentView: View {
         runCarryForward()
         AutoDeleteService.purgeCompleted(context: context, enabled: autoDeleteEnabled, olderThanDays: autoDeleteDays)
         runKanbanAutoArchive()
+        KanbanAvailabilityStaging.removeStale()   // screenshots left by a crash
         LoginItemService.applyFirstRunDefaultIfNeeded()
         await NotificationService.syncTaskReminders(context: context)
         await NotificationService.syncKanbanReminders(context: context)
