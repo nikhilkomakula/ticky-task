@@ -28,16 +28,15 @@ Or load a saved template.
 
 **Resources** are stored globally so you can add the same resource to multiple boards. When you add someone to a board, you create a **membership** that defines how much of their time that board gets.
 
-**Create a resource.** Click the **Add resource** button below the board's rows to open the sheet. Choose **New resource**, or **Existing resource** to add someone already in TickyTask (for example from another board); the choice only appears when there's someone to pick. A resource has a name, initials, employment type (FTE or contractor), and optional skills.
+**Create a resource.** Click the **Add resource** button below the board's rows to open the sheet. Choose **New resource**, or **Existing resource** to add someone already in TickyTask (for example from another board); the choice only appears when there's someone to pick. A resource has a name, initials and an employment type (employee or contractor); a new one also gets its allocation on this board.
 
-**Set membership details on a board.** Right-click a row header and choose **Edit membership…** to set:
-- **Allocation %**: what portion of their time they spend on this board (e.g., 50 % for a half-time contractor).
-- **Assignment**: full-time or part-time (used for display and filtering).
-- **Role**: optional (shows only on this board).
-- **Start date** and **End date** (optional; the date they roll off the project).
-- **Weekly hours override** and **Open-task target override** (optional per-resource customizations).
+**Set membership details on a board.** Right-click a row header and choose **Edit membership…**. Under **Resource (every board)** you can change their name, initials and employment type; these apply on every board they're on. Under **On this board**:
+- **Role**: optional; shows only on this board.
+- **Allocation %**: the share of their time this board gets (for example 50 % for someone half-time here). 100 % is full-time on the board and anything less is part-time; there's no separate full-time / part-time setting.
+- **Weekly hours override** and **Open-task target override**: optional; they replace the board's defaults for this resource.
+- **Starts on** and **Ends on**: optional; the end date is when they roll off the board.
 
-The load target for each resource—how many cards they should have open—is calculated from the board's **Open-task target per resource** (default: 5) multiplied by their allocation %. A 50 % resource on a board targeting 5 cards would have a target of 2.5 cards. The board's target is set when the board is created in **Settings › Kanban › New boards**. You can override a resource's target per board in **Edit membership…**, or change the board's target in **Edit board** (right-click a board).
+The load target for each resource (how many cards they should have open) is the board's **Open-task target per resource** multiplied by their allocation %. A 50 % resource on a board targeting 5 cards has a target of 2.5. A board takes its target from **Settings › Kanban › New boards** when it's created (5 by default), and changing that setting later affects only boards created afterwards. To change one resource's target on a board, use **Open-task target override** in **Edit membership…**.
 
 **Remove a resource from a board.** Right-click their row header and choose **Remove from board…**. Their cards move to **Unassigned** and can be undone from the **Change Log**.
 
@@ -47,7 +46,7 @@ The load target for each resource—how many cards they should have open—is ca
 
 ## Cards
 
-**Add a card.** Press **⌘N** (or click the toolbar's **+ Card**) to add a card in the backlog, unassigned. Hover over a cell (column + resource intersection) and click **+** to add it in that column and row. Either way, you enter the title in a prompt; the card does not open in the editor automatically.
+**Add a card.** Press **⌘N** (or click the toolbar's **+ Card**) for a new card in the backlog, unassigned, or hover over a cell (a column and a resource's row) and click **+** for one in that column and row. Either way the full editor opens as **New card**, with every field below. Fill in what you need and click **Done** to add the card in one step (**⌘Z** removes it again), or **Cancel** to add nothing. Nothing is saved until you click Done, and a card needs a title.
 
 **Edit a card.** Click any card to open the editor. Fields include:
 
@@ -56,7 +55,7 @@ The load target for each resource—how many cards they should have open—is ca
 - **Priority** and **Critical** flag (the flag is independent and always shown in red).
 - **Complexity**: None (the default), **Low**, **Medium** or **High**, separate from priority and the estimate. When set, the card shows it among its markers as a small bar meter with *Low*, *Med* or *High* (hover for the full name). The List view has a sortable **Complexity** column, and right-clicking selected cards sets it for all of them.
 - **Blocked** and optional reason.
-- **Start date**, **Due date**, **Estimate** (hours, if the board measures load in hours).
+- **Start date**, **Due date** and **Estimate** (hours; available on every board). The estimate counts toward load only on boards that measure load in hours; the card shows it either way.
 - **Jira link** (validated; shows the key if recognized).
 - **Depends on** (other cards in this project; while any of them isn't done, or is archived, the card shows **Waiting on n**).
 - **Subtasks** (per-card checklist; completed items sink to the bottom).
