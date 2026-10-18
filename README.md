@@ -2,7 +2,7 @@
 
 A **native macOS** weekly & monthly planner — a privacy-first, local-only rewrite of [WeekToDo](https://weektodo.me) in **SwiftUI + SwiftData**. All your data stays on your Mac; there is no account, server, or telemetry. The exceptions are **opt-in**: **Weekly Summary** sends the notes of the tasks *you* select, **Kanban Summary** the cards *you* select (titles, status, columns, resources, labels, priority and Critical, blocked state and reason, Jira keys, subtasks and notes; no ids or dates), and **Update availability** your instructions, pasted text and screenshots, the board's dates and people's names and aliases, and existing time off, this board's overrides and public holidays bounded to that date window (including holiday exceptions as names; no notes), to the AI you connect it to (through your locally installed Codex CLI), only when you click **Generate** (summaries) or **Suggest changes** (availability). The availability sheet shows the connection, destination host, model and effort before sending; an OpenAI-compatible server needs a Responses API.
 
-> **v0.3.0** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
+> **v0.4.0** (pre-release) · **macOS 26+** (Tahoe and later) · **Apple Silicon** · distributed **unsigned** (see install note below).
 
 ---
 
