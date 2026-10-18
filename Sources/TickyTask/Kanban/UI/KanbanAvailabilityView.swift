@@ -528,8 +528,8 @@ struct KanbanAvailabilityWeeklyRow: View {
                 }
                 .frame(width: KanbanAvailabilityView.weekWidth, height: 56)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Weekly availability, week of \(KanbanAvailabilityFormat.long(week))")
-                .accessibilityValue(accessibility(total: total, percentage: percentage))
+                // In the label: a non-button element's value isn't exposed on macOS.
+                .accessibilityLabel("Weekly availability, week of \(KanbanAvailabilityFormat.long(week)): \(accessibility(total: total, percentage: percentage))")
                 .accessibilityIdentifier("kanban-availability-weekly-\(week.key)")
             }
         }

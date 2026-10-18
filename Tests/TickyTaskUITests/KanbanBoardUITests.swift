@@ -112,14 +112,14 @@ final class KanbanBoardUITests: XCTestCase {
         wait(for: [expectation(for: NSPredicate(format: "value CONTAINS 'public holidays excluded (Seed Day)'"), evaluatedWith: cell)], timeout: 5)
         let weekly = element(app, "kanban-availability-weekly-\(monday)")
         XCTAssertTrue(weekly.exists, "the Weekly availability row")
-        let before = weekly.value as? String
+        let before = weekly.label
 
         cell.click()
         let works = element(app, "kanban-holiday-works-\(wednesday)")
         XCTAssertTrue(works.waitForExistence(timeout: 5), "the cell's details list the holiday")
         works.click()
         wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS 'public holidays excluded')"), evaluatedWith: cell)], timeout: 5)
-        XCTAssertNotEqual(weekly.value as? String, before, "the team total counts his day again")
+        XCTAssertTrue(eventually { weekly.label != before }, "the team total counts his day again: \(before)")
         app.typeKey(.escape, modifierFlags: [])
 
         // Next week, from the keyboard: all holidays, and the override no longer fits.
