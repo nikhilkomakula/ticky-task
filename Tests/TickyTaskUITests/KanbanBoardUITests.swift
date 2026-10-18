@@ -413,29 +413,31 @@ final class KanbanBoardUITests: XCTestCase {
     }
 
     /// Keep the target clear of the pinned headers and the drag auto-scroll zones.
-    private func scrollIntoBoardView(_ app: XCUIApplication, _ target: XCUIElement) {
+    private func scrollIntoBoardView(_ app: XCUIApplication, targetFrame: () -> CGRect) {
         let board = element(app, "kanban-board")
         let top = element(app, "kanban-colhdr-To Do").frame.maxY + 4
         let bottom = board.frame.maxY - 60
         var direction: CGFloat = -1
-        for _ in 0..<24 {
-            let frame = target.frame
-            if target.exists, frame.minY >= top, frame.maxY <= bottom { return }
+        for _ in 0..<80 {
+            let frame = targetFrame()
+            if frame.minY >= top, frame.maxY <= bottom { return }
             let distance = frame.maxY > bottom ? frame.maxY - bottom : frame.minY - top
             let amount = min(350, max(-350, distance))
             board.scroll(byDeltaX: 0, deltaY: direction * amount)
-            _ = eventually(timeout: 1) { target.frame.minY != frame.minY }
+            _ = eventually(timeout: 1) { targetFrame().minY != frame.minY }
             // Scroll-wheel deltas have different signs on local and CI setups.
-            if (target.frame.minY - frame.minY) * distance >= 0 { direction = -direction }
+            if (targetFrame().minY - frame.minY) * distance >= 0 { direction = -direction }
         }
-        XCTFail("\(target.identifier) did not scroll into the board viewport")
+        XCTFail("the target did not scroll into the board viewport")
     }
 
     private func addCard(_ app: XCUIApplication, title: String, column: String, row: String) {
+        let cell = element(app, "kanban-cell-\(column)-\(row)")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        scrollIntoBoardView(app, targetFrame: { cell.frame.insetBy(dx: 6, dy: 6) })
+        cell.hover()
         let add = element(app, "kanban-add-card-\(column)-\(row)")
         XCTAssertTrue(add.waitForExistence(timeout: 5))
-        scrollIntoBoardView(app, add)
-        add.hover()
         add.click()
         let field = element(app, "kanban-editor-title")
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -461,23 +463,28 @@ final class KanbanBoardUITests: XCTestCase {
         openVolume(app)
         let board = element(app, "kanban-board")
         let destination = element(app, "kanban-cell-To Do-Alice Johnson")
-        let footer = element(app, "kanban-add-card-To Do-Alice Johnson")
+        // The cell's bottom padding is an end-of-cell drop target even while its add button is hidden.
+        let endOfCell = {
+            let frame = destination.frame
+            return CGRect(x: frame.minX + 6, y: frame.maxY - 6, width: frame.width - 12, height: 1)
+        }
         let cards = destination.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-Task '"))
         let initiallyRealized = Set(cards.allElementsBoundByIndex.map(\.identifier))
         XCTAssertFalse(initiallyRealized.isEmpty, "the long cell starts with some realized cards")
-        XCTAssertGreaterThan(footer.frame.minY, board.frame.maxY + 300, "the tail starts beyond the viewport and overscan")
+        XCTAssertGreaterThan(endOfCell().minY, board.frame.maxY + 300, "the tail starts beyond the viewport and overscan")
 
-        scrollIntoBoardView(app, footer)
+        scrollIntoBoardView(app, targetFrame: endOfCell)
         let tail = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
         let previousTail = try XCTUnwrap(tail.last)
         let source = try XCTUnwrap(tail.dropLast().last)
         let sourceID = source.identifier
         let previousTailID = previousTail.identifier
         XCTAssertFalse(initiallyRealized.contains(previousTail.identifier), "the seeded tail was never realized before the first scroll")
-        XCTAssertLessThan(previousTail.frame.maxY, footer.frame.maxY, "the last seeded card is above the end-of-cell add button")
+        XCTAssertLessThan(previousTail.frame.maxY, endOfCell().minY, "the last seeded card is above the end-of-cell drop target")
         XCTAssertLessThan(source.frame.minY, previousTail.frame.minY, "the source starts before the last card, so this is a real reorder")
         XCTAssertTrue(source.isHittable, "the source and end of the long cell are both in view")
-        drag(app, source, to: footer)
+        let drop = destination.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -5.5))
+        source.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.3)).press(forDuration: 0.35, thenDragTo: drop)
 
         XCTAssertTrue(eventually {
             let order = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
@@ -623,7 +630,7 @@ final class KanbanBoardUITests: XCTestCase {
         addCard(app, title: title, column: "To Do", row: "Unassigned")
         let board = element(app, "kanban-board")
         let destination = element(app, "kanban-cell-To Do-Alice Johnson")
-        XCTAssertGreaterThan(element(app, "kanban-add-card-To Do-Alice Johnson").frame.minY, board.frame.maxY,
+        XCTAssertGreaterThan(destination.frame.maxY, board.frame.maxY,
                              "moving to the next row will append below the viewport")
         openEditor(app, title)
         element(app, "kanban-editor-cancel").click()

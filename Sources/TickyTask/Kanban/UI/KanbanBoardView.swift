@@ -154,6 +154,10 @@ struct KanbanBoardView: View {
         .onChange(of: focus) { _, value in
             focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterFocusChangesTo: value)
         }
+        .onChange(of: app.kanbanBoardFocusResetToken) { _, _ in
+            focusRequest = nil
+            focus = nil
+        }
         // Cards tucked away in a shortened Done cell leave the selection, so a drag or a bulk
         // action never carries cards you can't see.
         .onChange(of: tucked, initial: true) { _, tucked in selected.subtract(tucked) }
