@@ -215,8 +215,6 @@ enum KanbanAvailabilityAssistant {
         case overlaps
         case unmatched
         case needsReview(String)
-        /// Shares half days with another suggestion for the same person: apply at most one.
-        case clash
     }
 
     struct Row: Identifiable, Equatable, Sendable {
@@ -230,9 +228,11 @@ enum KanbanAvailabilityAssistant {
         var status: Status
         /// Matched to someone who isn't on this board: applied only when ticked.
         var offBoard = false
+        /// Shares half days with another suggestion for the same person: apply at most one.
+        var clash = false
 
         /// Whether ticking it can apply it.
-        var isApplicable: Bool { personID != nil && [.new, .overlaps, .clash].contains(status) }
+        var isApplicable: Bool { personID != nil && [.new, .overlaps].contains(status) }
     }
 
     /// One row per candidate, with its status against the time off already recorded.
@@ -248,21 +248,21 @@ enum KanbanAvailabilityAssistant {
             return row
         }
         markClashes(&rows)
-        for index in rows.indices { rows[index].selected = rows[index].status == .new && !rows[index].offBoard }
+        for index in rows.indices { rows[index].selected = rows[index].status == .new && !rows[index].offBoard && !rows[index].clash }
         return rows
     }
 
     /// Suggestions for the same person sharing a half day (but saying different things) clash;
     /// identical ones aren't added twice anyway.
     static func markClashes(_ rows: inout [Row]) {
-        let applicable = rows.indices.filter { [.new, .overlaps, .clash].contains(rows[$0].status) && rows[$0].personID != nil }
-        for i in applicable where rows[i].status == .clash { rows[i].status = .new }
+        for i in rows.indices { rows[i].clash = false }
+        let applicable = rows.indices.filter { rows[$0].isApplicable }
         for (n, i) in applicable.enumerated() {
             for j in applicable[(n + 1)...] where rows[i].personID == rows[j].personID {
                 let a = entry(rows[i]), b = entry(rows[j])
                 guard a.meaning != b.meaning, !slots(of: a).isDisjoint(with: slots(of: b)) else { continue }
-                rows[i].status = .clash
-                rows[j].status = .clash
+                rows[i].clash = true
+                rows[j].clash = true
             }
         }
     }

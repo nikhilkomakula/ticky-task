@@ -63,6 +63,8 @@ struct KanbanAvailabilityView: View {
             Divider()
             KanbanAvailabilityLegend(hasTimeOff: members.contains { !($0.person?.timeOff.isEmpty ?? true) })
         }
+        // A container, so its id doesn't replace the toolbar's and cells' own.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-availability")
         .sheet(item: $timeOffFor) { KanbanTimeOffSheet(person: $0, project: project) }
         .sheet(item: $newTimeOff) { KanbanTimeOffEditor(draft: $0, project: project) }
@@ -458,28 +460,34 @@ enum KanbanAvailabilityPalette {
 /// Dates for the tab: a civil day, formatted in UTC so it never shifts.
 enum KanbanAvailabilityFormat {
     private static let utc = TimeZone(identifier: "UTC")!
+    /// Gregorian month names to go with the Gregorian day numbers, whatever calendar the Mac uses.
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
 
     /// "19–25 Oct", or "28 Sep – 4 Oct" across months.
     static func week(_ monday: KanbanDay) -> String {
         let sunday = monday.adding(days: 6)
-        let month = Date.FormatStyle(timeZone: utc).month(.abbreviated)
+        let month = Date.FormatStyle(calendar: calendar, timeZone: utc).month(.abbreviated)
         if sunday.month == monday.month { return "\(monday.day)–\(sunday.day) \(monday.utcDate.formatted(month))" }
         return "\(monday.day) \(monday.utcDate.formatted(month)) – \(sunday.day) \(sunday.utcDate.formatted(month))"
     }
 
     /// "Oct 2026".
     static func month(_ day: KanbanDay) -> String {
-        day.utcDate.formatted(Date.FormatStyle(timeZone: utc).month(.abbreviated).year())
+        day.utcDate.formatted(Date.FormatStyle(calendar: calendar, timeZone: utc).month(.abbreviated).year())
     }
 
     /// "19 Oct 2026".
     static func short(_ day: KanbanDay) -> String {
-        day.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: utc))
+        day.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: calendar, timeZone: utc))
     }
 
     /// "19 October 2026".
     static func long(_ day: KanbanDay) -> String {
-        day.utcDate.formatted(Date.FormatStyle(date: .long, time: .omitted, timeZone: utc))
+        day.utcDate.formatted(Date.FormatStyle(date: .long, time: .omitted, calendar: calendar, timeZone: utc))
     }
 
     /// "3 of 5 days available. 2 days off (PTO). Manually overridden."

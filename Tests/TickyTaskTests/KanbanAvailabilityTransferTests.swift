@@ -180,6 +180,47 @@ struct KanbanAvailabilityTransferTests {
         #expect(ravi.timeOff.count == 3, "nothing duplicated")
     }
 
+    @Test("Importing a board that already has someone's time off adopts it: an older entry elsewhere can't revert it unnoticed")
+    func adoption() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let a = try s.createProject(name: "A", key: "AAA", startDay: "20261005", endDay: "20261127")
+        let ravi = try s.createPerson(name: "Ravi Kumar", initials: "RK")
+        _ = try s.addMembership(ravi, to: a)
+        try s.addTimeOff(KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020"), on: a)
+        let added = try #require(a.activities.max { $0.seq < $1.seq })
+        let file = try KanbanBoardTransfer.export([a], context: context)
+        try KanbanBoardTransfer.apply(try KanbanBoardTransfer.plan(file, context: context), fileName: "f", context: context)
+        #expect(ravi.timeOff.count == 1)
+        #expect(throws: KanbanServiceError.self) { try s.revert(added) }
+        #expect(ravi.timeOff.count == 1)
+    }
+
+    @Test("Two incoming overrides for the same person and week count as a conflict, notes included")
+    func incomingOverrideConflicts() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let board = try s.createProject(name: "A", key: "AAA")
+        let one = try s.createPerson(name: "Ravi Kumar", initials: "RK")
+        let two = try s.createPerson(name: "Ravi K", initials: "RK")
+        let m1 = try s.addMembership(one, to: board), m2 = try s.addMembership(two, to: board)
+        try s.setOverride(m1, week: KanbanDay(key: "20261019")!, halfDays: 4)
+        try s.setOverride(m2, week: KanbanDay(key: "20261019")!, halfDays: 4, note: "Offsite")
+        let file = try KanbanBoardTransfer.export([board], context: context, timeOffRange: ("20261001", "20261231"))
+        let other = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let here = try KanbanService(other).createPerson(name: "Ravi Kumar", initials: "RK")
+        try other.save()
+        var plan = try KanbanBoardTransfer.plan(file, context: other)
+        for index in plan.people.indices { plan.people[index].linkTo = here.id }   // both onto one person
+        #expect(plan.availabilityConflicts(projects: [], people: [here]).overrides == 1)
+    }
+
+    @Test("Week labels use Gregorian months whatever calendar the Mac uses")
+    func labels() {
+        #expect(KanbanAvailabilityFormat.week(KanbanDay(key: "20261019")!).hasPrefix("19–25 "))
+        #expect(KanbanAvailabilityFormat.calendar.identifier == .gregorian)
+    }
+
     @Test("An undated board's default export range starts at its start (or this week) and stops at its end")
     func defaultRange() {
         let today = KanbanDay(key: "20261021")!

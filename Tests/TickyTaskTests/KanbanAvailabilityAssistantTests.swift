@@ -146,7 +146,7 @@ struct KanbanAvailabilityAssistantTests {
             entry("Sam Lee", "2026-10-21", "2026-10-21"),
         ].joined(separator: ",")), imageCount: 0, hasText: true)
         var rows = A.review(extraction, people: [ravi, mia, off], timeOff: [])
-        #expect(rows.map(\.status) == [.clash, .clash, .new])
+        #expect(rows.map(\.status) == [.new, .new, .new] && rows.map(\.clash) == [true, true, false])
         #expect(rows.map(\.selected) == [false, false, false], "a clash and an off-board match start unticked")
         #expect(rows[2].offBoard)
         rows[0].selected = true
@@ -166,6 +166,19 @@ struct KanbanAvailabilityAssistantTests {
         let badConfidence = try A.parse(reply(entry("Ravi", "2026-10-20", "2026-10-20").replacingOccurrences(of: "\"high\"", with: "\"sure\"")),
                                         imageCount: 0, hasText: true)
         #expect(badConfidence.candidates.isEmpty)
+    }
+
+    @Test("A clash keeps its overlap with recorded time off, so the preview still shows")
+    func clashWithOverlap() throws {
+        let recorded = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261019", endDay: "20261023")
+        let extraction = try A.parse(reply([entry("Ravi Kumar", "2026-10-21", "2026-10-21", kind: "sick"),
+                                            entry("Ravi Kumar", "2026-10-21", "2026-10-21", kind: "training")].joined(separator: ",")),
+                                     imageCount: 0, hasText: true)
+        var rows = A.review(extraction, people: [ravi], timeOff: [recorded])
+        #expect(rows.map(\.status) == [.overlaps, .overlaps] && rows.allSatisfy(\.clash))
+        rows[0].selected = true
+        A.markClashes(&rows)
+        #expect(rows[0].status == .overlaps && A.clashingSelection(rows).isEmpty, "only one ticked: it can apply, as an overlap")
     }
 
     @Test("The preview shows what an overlap replaces and what's kept")

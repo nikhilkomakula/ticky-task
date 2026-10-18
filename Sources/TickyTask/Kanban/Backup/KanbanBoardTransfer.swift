@@ -133,14 +133,29 @@ enum KanbanBoardTransfer {
                 mapped.personId = person
                 return KanbanTimeOffDTO(existing).meaning != mapped.meaning || existing.note != dto.note
             }.count
+            // Overrides as the import would place them: per destination board, person and week,
+            // seeded with what the merge targets hold, then each incoming one in file order.
             var overrides = 0
+            var placed: [String: (Int, String?)] = [:]
             for board in boards {
-                guard let target = board.mergeInto.flatMap({ id in projects.first { $0.id == id } }) else { continue }
+                let destination = board.mergeInto.map { "here:\($0)" } ?? "new:\(board.id)"
+                if let target = board.mergeInto.flatMap({ id in projects.first { $0.id == id } }) {
+                    for membership in target.resources where membership.archivedAt == nil {
+                        for o in membership.availabilityOverrides {
+                            placed["\(destination)|\(membership.person?.id.uuidString ?? "")|\(o.weekStart)"] = (o.halfDays, o.note)
+                        }
+                    }
+                }
                 for dto in (kanban.availabilityOverrides ?? []) {
                     guard let resource = kanban.resources.first(where: { $0.id == dto.resourceId && $0.projectId == board.id }),
-                          let person = resource.personId.flatMap({ linked[$0] }),
-                          let membership = target.resources.first(where: { $0.archivedAt == nil && $0.person?.id == person }) else { continue }
-                    if membership.availabilityOverrides.contains(where: { $0.weekStart == dto.weekStart && $0.halfDays != dto.halfDays }) { overrides += 1 }
+                          let source = resource.personId else { continue }
+                    let person = linked[source]?.uuidString ?? "file:\(source)"
+                    let key = "\(destination)|\(person)|\(dto.weekStart)"
+                    if let existing = placed[key] {
+                        if existing.0 != dto.halfDays || existing.1 != dto.note { overrides += 1 }
+                    } else {
+                        placed[key] = (dto.halfDays, dto.note)
+                    }
                 }
             }
             return (timeOff, overrides)
@@ -507,6 +522,9 @@ enum KanbanBoardTransfer {
             guard let person = dto.personId.flatMap({ people[$0] }), (try? AvailabilityRecords.check(dto)) != nil else { continue }
             var mapped = dto
             if let existing = person.timeOff.first(where: { $0.id == dto.id }) {
+                // This board now relies on it too: touching it stops an older entry elsewhere from
+                // reverting it unnoticed (its after-state no longer matches).
+                existing.updatedAt = now
                 if useIncoming.timeOff {
                     existing.startDay = dto.startDay
                     existing.endDay = dto.endDay
@@ -518,7 +536,10 @@ enum KanbanBoardTransfer {
                 continue
             }
             mapped.personId = person.id
-            guard !person.timeOff.contains(where: { KanbanTimeOffDTO($0).meaning == mapped.meaning }) else { continue }
+            if let same = person.timeOff.first(where: { KanbanTimeOffDTO($0).meaning == mapped.meaning }) {
+                same.updatedAt = now
+                continue
+            }
             let taken = (try? context.fetchCount(FetchDescriptor<KanbanTimeOff>(predicate: #Predicate { $0.id == dto.id }))) ?? 0 > 0
             let entry = KanbanTimeOff(id: taken ? UUID() : dto.id, startDay: dto.startDay, endDay: dto.endDay,
                                       portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,

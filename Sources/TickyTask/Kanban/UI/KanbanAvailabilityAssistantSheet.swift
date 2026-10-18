@@ -161,7 +161,6 @@ struct KanbanAvailabilityAssistantSheet: View {
             List {
                 group("New", .new, timeOff)
                 group("Overlaps recorded time off: replaces only these days", .overlaps, timeOff)
-                group("Overlaps another suggestion: tick only one", .clash, timeOff)
                 group("Name not matched: pick the person", .unmatched, timeOff)
                 needsReviewGroup(timeOff)
                 group("Already recorded", .alreadyRecorded, timeOff)
@@ -239,6 +238,7 @@ struct KanbanAvailabilityAssistantSheet: View {
                 Text("“\(row.candidate.evidence)”").font(.caption).italic().foregroundStyle(.secondary).lineLimit(2)
                 if case let .needsReview(reason) = row.status { Text(reason).font(.caption).foregroundStyle(KanbanAvailabilityPalette.text(.yellow)) }
                 if row.offBoard { Text("Not on this board: tick to include their time off.").font(.caption).foregroundStyle(.secondary) }
+                if row.clash { Text("Covers the same days as another suggestion for this person: tick only one.").font(.caption).foregroundStyle(.red) }
                 if row.status == .overlaps {
                     let preview = KanbanAvailabilityAssistant.preview(of: row, timeOff: timeOff)
                     Text("Replaces: \(preview.replaced.map(describe).joined(separator: "; "))").font(.caption).foregroundStyle(.secondary)
@@ -286,7 +286,7 @@ struct KanbanAvailabilityAssistantSheet: View {
         rows[index].offBoard = !(people.first { $0.id == id }?.onBoard ?? false)
         rows[index].status = KanbanAvailabilityAssistant.status(of: rows[index], timeOff: timeOff)
         KanbanAvailabilityAssistant.markClashes(&rows)
-        rows[index].selected = rows[index].status == .new
+        rows[index].selected = rows[index].status == .new && !rows[index].clash
     }
 
     private func describe(_ entry: KanbanTimeOffDTO) -> String {

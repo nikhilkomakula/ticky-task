@@ -115,14 +115,14 @@ extension KanbanService {
     /// "20–24 Oct 2026", "22 Oct 2026 (afternoon)".
     static func span(_ entry: KanbanTimeOffDTO) -> String {
         guard let start = KanbanDay(key: entry.startDay), let end = KanbanDay(key: entry.endDay) else { return entry.startDay }
-        let style = Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: TimeZone(identifier: "UTC")!)
+        let style = Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: KanbanAvailabilityFormat.calendar, timeZone: TimeZone(identifier: "UTC")!)
         let portion = KanbanTimeOffPortion(rawValue: entry.portionRaw) ?? .full
         let suffix = portion == .full ? "" : " (\(portion.label.lowercased()))"
         return start == end ? start.utcDate.formatted(style) + suffix : "\(start.utcDate.formatted(style)) – \(end.utcDate.formatted(style))"
     }
 
     static func weekLabel(_ monday: KanbanDay) -> String {
-        monday.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, timeZone: TimeZone(identifier: "UTC")!))
+        monday.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: KanbanAvailabilityFormat.calendar, timeZone: TimeZone(identifier: "UTC")!))
     }
 
     // MARK: Internals
