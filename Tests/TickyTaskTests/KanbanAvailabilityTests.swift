@@ -335,3 +335,67 @@ extension KanbanAvailabilityTests {
         #expect(total.map { KanbanAvailability.percent($0.available, of: $0.possible) } == 87, "14 of 16 half days; the closed cell adds nothing")
     }
 }
+
+extension KanbanAvailabilityServiceTests {
+    @Test("Public holidays: add, edit, works-it and delete are each undoable, logged at payload v3")
+    func holidays() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        let logged = try #require(platform.activities.max { $0.seq < $1.seq })
+        #expect(try KanbanActivityPayload.decode(logged.payload).version == 3)
+        try s.setWorks(ravi, holiday: holiday, works: true, on: platform)
+        #expect(holiday.workedBy == [ravi.id])
+        var moved = KanbanHolidayDTO(holiday)
+        moved.day = "20261127"
+        try s.editHoliday(holiday, to: moved, on: platform)
+        #expect(holiday.day == "20261127" && holiday.workedBy == [ravi.id], "an edit keeps who works it")
+        try s.undo(in: platform)
+        #expect(holiday.day == "20261126")
+        try s.undo(in: platform)
+        #expect(holiday.workedBy == nil)
+        try s.redo(in: platform)
+        try s.deleteHolidays([holiday], on: platform)
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
+        try s.undo(in: platform)
+        let back = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        #expect(back.id == holiday.id && back.workedBy == [ravi.id], "the same holiday comes back with its exception")
+    }
+
+    @Test("Bad holidays are refused; exceptions for people who are gone are dropped")
+    func holidayValidation() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        for bad in [KanbanHolidayDTO(day: "20260231", name: "Nope"), KanbanHolidayDTO(day: "20261126", name: "  ")] {
+            #expect(throws: KanbanServiceError.self) { try s.addHoliday(bad, on: platform) }
+        }
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, UUID()]), on: platform)
+        #expect(try context.fetch(FetchDescriptor<KanbanHoliday>()).first?.workedBy == [ravi.id])
+    }
+
+    @Test("Undo refuses when the holiday was changed again from another board")
+    func holidayCrossBoard() throws {
+        let (s, platform, data, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        try s.setWorks(ravi, holiday: holiday, works: true, on: data)
+        #expect(throws: KanbanServiceError.self) { try s.undo(in: platform) }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 1)
+    }
+
+    @Test("Overrides are capped by the holiday-aware week, also when one change adds both")
+    func holidayCapacity() throws {
+        let (s, platform, _, _, membership, _) = try setup()
+        let week = KanbanDay(key: "20261123")!
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        #expect(throws: KanbanServiceError.self) { try s.setOverride(membership, week: week, halfDays: 9) }
+        try s.setOverride(membership, week: week, halfDays: 8)
+        // Ten half days fit the week of 30 Nov until the same change closes its Monday.
+        let closed = KanbanHolidayDTO(day: "20261130", name: "Closed")
+        let override = KanbanAvailabilityOverrideDTO(id: UUID(), resourceId: membership.id, weekStart: "20261130", halfDays: 10,
+                                                     note: nil, createdAt: Date(), updatedAt: Date())
+        let both = KanbanAvailabilityDelta(overrides: [.init(id: override.id, before: nil, after: override)],
+                                           holidays: [.init(id: closed.id, before: nil, after: closed)])
+        #expect(throws: KanbanServiceError.self) { try s.applyAvailability(both, on: platform, summary: "x") }
+        #expect(membership.availabilityOverrides.count == 1, "nothing from the refused change")
+    }
+}
