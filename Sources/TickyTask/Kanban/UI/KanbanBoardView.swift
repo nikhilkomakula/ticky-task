@@ -28,6 +28,7 @@ struct KanbanBoardView: View {
     @State private var live = KanbanLiveWidth()
     @State private var presentationCache = KanbanBoardPresentationCache()
     @State private var revealedCard: UUID?
+    @State private var activeReveal: UUID?
     @State private var focusRequest: BoardCardFocusRequest?
     @FocusState private var focus: KanbanBoardFocus?
     /// ⌘-click selection; a drag or the context menu then acts on all of it.
@@ -104,7 +105,7 @@ struct KanbanBoardView: View {
                 scroll.anchorFrames = frames
                 drag.frames = frames
                 drag.framesChanged()
-                if adjustment != 0, !drag.isActive, focusRequest == nil, let geometry = scroll.geometry {
+                if adjustment != 0, !drag.isActive, focusRequest == nil, activeReveal == nil, let geometry = scroll.geometry {
                     let y = max(0, (scroll.pendingAnchorY ?? geometry.contentOffset.y) + adjustment)
                     scroll.pendingAnchorY = y
                     position.scrollTo(point: CGPoint(x: geometry.contentOffset.x, y: y))
@@ -115,7 +116,7 @@ struct KanbanBoardView: View {
                 handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks, cells: shown, shortened: Set(doneHidden.keys).subtracting(expandedDone))
             }
             // Runs on appear too: Attention sets the card before this board exists.
-            .task(id: app.highlightedKanbanTaskID) { await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
+            .task(id: app.highlightedKanbanTaskID) { _ = await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
             .task(id: focusRequest) {
                 guard let request = focusRequest else { return }
                 if !request.requiresReveal, let card = drag.frames.cards.first(where: { $0.id == request.cardID }),
@@ -126,9 +127,9 @@ struct KanbanBoardView: View {
                     focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterCompleting: request)
                     return
                 }
-                await reveal(request.cardID, proxy: proxy)
+                let didReveal = await reveal(request.cardID, proxy: proxy)
                 guard !Task.isCancelled, focusRequest == request else { return }
-                focus = .card(request.cardID)
+                if didReveal { focus = .card(request.cardID) }
                 focusRequest = BoardCardFocus.pendingRequest(focusRequest, afterCompleting: request)
             }
         }
@@ -227,21 +228,53 @@ struct KanbanBoardView: View {
     }
 
     /// Scrolls to a revealed card, expanding its row first if it's collapsed.
-    private func reveal(_ id: UUID?, proxy: ScrollViewProxy) async {
-        guard let id, let task = project.tasks.first(where: { $0.id == id }) else { return }
+    private func reveal(_ id: UUID?, proxy: ScrollViewProxy) async -> Bool {
+        guard let id, let task = project.tasks.first(where: { $0.id == id }), let column = task.column else { return false }
+        let token = UUID()
+        activeReveal = token
+        scroll.pendingAnchorY = nil
+        defer { if activeReveal == token { activeReveal = nil } }
         let row: KanbanRowKey = task.resource.flatMap { $0.archivedAt == nil ? .resource($0.id) : nil } ?? .unassigned
         if project.collapsedRowKeys.contains(row.storageKey) {
             app.runKanban { try app.kanbanService(context).setRowCollapsed(project, row, false) }
         }
         // It may be one of a shortened Done cell's older cards.
-        if let column = task.column, column.kind == .done { expandedDone.insert(CellKey(column: column.id, row: row)) }
+        if column.kind == .done { expandedDone.insert(CellKey(column: column.id, row: row)) }
         revealedCard = id
-        // A lazy row must exist before its isolated card slot can be an anchor.
-        if drag.cardFrame(id: id) == nil { proxy.scrollTo(row, anchor: .top) }
-        try? await Task.sleep(for: .milliseconds(150))   // let the card render first
-        guard !Task.isCancelled else { return }
-        withAnimation { proxy.scrollTo(id, anchor: .center) }
-        try? await Task.sleep(for: .milliseconds(150))
+        // Archived cards do not publish drag/layout frames; keep their existing ID-based reveal.
+        if task.archivedAt != nil {
+            proxy.scrollTo(row, anchor: .top)
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, activeReveal == token else { return false }
+            withAnimation { proxy.scrollTo(id, anchor: .center) }
+            try? await Task.sleep(for: .milliseconds(150))
+            return !Task.isCancelled && activeReveal == token
+        }
+        var settledFrame: CGRect?
+        // Recheck as pinned cards and their neighbours replace estimates with measurements.
+        for _ in 0..<40 {
+            guard !Task.isCancelled, activeReveal == token else { return false }
+            let frames = drag.frames
+            if let cell = frames.cells.first(where: { $0.columnID == column.id && $0.row == row }),
+               let card = frames.cardFrames(in: cell).first(where: { $0.id == id }),
+               let geometry = scroll.geometry,
+               let target = BoardCardReveal.targetOffset(for: card.frame, in: frames, geometry: geometry) {
+                let realized = frames.cards.contains { $0.id == id && $0.columnID == column.id && $0.row == row }
+                if realized, BoardCardReveal.visibleViewport(in: frames).contains(card.frame) {
+                    if settledFrame == card.frame { return true }
+                    settledFrame = card.frame
+                } else {
+                    settledFrame = nil
+                    position.scrollTo(point: target)
+                }
+            } else {
+                // Only the outer lazy row needs an ID scroll; its cells supply numeric card offsets.
+                settledFrame = nil
+                proxy.scrollTo(row, anchor: .top)
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
     }
 
     private var addPersonButton: some View {
