@@ -452,6 +452,159 @@ struct KanbanAvailabilityAssistantTests {
         #expect(moved.startDay == "20261022" && moved.kindRaw == "training" && moved.note == "Private note")
     }
 
+    @Test("Every proposed time-off kind is visible and spoken in each review state", arguments: KanbanTimeOffKind.allCases)
+    func timeOffKindPresentation(_ kind: KanbanTimeOffKind) throws {
+        let states: [A.Status] = [.new, .alreadyRecorded, .overlaps, .unmatched, .needsReview("Confirm the dates.")]
+        for state in states {
+            var op = timeOffOperation(kind: kind.rawValue)
+            var recorded: [KanbanTimeOffDTO] = []
+            switch state {
+            case .alreadyRecorded:
+                recorded = [.init(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: kind)]
+            case .overlaps:
+                recorded = [.init(personId: ravi.id, startDay: "20261020", endDay: "20261020", portion: .am, kind: kind)]
+            case .unmatched:
+                op["personText"] = "Ravi"
+            case .needsReview:
+                op["issues"] = ["Confirm the dates."]
+            default: break
+            }
+            let snapshot = pureSnapshot(timeOff: recorded)
+            let row = try #require(try planRows([op], snapshot: snapshot).first)
+            #expect(row.status == state)
+            let detail = try #require(row.detail(snapshot: snapshot))
+            #expect(detail.contains(kind.label))
+            #expect(row.accessibilityLabel(snapshot: snapshot).contains(kind.label))
+        }
+        let snapshot = pureSnapshot()
+        let invalidDates = timeOffOperation(start: "2026-02-30", kind: kind.rawValue)
+        let row = try #require(try planRows([invalidDates], snapshot: snapshot).first)
+        #expect(!row.isApplicable)
+        let detail = try #require(row.detail(snapshot: snapshot))
+        #expect(detail.contains(kind.label))
+        #expect(row.accessibilityLabel(snapshot: snapshot).contains(kind.label))
+        let recorded = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: kind)
+        let removalSnapshot = pureSnapshot(timeOff: [recorded])
+        let removal = timeOffOperation("removeTimeOff")
+        let removalRow = try #require(try planRows([removal], snapshot: removalSnapshot).first)
+        #expect(removalRow.status == .removals)
+        let removalDetail = try #require(removalRow.detail(snapshot: removalSnapshot))
+        #expect(removalDetail.contains(kind.label))
+        #expect(removalRow.accessibilityLabel(snapshot: removalSnapshot).contains(kind.label))
+    }
+
+    @Test("A grouped move presents the actual replacement kind, including inheritance", arguments: [false, true])
+    func groupedTimeOffKindPresentation(_ explicitKind: Bool) throws {
+        let recorded = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: .training)
+        let snapshot = pureSnapshot(timeOff: [recorded])
+        let replacementKind: Any = explicitKind ? "sick" : NSNull()
+        let remove = timeOffOperation("removeTimeOff", group: "move")
+        let add = timeOffOperation(start: "2026-10-22", end: "2026-10-22", kind: replacementKind, group: "move")
+        var row = try #require(try planRows([remove, add], snapshot: snapshot).first)
+        let expectedKind: KanbanTimeOffKind = explicitKind ? .sick : .training
+        #expect(row.status == .changes && !row.selected)
+        let detail = try #require(row.detail(snapshot: snapshot))
+        let destinationDetail = try #require(detail.components(separatedBy: "; ").first { $0.contains("2026-10-22") })
+        #expect(destinationDetail.contains(expectedKind.label))
+        #expect(row.accessibilityLabel(snapshot: snapshot).contains(expectedKind.label))
+        row.selected = true
+        let plan = try A.plan(for: [row], snapshot: snapshot)
+        #expect(plan.delta.timeOff.first?.after?.kindRaw == expectedKind.rawValue)
+    }
+
+    @Test("Choosing a person resolves a partial and matched name in either move order", arguments: [false, true])
+    func resolveGroupedTimeOffPerson(_ reverseOperations: Bool) throws {
+        let recorded = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: .training,
+                                        note: "Private note")
+        let snapshot = pureSnapshot(timeOff: [recorded])
+        let remove = timeOffOperation("removeTimeOff", person: "Ravi", group: "move")
+        let add = timeOffOperation(start: "2026-10-22", end: "2026-10-22", kind: NSNull(), group: "move")
+        let operations = reverseOperations ? [add, remove] : [remove, add]
+        var row = try #require(try planRows(operations, snapshot: snapshot).first)
+        #expect(!row.isApplicable && !row.selected)
+        A.choosePerson(ravi.id, for: &row, people: [ravi], snapshot: snapshot)
+        #expect(row.personID == ravi.id && row.samePerson && row.sourceTimeOffID == recorded.id)
+        #expect(row.status == .changes && row.isApplicable && !row.selected && !row.offBoard)
+        let detail = try #require(row.detail(snapshot: snapshot))
+        #expect(detail.contains(KanbanTimeOffKind.training.label))
+        #expect(row.accessibilityLabel(snapshot: snapshot).contains(KanbanTimeOffKind.training.label))
+        row.selected = true
+        row.rememberName = true
+        let plan = try A.plan(for: [row], snapshot: snapshot)
+        let change = try #require(plan.delta.timeOff.first)
+        let moved = try #require(change.after)
+        #expect(plan.delta.timeOff.count == 1 && change.before == recorded && moved.id == recorded.id)
+        #expect(moved.personId == ravi.id && moved.startDay == "20261022" && moved.endDay == "20261022")
+        #expect(moved.kindRaw == "training" && moved.note == recorded.note && moved.createdAt == recorded.createdAt)
+        #expect(plan.delta.aliases.first?.after == ["Ravi"], "Remember the explicitly resolved name in either operation order")
+        #expect(snapshot.timeOff == [recorded], "Planning leaves the source snapshot untouched")
+    }
+
+    @Test("Choosing a different person cannot override a grouped operation's known identity")
+    func differentGroupedTimeOffChoice() throws {
+        let recorded = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: .training)
+        let snapshot = pureSnapshot(timeOff: [recorded])
+        let remove = timeOffOperation("removeTimeOff", person: "Ravi", group: "move")
+        let add = timeOffOperation(start: "2026-10-22", end: "2026-10-22", kind: NSNull(), group: "move")
+        var row = try #require(try planRows([remove, add], snapshot: snapshot, people: [ravi, mia]).first)
+        A.choosePerson(mia.id, for: &row, people: [ravi, mia], snapshot: snapshot)
+        #expect(!row.samePerson && !row.isApplicable && !row.selected)
+        guard case .needsReview = row.status else { Issue.record("Different identities must need review"); return }
+        row.selected = true
+        #expect(throws: A.ReplyError.self) { try A.plan(for: [row], snapshot: snapshot) }
+        A.choosePerson(ravi.id, for: &row, people: [ravi, mia], snapshot: snapshot)
+        #expect(row.samePerson && row.personID == ravi.id && row.sourceTimeOffID == recorded.id)
+        #expect(row.status == .changes && !row.selected)
+    }
+
+    @Test("A group of two matched people still needs review after a picker choice", arguments: [false, true])
+    func groupedTimeOffDifferentPeople(_ chooseOtherPerson: Bool) throws {
+        let raviRecord = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020")
+        let miaRecord = KanbanTimeOffDTO(personId: mia.id, startDay: "20261020", endDay: "20261020")
+        let snapshot = pureSnapshot(timeOff: [raviRecord, miaRecord])
+        let remove = timeOffOperation("removeTimeOff", group: "move")
+        let add = timeOffOperation(person: mia.name, start: "2026-10-22", end: "2026-10-22", kind: NSNull(), group: "move")
+        var row = try #require(try planRows([remove, add], snapshot: snapshot, people: [ravi, mia]).first)
+        guard case .needsReview = row.status else { Issue.record("Two matched people must need review"); return }
+        let chosenID = chooseOtherPerson ? mia.id : ravi.id
+        A.choosePerson(chosenID, for: &row, people: [ravi, mia], snapshot: snapshot)
+        #expect(!row.samePerson && !row.isApplicable && !row.selected)
+        guard case .needsReview = row.status else { Issue.record("Picking cannot merge two matched people"); return }
+        row.selected = true
+        #expect(throws: A.ReplyError.self) { try A.plan(for: [row], snapshot: snapshot) }
+    }
+
+    @Test("Changing an unresolved move's person refreshes its source, inherited kind and board scope")
+    func groupedTimeOffPersonRechoice() throws {
+        let offBoard = A.Person(id: UUID(), name: "Sam Lee", initials: "SL", aliases: [], onBoard: false)
+        let raviRecord = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261020", endDay: "20261020", kind: .training)
+        let samRecord = KanbanTimeOffDTO(personId: offBoard.id, startDay: "20261020", endDay: "20261020", kind: .sick)
+        let snapshot = pureSnapshot(timeOff: [raviRecord, samRecord])
+        let people = [ravi, mia, offBoard]
+        let remove = timeOffOperation("removeTimeOff", person: "Someone", group: "move")
+        let add = timeOffOperation(person: "That person", start: "2026-10-22", end: "2026-10-22", kind: NSNull(), group: "move")
+        var row = try #require(try planRows([remove, add], snapshot: snapshot, people: people).first)
+        A.choosePerson(ravi.id, for: &row, people: people, snapshot: snapshot)
+        #expect(row.personID == ravi.id && row.sourceTimeOffID == raviRecord.id && !row.offBoard)
+        let raviDetail = try #require(row.detail(snapshot: snapshot))
+        #expect(raviDetail.contains(KanbanTimeOffKind.training.label))
+        A.choosePerson(offBoard.id, for: &row, people: people, snapshot: snapshot)
+        #expect(row.personID == offBoard.id && row.sourceTimeOffID == samRecord.id && row.samePerson)
+        #expect(row.status == .changes && row.offBoard && !row.selected)
+        let samDetail = try #require(row.detail(snapshot: snapshot))
+        #expect(samDetail.contains(KanbanTimeOffKind.sick.label) && !samDetail.contains(KanbanTimeOffKind.training.label))
+        #expect(row.accessibilityLabel(snapshot: snapshot).contains(KanbanTimeOffKind.sick.label))
+        row.selected = true
+        let plan = try A.plan(for: [row], snapshot: snapshot)
+        let moved = try #require(plan.delta.timeOff.first?.after)
+        #expect(plan.delta.timeOff.count == 1 && moved.id == samRecord.id && moved.personId == offBoard.id)
+        #expect(moved.startDay == "20261022" && moved.kindRaw == "sick")
+        A.choosePerson(mia.id, for: &row, people: people, snapshot: snapshot)
+        #expect(row.personID == mia.id && row.sourceTimeOffID == nil && !row.offBoard)
+        #expect(!row.isApplicable && !row.selected, "A missing source cannot retain the previous person's move")
+        guard case .needsReview = row.status else { Issue.record("A move without its source must need review"); return }
+    }
+
     @Test("A move onto an existing identical record needs review and preserves both originals", arguments: ["holiday", "timeOff"])
     func moveDestinationCollision(_ kind: String) throws {
         let snapshot: A.Snapshot
