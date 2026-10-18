@@ -36,6 +36,8 @@ struct SummaryModelOption: Identifiable, Hashable, Codable, Sendable {
     var supportedEfforts: [String]?
     /// The model's recommended effort, when the catalog provides one.
     var defaultEffort: String?
+    /// `nil` means the catalog has not declared image support.
+    var acceptsImages: Bool? = nil
 
     static let cliDefaultID = ""
 
