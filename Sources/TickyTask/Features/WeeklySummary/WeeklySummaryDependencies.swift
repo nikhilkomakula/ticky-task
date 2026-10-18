@@ -104,11 +104,21 @@ struct StubSummaryGenerator: SummaryGenerating {
         if let failure { throw failure }
         let root = (try? JSONSerialization.jsonObject(with: request.payload)) as? [String: Any]
         if request.payloadLabel == KanbanAvailabilityAssistant.payloadLabel {
-            // The availability assistant: the first person off on Tuesday of this week.
+            // Instructions and material exercise the same schema-2 review path.
             let person = ((root?["people"] as? [[String: Any]])?.first?["name"] as? String) ?? "Someone"
             let tuesday = KanbanDay.today().monday.adding(days: 1)
             let day = String(format: "%04d-%02d-%02d", tuesday.year, tuesday.month, tuesday.day)
-            let json = #"{"schemaVersion":1,"entries":[{"sourceRef":"text","personText":"\#(person)","startDate":"\#(day)","endDate":"\#(day)","portion":"full","kind":"pto","dateText":"Tuesday","evidence":"\#(person) off Tuesday","confidence":"high","issues":[]}],"unresolved":[],"warnings":[]}"#
+            let source = (root?["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? "text" : "instructions"
+            let operation: [String: Any] = [
+                "op": "timeOff", "group": NSNull(), "sourceRef": source,
+                "personText": person, "startDate": day, "endDate": day,
+                "portion": "full", "kind": "pto", "evidence": "\(person) off Tuesday",
+                "confidence": "high", "issues": [String](),
+            ]
+            let data = try JSONSerialization.data(withJSONObject: [
+                "schemaVersion": 2, "operations": [operation], "unresolved": [], "warnings": [],
+            ])
+            let json = String(decoding: data, as: UTF8.self)
             return SummaryResult(text: json, config: request.config, resolvedModel: request.config.modelID, duration: .seconds(1), usage: nil)
         }
         let groups = root?["taskGroups"] as? [[String: Any]] ?? []

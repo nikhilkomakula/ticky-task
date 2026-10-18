@@ -188,23 +188,17 @@ The **Weekly availability** row (frozen below the header) shows the team's total
 
 **Override a week.** Click a cell (or focus it and press **Return**) to see the possible days, the time off counted and the result. **Override…** replaces that week's available days for this board (in half days), with an optional note; a small pencil marks the cell. **Clear override** goes back to the worked-out value. If you later change the board's or the person's dates so the week has fewer days than the override, the override is kept, marked with a warning, and not used until you change or clear it.
 
-**Update from your PTO list (Update availability…).** If your team keeps PTO somewhere else (a Slack canvas, a spreadsheet, an email), you don't have to retype it:
+**Update availability…** accepts instructions and optional source material, so you can import a PTO list or ask for a specific change:
+
 1. Click **Update availability…**, or drop screenshots onto the grid.
-2. Paste the text (select the canvas and copy it), and/or add screenshots with **Paste image**, **Choose files…** or drag and drop. Text usually reads more accurately than a screenshot.
-3. Check the dates and people shown, read the note about what's sent, and click **Extract with Codex**. It uses the same Codex connection, model and privacy settings as the summaries (**Settings › AI**). Only what's shown is sent: the text, the images, the date range and the board's people's names.
-4. Review the suggestions, grouped as:
-   - **New**: ticked.
-   - **Overlaps recorded time off**: not ticked. Each row shows what it replaces and what's kept; applying it replaces only its own days and half days.
-   - **Name not matched**: pick the person; tick **Remember this name** to match it next time. Someone matched who isn't on this board starts unticked: tick them to include their time off.
-   - **Overlaps another suggestion**: two suggestions cover the same days for one person; tick only one (Apply waits until you do).
-   - **Needs review**: can't be applied as read, for example a half day over several days.
-   - **Already recorded**: identical, so nothing to do.
-   - **Couldn't be read**: unclear rows, with the reason.
+2. Enter **Instructions**, such as *“Mia is off next Tue”*, *“cancel Ravi's PTO on Friday”*, *“set Sam to 3 days the week of 2 Nov”*, *“add Thanksgiving 26 Nov”* or *“Ravi works on Diwali”*. You can also paste text or add screenshots with **Paste image**, **Choose files…** or drag and drop. Instructions or material may be empty, but the request needs at least one.
+3. Check the dates, people, connection, model and effort, then click **Suggest changes**. The connection bar shares the app-wide AI connection with the summaries (**Settings › AI**). Your instructions, text, images, date range, the board's people's names and aliases, and recorded time off, this board's overrides and holidays within that range are sent; existing notes are excluded and holiday exceptions are sent as names. The disclosure names the destination host. The installed Codex CLI is required; an OpenAI-compatible server needs a Responses API. Screenshot support is known only for a ChatGPT-account catalog model; other models show an **Image support unknown** warning. A model declared unable to read images cannot suggest changes while screenshots are attached.
+4. Review **New**, **Changes**, **Removals**, **Holidays (applies to everyone)**, **Unmatched**, **Needs review** and **Already true**. New time off starts ticked; removals, replacements and holiday changes start unticked. Rows show the exact records removed, the pieces kept, and each affected week's before → after days. Pick unmatched people or ambiguous holidays locally; **Remember this name** saves an alias with the accepted change. Time off for someone outside this board starts unticked. Conflicting selections block Apply. A grouped move is selected as one row and keeps the original record's identity; ambiguous grouped moves need a clearer request, one change at a time.
 
-   If something was misread, type a correction (*"Ravi means Ravindra"*, *"those dates are in November"*) and click **Refine** to read it again.
-5. Click **Apply**. The line above it says how many entries, people and boards it affects. If someone's recorded time off changed while you were reviewing, Apply stops and asks you to check the rows again. It's one change in the Change Log, so **⌘Z** undoes it.
+   If something was misread, type a correction (*“Ravi means Ravindra”*, *“those dates are in November”*) and click **Suggest changes** again. **Notes from the assistant** shows any caveats.
+5. Click **Apply**. The impact line counts every effective addition, removal, override and holiday change, including removal-only requests. Time off counts on every board the person is on; holidays apply to everyone unless they work that holiday. If time off, holidays, overrides, board or membership dates, or board work days change during generation or review, the request is refused with **Things changed since this review — review again**. Apply saves one change in the Change Log, so **⌘Z** undoes it.
 
-Nothing is applied without your review, nothing is ever removed because it's missing from the list, and the screenshots aren't kept. Re-pasting the same list later adds only what's new.
+Nothing changes without your review, absence from a pasted list never removes a record, and screenshots aren't kept. Explicit instructions can remove or move existing entries. The material and the assistant's reply are checked locally; the assistant cannot use tools or change records itself.
 
 **Export it.** **⋯ › Export availability CSV…** saves one row per resource and week: possible, worked-out, overridden and effective days, allocation and status.
 

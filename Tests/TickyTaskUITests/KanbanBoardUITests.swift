@@ -123,6 +123,31 @@ final class KanbanBoardUITests: XCTestCase {
         wait(for: [off], timeout: 5)
     }
 
+    func testUpdateAvailabilityFromInstructionsOnly() {
+        let app = launch(["-kanban.defaultBoard", ""])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10))
+        selectView(app, "Availability")
+        let update = element(app, "kanban-availability-update")
+        XCTAssertTrue(update.waitForExistence(timeout: 10))
+        update.click()
+        let instructions = element(app, "kanban-assistant-instructions")
+        XCTAssertTrue(instructions.waitForExistence(timeout: 5))
+        instructions.click()
+        instructions.typeText("Mia is off next Tuesday")
+        XCTAssertTrue(element(app, "kanban-assistant-extract").isEnabled, "instructions alone can suggest changes")
+        element(app, "kanban-assistant-extract").click()
+        let apply = element(app, "kanban-assistant-apply")
+        XCTAssertTrue(apply.waitForExistence(timeout: 15))
+        XCTAssertTrue(element(app, "kanban-assistant-group-new").exists)
+        XCTAssertTrue(apply.isEnabled)
+        apply.click()
+        XCTAssertFalse(apply.waitForExistence(timeout: 3))
+        let cell = element(app, "kanban-availability-Mia Chen-\(thisMonday())")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        let off = expectation(for: NSPredicate(format: "value CONTAINS 'days off'"), evaluatedWith: cell)
+        wait(for: [off], timeout: 5)
+    }
+
     func testSwitchModulesAndSeeTheBoard() {
         let app = launch()
         openPlatform(app)
