@@ -346,6 +346,46 @@ final class KanbanBoardUITests: XCTestCase {
         outer.frame.contains(CGPoint(x: inner.frame.midX, y: inner.frame.midY))
     }
 
+    private func openVolume(_ app: XCUIApplication) {
+        let board = element(app, "kanban-sidebar-Volume")
+        XCTAssertTrue(board.waitForExistence(timeout: 10))
+        board.click()
+        XCTAssertTrue(element(app, "kanban-cell-To Do-Alice Johnson").waitForExistence(timeout: 10))
+    }
+
+    /// Keep the target clear of the pinned headers and the drag auto-scroll zones.
+    private func scrollIntoBoardView(_ app: XCUIApplication, _ target: XCUIElement) {
+        let board = element(app, "kanban-board")
+        let top = element(app, "kanban-colhdr-To Do").frame.maxY + 4
+        let bottom = board.frame.maxY - 60
+        var direction: CGFloat = -1
+        for _ in 0..<24 {
+            let frame = target.frame
+            if target.exists, frame.minY >= top, frame.maxY <= bottom { return }
+            let distance = frame.maxY > bottom ? frame.maxY - bottom : frame.minY - top
+            let amount = min(350, max(-350, distance))
+            board.scroll(byDeltaX: 0, deltaY: direction * amount)
+            _ = eventually(timeout: 1) { target.frame.minY != frame.minY }
+            // Scroll-wheel deltas have different signs on local and CI setups.
+            if (target.frame.minY - frame.minY) * distance >= 0 { direction = -direction }
+        }
+        XCTFail("\(target.identifier) did not scroll into the board viewport")
+    }
+
+    private func addCard(_ app: XCUIApplication, title: String, column: String, row: String) {
+        let add = element(app, "kanban-add-card-\(column)-\(row)")
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        scrollIntoBoardView(app, add)
+        add.hover()
+        add.click()
+        let field = element(app, "kanban-editor-title")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText(title)
+        element(app, "kanban-editor-done").click()
+        XCTAssertTrue(eventually { !element(app, "kanban-editor-title").exists })
+    }
+
     func testDragACardToAnotherCell() {
         let app = launch()
         openPlatform(app)
@@ -355,6 +395,35 @@ final class KanbanBoardUITests: XCTestCase {
         drag(app, card, to: cell, at: CGVector(dx: 0.5, dy: 0.9))
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-In Progress-Ravi Kumar")) },
                       "the card moved to Ravi's In Progress cell")
+    }
+
+    func testDropAtTheEndOfALongCellLandsAfterItsPreviouslyUnrealizedTail() throws {
+        let app = launch(["-uitestKanbanVolume", "2000"])
+        openVolume(app)
+        let board = element(app, "kanban-board")
+        let destination = element(app, "kanban-cell-To Do-Alice Johnson")
+        let footer = element(app, "kanban-add-card-To Do-Alice Johnson")
+        let cards = destination.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-Task '"))
+        let initiallyRealized = Set(cards.allElementsBoundByIndex.map(\.identifier))
+        XCTAssertFalse(initiallyRealized.isEmpty, "the long cell starts with some realized cards")
+        XCTAssertGreaterThan(footer.frame.minY, board.frame.maxY + 300, "the tail starts beyond the viewport and overscan")
+
+        scrollIntoBoardView(app, footer)
+        let tail = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+        let previousTail = try XCTUnwrap(tail.last)
+        let source = try XCTUnwrap(tail.dropLast().last)
+        let sourceID = source.identifier
+        let previousTailID = previousTail.identifier
+        XCTAssertFalse(initiallyRealized.contains(previousTail.identifier), "the seeded tail was never realized before the first scroll")
+        XCTAssertLessThan(previousTail.frame.maxY, footer.frame.maxY, "the last seeded card is above the end-of-cell add button")
+        XCTAssertLessThan(source.frame.minY, previousTail.frame.minY, "the source starts before the last card, so this is a real reorder")
+        XCTAssertTrue(source.isHittable, "the source and end of the long cell are both in view")
+        drag(app, source, to: footer)
+
+        XCTAssertTrue(eventually {
+            let order = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+            return order.last?.identifier == sourceID && order.dropLast().last?.identifier == previousTailID
+        }, "dropping the penultimate card at the end makes it last, after the previous tail")
     }
 
     func testDragACardOntoARowHeaderReassignsIt() {
@@ -486,6 +555,53 @@ final class KanbanBoardUITests: XCTestCase {
         app.typeKey(.rightArrow, modifierFlags: .command)
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")) },
                       "⌘→ moves it to the next column")
+    }
+
+    func testKeyboardMoveToAnOffscreenCellRevealsAndFocusesTheCard() {
+        let app = launch(["-uitestKanbanVolume", "2000"])
+        openVolume(app)
+        let title = "Keyboard reveal source"
+        addCard(app, title: title, column: "To Do", row: "Unassigned")
+        let board = element(app, "kanban-board")
+        let destination = element(app, "kanban-cell-To Do-Alice Johnson")
+        XCTAssertGreaterThan(element(app, "kanban-add-card-To Do-Alice Johnson").frame.minY, board.frame.maxY,
+                             "moving to the next row will append below the viewport")
+        openEditor(app, title)
+        element(app, "kanban-editor-cancel").click()
+        app.typeKey(.downArrow, modifierFlags: .command)
+        XCTAssertTrue(eventually {
+            let moved = element(app, "kanban-card-\(title)")
+            let visible = board.frame.insetBy(dx: 4, dy: 4)
+            let belowHeaders = moved.frame.minY >= element(app, "kanban-colhdr-To Do").frame.maxY
+            return moved.exists && moved.isHittable && visible.contains(moved.frame) && belowHeaders && isInside(moved, destination)
+        }, "⌘↓ scrolls the appended card fully into view")
+
+        app.typeKey(.return, modifierFlags: [])
+        let field = element(app, "kanban-editor-title")
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Return opens the newly focused card without another click")
+        XCTAssertEqual(field.value as? String, title, "focus follows the moved card")
+    }
+
+    func testToolbarFocusStopsShortcutsFromActingOnThePreviouslyFocusedCard() {
+        let app = launch()
+        openPlatform(app)
+        openEditor(app, "Write docs")
+        element(app, "kanban-editor-cancel").click()
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        let card = element(app, "kanban-card-Write docs")
+        let cell = element(app, "kanban-cell-To Do-Mia Chen")
+        XCTAssertTrue(eventually { card.exists && card.isHittable && isInside(card, cell) }, "a keyboard move completes its focus request")
+
+        let toolbarButton = element(app, "kanban-show-archived")
+        toolbarButton.hover()
+        let edit = cell.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-edit-'")).firstMatch
+        XCTAssertTrue(eventually { edit.exists && edit.isHittable }, "the card has focus after the reveal, with the pointer away from it")
+        toolbarButton.click()
+        app.typeKey(.rightArrow, modifierFlags: .command)
+        XCTAssertFalse(eventually(timeout: 2) { !isInside(card, cell) }, "⌘→ after clicking the toolbar must not move the old card")
+        XCTAssertTrue(card.exists && isInside(card, cell), "the previous card stays in To Do")
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(element(app, "kanban-editor-title").waitForExistence(timeout: 2), "Return must not reopen the old card either")
     }
 
     // MARK: - Increment 6: filters, List view, bulk, undo, Change Log, search
