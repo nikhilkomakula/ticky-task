@@ -811,7 +811,8 @@ final class KanbanScrollOffset {
             if abs(geometry.contentOffset.y - clamped) < 1 { pendingAnchorY = nil }
         }
         // Coarse steps, absorbed by the cells' overscan, so card bodies don't follow every pixel.
-        let range = (floor(geometry.visibleRect.minY / 200) * 200)...(ceil(geometry.visibleRect.maxY / 200) * 200)
+        // 400-point steps inside an 800-point overscan: cards are rebuilt rarely, and never in view.
+        let range = (floor(geometry.visibleRect.minY / 400) * 400)...(ceil(geometry.visibleRect.maxY / 400) * 400)
         if range != visibleRange { visibleRange = range }
     }
 }

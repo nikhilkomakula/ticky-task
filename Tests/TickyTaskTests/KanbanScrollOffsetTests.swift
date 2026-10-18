@@ -25,7 +25,7 @@ struct KanbanScrollOffsetTests {
         let scroll = KanbanScrollOffset()
         scroll.update(geometry(y: 10))
         let range = scroll.visibleRange
-        #expect(!notifies(scroll, { _ = scroll.visibleRange }) { scroll.update(geometry(y: 60)) }, "same 200-point step")
+        #expect(!notifies(scroll, { _ = scroll.visibleRange }) { scroll.update(geometry(y: 60)) }, "same 400-point step")
         #expect(!notifies(scroll, { _ = scroll.x }) { scroll.update(geometry(y: 90)) }, "vertical scrolls leave the sticky headers")
         #expect(notifies(scroll, { _ = scroll.visibleRange }) { scroll.update(geometry(y: 450)) })
         #expect(scroll.visibleRange != range)

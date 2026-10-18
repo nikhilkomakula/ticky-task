@@ -22,7 +22,7 @@ struct BoardCardLayout: Equatable, Sendable {
     }
 
     /// Binary searches bound the window; distant focus/reveal targets stay isolated slots.
-    func visibleIndices(in range: ClosedRange<CGFloat>, pinned: Set<UUID> = [], overscan: CGFloat = 300) -> [Int] {
+    func visibleIndices(in range: ClosedRange<CGFloat>, pinned: Set<UUID> = [], overscan: CGFloat = 800) -> [Int] {
         func firstIndex(where predicate: (Int) -> Bool) -> Int {
             var lower = 0, upper = ids.count
             while lower < upper {

@@ -8,10 +8,12 @@ struct BoardCardLayoutTests {
     @Test("Visible slots stay bounded as a cell grows", arguments: [200, 10_000])
     func boundedWindow(cardCount: Int) {
         let layout = BoardCardLayout(ids: (0..<cardCount).map { _ in UUID() })
-        let indices = layout.visibleIndices(in: 7_800...8_400)
+        let indices = layout.visibleIndices(in: 7_800...8_400, overscan: 300)
 
         #expect(indices == Array(96...111))
         #expect(indices.count < 20, "only the viewport and overscan create card views")
+        let standard = layout.visibleIndices(in: 7_800...8_400).count
+        #expect(standard < 40, "the default overscan stays bounded too")
         #expect(layout.totalHeight == CGFloat(cardCount * 72 + (cardCount - 1) * 6))
     }
 
@@ -44,7 +46,7 @@ struct BoardCardLayoutTests {
     func distantPinnedCard() {
         let ids = (0..<10_000).map { _ in UUID() }
         let layout = BoardCardLayout(ids: ids)
-        let indices = layout.visibleIndices(in: 7_800...8_400, pinned: [ids[9_999], UUID()])
+        let indices = layout.visibleIndices(in: 7_800...8_400, pinned: [ids[9_999], UUID()], overscan: 300)
 
         #expect(indices == Array(96...111) + [9_999])
         #expect(indices.count == 17, "pinning must not realize intervening cards")

@@ -65,4 +65,23 @@ final class KanbanBoardScrollPerfTests: XCTestCase {
         }
         app.terminate()
     }
+
+    /// A fresh launch, scrolled once through content never drawn before: what opening a big board costs.
+    /// Both directions, since scroll-wheel signs differ between machines; one of them is a no-op at the top.
+    func testColdScrollThroughTheBoard() {
+        let options = XCTMeasureOptions()
+        options.iterationCount = 3
+        options.invocationOptions = [.manuallyStart, .manuallyStop]
+        measure(metrics: [XCTClockMetric()], options: options) {
+            let app = launch()
+            openVolumeBoard(app)
+            let board = element(app, "kanban-board")
+            XCTAssertTrue(board.waitForExistence(timeout: 10))
+            startMeasuring()
+            for _ in 0..<4 { board.scroll(byDeltaX: 0, deltaY: -1500) }
+            for _ in 0..<4 { board.scroll(byDeltaX: 0, deltaY: 1500) }
+            stopMeasuring()
+            app.terminate()
+        }
+    }
 }
