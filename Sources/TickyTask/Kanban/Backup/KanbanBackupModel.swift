@@ -4,10 +4,11 @@ import SwiftData
 // MARK: - Top-level DTO
 
 /// Backup of all Kanban data: people, projects (boards), columns, resources
-/// (memberships), labels, tasks, subtasks, and activities. Every field is optional
-/// with stable JSON keys so future releases decode older files unchanged.
+/// (memberships), labels, tasks, subtasks, activities, and availability data
+/// (time off and overrides). Every field is optional with stable JSON keys so
+/// future releases decode older files unchanged.
 struct KanbanBackupDTO: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int = currentVersion
     var people: [KanbanPersonDTO] = []
@@ -18,8 +19,12 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
     var tasks: [KanbanTaskDTO] = []
     var subtasks: [KanbanSubtaskDTO] = []
     var activities: [KanbanActivityDTO] = []
+    /// Time off (v2+, optional for v1 compatibility).
+    var timeOff: [KanbanTimeOffDTO]?
+    /// Availability overrides (v2+, optional for v1 compatibility).
+    var availabilityOverrides: [KanbanAvailabilityOverrideDTO]?
 
-    /// Snapshot the entire Kanban graph, including archived items.
+    /// Snapshot the entire Kanban graph, including archived items and availability data.
     @MainActor
     static func snapshot(context: ModelContext) throws -> KanbanBackupDTO {
         let people = try context.fetch(FetchDescriptor<KanbanPerson>())
@@ -30,6 +35,8 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
         let tasks = try context.fetch(FetchDescriptor<KanbanTask>())
         let subtasks = try context.fetch(FetchDescriptor<KanbanSubtask>())
         let activities = try context.fetch(FetchDescriptor<KanbanActivity>())
+        let timeOff = try context.fetch(FetchDescriptor<KanbanTimeOff>())
+        let overrides = try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>())
 
         return KanbanBackupDTO(
             version: currentVersion,
@@ -40,7 +47,9 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
             labels: labels.map(KanbanLabelDTO.init),
             tasks: tasks.map(KanbanTaskDTO.init),
             subtasks: subtasks.map(KanbanSubtaskDTO.init),
-            activities: activities.map(KanbanActivityDTO.init)
+            activities: activities.map(KanbanActivityDTO.init),
+            timeOff: timeOff.isEmpty ? nil : timeOff.map(KanbanTimeOffDTO.init),
+            availabilityOverrides: overrides.isEmpty ? nil : overrides.map(KanbanAvailabilityOverrideDTO.init)
         ).deterministicallySorted()
     }
 
@@ -55,7 +64,9 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
             labels: labels.sorted { $0.id.uuidString < $1.id.uuidString },
             tasks: tasks.sorted { $0.id.uuidString < $1.id.uuidString },
             subtasks: subtasks.sorted { $0.id.uuidString < $1.id.uuidString },
-            activities: activities.sorted { $0.id.uuidString < $1.id.uuidString }
+            activities: activities.sorted { $0.id.uuidString < $1.id.uuidString },
+            timeOff: timeOff?.sorted { $0.id.uuidString < $1.id.uuidString },
+            availabilityOverrides: availabilityOverrides?.sorted { $0.id.uuidString < $1.id.uuidString }
         )
     }
 }
@@ -71,6 +82,8 @@ struct KanbanPersonDTO: Codable, Equatable, Sendable {
     var skills: [String]
     var createdAt: Date
     var archivedAt: Date?
+    /// Alternative names the assistant learned for this person (v2+, optional).
+    var aliases: [String]?
 
     init(_ model: KanbanPerson) {
         self.id = model.id
@@ -81,6 +94,7 @@ struct KanbanPersonDTO: Codable, Equatable, Sendable {
         self.skills = model.skills
         self.createdAt = model.createdAt
         self.archivedAt = model.archivedAt
+        self.aliases = model.aliases
     }
 }
 
@@ -96,6 +110,10 @@ struct KanbanProjectDTO: Codable, Equatable, Sendable {
     var createdAt: Date
     var updatedAt: Date
     var archivedAt: Date?
+    /// Board start day (v2+, yyyyMMdd, optional).
+    var startDay: String?
+    /// Board end day (v2+, yyyyMMdd, optional).
+    var endDay: String?
     var workWeekDays: [Int]
     var hoursPerDay: Double
     var defaultCapacityHoursPerWeek: Double
@@ -122,6 +140,8 @@ struct KanbanProjectDTO: Codable, Equatable, Sendable {
         self.createdAt = model.createdAt
         self.updatedAt = model.updatedAt
         self.archivedAt = model.archivedAt
+        self.startDay = model.startDay
+        self.endDay = model.endDay
         self.workWeekDays = model.workWeekDays
         self.hoursPerDay = model.hoursPerDay
         self.defaultCapacityHoursPerWeek = model.defaultCapacityHoursPerWeek
