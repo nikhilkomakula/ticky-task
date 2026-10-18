@@ -23,6 +23,13 @@ enum UITestSupport {
         return URL(fileURLWithPath: args[index + 1])
     }
 
+    /// `-uitestKanbanVolume <N>`: seeds a board with N cards for scrolling performance tests.
+    static var kanbanVolumeCardCount: Int? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestKanbanVolume"), index + 1 < args.count else { return nil }
+        return Int(args[index + 1])
+    }
+
     #if DEBUG
     /// `-uitestFailPurgeSaves`: every auto-delete save fails (a store that keeps
     /// rejecting saves), to exercise recovery without a restart loop.
@@ -81,6 +88,9 @@ enum UITestSupport {
             try service.save()
             if ProcessInfo.processInfo.arguments.contains("-uitestKanbanSeed") {
                 try seedKanban(context)
+            }
+            if let cardCount = kanbanVolumeCardCount {
+                _ = try KanbanVolumeSeed.seed(into: context, cardCount: cardCount)
             }
         } catch {
             // Seeding is best-effort; a failed seed just yields an empty test board.
