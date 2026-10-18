@@ -186,6 +186,8 @@ The **Weekly availability** row (frozen below the header) shows the team's total
 
 **Record time off.** Click **Add time off** above the grid, or right-click a resource and choose **Add time off…**. Pick the dates, **Full day**, **Morning** or **Afternoon** (a single day), and a type (PTO, Sick, Personal, Training, Other), with an optional note. Time off belongs to the person, so it counts on every board they're on. **Time off…** lists, edits and removes someone's entries. Days covered by more than one entry count once.
 
+**Public holidays.** Click **⋯ › Public holidays…** to manage the holidays that apply to everyone. Holidays subtract from available days for everyone unless they're listed as someone who works it (for example, on-call duties or essential staff). A cell where all work days are holidays shows **Holiday** instead of a number. A week with any holiday shows a small sun glyph (☀) in the header.
+
 **Override a week.** Click a cell (or focus it and press **Return**) to see the possible days, the time off counted and the result. **Override…** replaces that week's available days for this board (in half days), with an optional note; a small pencil marks the cell. **Clear override** goes back to the worked-out value. If you later change the board's or the person's dates so the week has fewer days than the override, the override is kept, marked with a warning, and not used until you change or clear it.
 
 **Update from your PTO list (Update availability…).** If your team keeps PTO somewhere else (a Slack canvas, a spreadsheet, an email), you don't have to retype it:

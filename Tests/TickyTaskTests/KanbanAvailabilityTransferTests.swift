@@ -146,11 +146,30 @@ struct KanbanAvailabilityTransferTests {
         let weeks = KanbanAvailability.window(board: KanbanAvailability.Board(board), today: KanbanDay(key: "20261020")!)
         let lines = KanbanAvailabilityCSV.csv(board, weeks: weeks, calendar: .current).components(separatedBy: "\r\n").filter { !$0.isEmpty }
         #expect(lines.count == weeks.count + 1)
-        #expect(lines[0].contains("Week start") && lines[0].contains("Effective days"))
+        #expect(lines[0].contains("Week start") && lines[0].contains("Holiday days"))
         let overridden = try #require(lines.first { $0.contains(",2026-10-12,") }).components(separatedBy: ",")
         #expect(overridden[3] == "Ravi Kumar" && overridden[7] == "5" && overridden[9] == "3" && overridden[10] == "3" && overridden[12] == "overridden")
         let off = try #require(lines.first { $0.contains(",2026-10-19,") }).components(separatedBy: ",")
         #expect(off[8] == "2" && off[9] == "" && off[10] == "2" && off[11] == "100", "Tue–Thu off leaves 2 of 5")
+    }
+
+    @Test("The availability CSV includes holiday days in the last column")
+    func csvWithHolidays() throws {
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let board = try s.createProject(name: "Platform", key: "PLAT", startDay: "20261005", endDay: "20261127")
+        let ravi = try s.createPerson(name: "Ravi Kumar", initials: "RK")
+        let membership = try s.addMembership(ravi, to: board)
+        // Add a holiday on a work day (Monday 19 Oct 2026)
+        try s.addHoliday(KanbanHolidayDTO(day: "20261019", name: "Thanksgiving", portion: .full), on: board)
+        try context.save()
+        let weeks = KanbanAvailability.window(board: KanbanAvailability.Board(board), today: KanbanDay(key: "20261020")!)
+        let lines = KanbanAvailabilityCSV.csv(board, weeks: weeks, calendar: .current).components(separatedBy: "\r\n").filter { !$0.isEmpty }
+        #expect(lines[0].contains("Holiday days"))
+        let holiday = try #require(lines.first { $0.contains(",2026-10-19,") }).components(separatedBy: ",")
+        // 5 work days in week, 1 is a holiday → possible 4, holiday days 1
+        #expect(holiday[7] == "4", "Possible days (without the holiday)")
+        #expect(holiday[13] == "1", "Holiday days column")
     }
 
     @Test("Import conflicts are counted for the preview and keep what's here unless the file's version is chosen")
