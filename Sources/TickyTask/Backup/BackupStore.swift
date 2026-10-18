@@ -50,11 +50,12 @@ struct KanbanBackupDiff: Equatable, Sendable {
     let activities: EntityDiff
     let timeOff: EntityDiff
     let availabilityOverrides: EntityDiff
+    let holidays: EntityDiff
     let droppedDependencyEdges: Int
 
-    var totalAdded: Int { people.added + projects.added + columns.added + resources.added + labels.added + tasks.added + subtasks.added + activities.added + timeOff.added + availabilityOverrides.added }
-    var totalUpdated: Int { people.updated + projects.updated + columns.updated + resources.updated + labels.updated + tasks.updated + subtasks.updated + activities.updated + timeOff.updated + availabilityOverrides.updated }
-    var totalRemoved: Int { people.removed + projects.removed + columns.removed + resources.removed + labels.removed + tasks.removed + subtasks.removed + activities.removed + timeOff.removed + availabilityOverrides.removed }
+    var totalAdded: Int { people.added + projects.added + columns.added + resources.added + labels.added + tasks.added + subtasks.added + activities.added + timeOff.added + availabilityOverrides.added + holidays.added }
+    var totalUpdated: Int { people.updated + projects.updated + columns.updated + resources.updated + labels.updated + tasks.updated + subtasks.updated + activities.updated + timeOff.updated + availabilityOverrides.updated + holidays.updated }
+    var totalRemoved: Int { people.removed + projects.removed + columns.removed + resources.removed + labels.removed + tasks.removed + subtasks.removed + activities.removed + timeOff.removed + availabilityOverrides.removed + holidays.removed }
 }
 
 /// Bridges live SwiftData models and the pure `BackupService`: reads a snapshot
@@ -122,6 +123,7 @@ enum BackupStore {
             let activities = Set(try context.fetch(FetchDescriptor<KanbanActivity>()).map(\.id))
             let timeOff = Set(try context.fetch(FetchDescriptor<KanbanTimeOff>()).map(\.id))
             let overrides = Set(try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()).map(\.id))
+            let holidays = Set(try context.fetch(FetchDescriptor<KanbanHoliday>()).map(\.id))
 
             let report = try KanbanBackupValidator.validate(kanbanSection)
             kanbanDiff = KanbanBackupDiff(
@@ -135,6 +137,7 @@ enum BackupStore {
                 activities: EntityDiff(imported: Set(kanbanSection.activities.map(\.id)), existing: activities),
                 timeOff: EntityDiff(imported: Set((kanbanSection.timeOff ?? []).map(\.id)), existing: timeOff),
                 availabilityOverrides: EntityDiff(imported: Set((kanbanSection.availabilityOverrides ?? []).map(\.id)), existing: overrides),
+                holidays: EntityDiff(imported: Set((kanbanSection.holidays ?? []).map(\.id)), existing: holidays),
                 droppedDependencyEdges: report.droppedDependencyEdges
             )
         }
@@ -255,6 +258,7 @@ enum BackupStore {
         all += try context.fetch(FetchDescriptor<KanbanActivity>()) as [any PersistentModel]
         all += try context.fetch(FetchDescriptor<KanbanTimeOff>()) as [any PersistentModel]
         all += try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()) as [any PersistentModel]
+        all += try context.fetch(FetchDescriptor<KanbanHoliday>()) as [any PersistentModel]
         return all
     }
 
@@ -499,6 +503,18 @@ enum BackupStore {
             override.updatedAt = dto.updatedAt
             override.resource = dto.resourceId.flatMap { resourceMap[$0] }
             context.insert(override)
+        }
+
+        // Insert public holidays (v3+).
+        for dto in kanban.holidays ?? [] {
+            let holiday = KanbanHoliday(id: dto.id, day: dto.day, name: dto.name,
+                                       portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,
+                                       workedBy: dto.workedBy.flatMap { personIds in
+                                           personIds.compactMap { personMap[$0] }.isEmpty ? nil : personIds
+                                       })
+            holiday.createdAt = dto.createdAt
+            holiday.updatedAt = dto.updatedAt
+            context.insert(holiday)
         }
 
         return KanbanInsertedGraph(tasksByProject: tasksByProject)

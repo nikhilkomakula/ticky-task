@@ -409,10 +409,18 @@ struct KanbanService {
     }
 
     /// Hard-deletes a person; refused while they have any membership, archived included.
+    /// Removes them from every holiday's workedBy list.
     func deletePerson(_ person: KanbanPerson) throws {
         try RecurrenceMaterializer.checkpoint(context)
         guard try memberships(of: person).isEmpty else {
             throw KanbanServiceError.invariant("\(person.name) is still on a board; archive them instead.")
+        }
+        let holidays = try context.fetch(FetchDescriptor<KanbanHoliday>())
+        for holiday in holidays {
+            if holiday.workedBy?.contains(person.id) ?? false {
+                holiday.workedBy = holiday.workedBy.flatMap { $0.filter { $0 != person.id } }
+                if holiday.workedBy?.isEmpty ?? false { holiday.workedBy = nil }
+            }
         }
         context.delete(person)
         try saveOrUndo()

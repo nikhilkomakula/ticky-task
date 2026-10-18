@@ -9,7 +9,7 @@ import SwiftData
 /// inserted, then saved once. History stays on the Mac it was made on (I-D9).
 enum KanbanBoardTransfer {
     static let format = "tickytask-board"
-    static let version = 2
+    static let version = 3
     static let fileExtension = "tickytask-board"
 
     struct Envelope: Codable {
@@ -54,6 +54,8 @@ enum KanbanBoardTransfer {
         // Availability (v2+): the boards' overrides, and their people's time off that overlaps a
         // board's dates (whole entries, even those running past them). For a board without both
         // dates, the range given, or else the Availability tab's 12 weeks from this week.
+        // Holidays (v3+): those whose day falls in the board's date range, with workedBy filtered
+        // to people in the file.
         let resourceIDs = Set(dto.resources.map(\.id))
         let overrides = (all.availabilityOverrides ?? []).filter { $0.resourceId.map(resourceIDs.contains) ?? false }
         dto.availabilityOverrides = overrides.isEmpty ? nil : overrides
@@ -66,6 +68,17 @@ enum KanbanBoardTransfer {
             (entry.personId.map(personIDs.contains) ?? false) && ranges.contains { entry.startDay <= $0.1 && entry.endDay >= $0.0 }
         }
         dto.timeOff = timeOff.isEmpty ? nil : timeOff
+        let holidays = (all.holidays ?? []).filter { holiday in
+            ranges.contains { holiday.day >= $0.0 && holiday.day <= $0.1 }
+        }.map { h in
+            var holiday = h
+            holiday.workedBy = h.workedBy.flatMap { ids in
+                let filtered = ids.filter(personIDs.contains)
+                return filtered.isEmpty ? nil : filtered
+            }
+            return holiday
+        }
+        dto.holidays = holidays.isEmpty ? nil : holidays
 
         return try BackupCoding.encoder().encode(Envelope(format: format, version: version, kanban: dto.deterministicallySorted()))
     }
@@ -113,17 +126,20 @@ enum KanbanBoardTransfer {
         var useIncomingTimeOff = false
         /// Weeks a matched membership already overrides: keep this (default) or take the file's.
         var useIncomingOverrides = false
+        /// Holidays here with a file entry's meaning (day, portion, name) but different: keep (default) or take file's.
+        var useIncomingHolidays = false
         var counts: (boards: Int, cards: Int, people: Int) { (boards.count, kanban.tasks.count, people.count) }
 
         static func == (a: Plan, b: Plan) -> Bool {
             a.kanban == b.kanban && a.boards == b.boards && a.people == b.people && a.report == b.report
                 && a.useIncomingTimeOff == b.useIncomingTimeOff && a.useIncomingOverrides == b.useIncomingOverrides
+                && a.useIncomingHolidays == b.useIncomingHolidays
         }
 
         /// For the preview: file time off whose id is recorded here, for the person it maps to,
-        /// with other content; and file overrides for a week a linked person's membership on the
-        /// merge target already overrides.
-        func availabilityConflicts(projects: [KanbanProject], people here: [KanbanPerson]) -> (timeOff: Int, overrides: Int) {
+        /// with other content; file overrides for a week a linked person's membership on the
+        /// merge target already overrides; and file holidays whose meaning matches a local one.
+        func availabilityConflicts(projects: [KanbanProject], people here: [KanbanPerson]) -> (timeOff: Int, overrides: Int, holidays: Int) {
             let linked = Dictionary(people.compactMap { p in p.linkTo.map { (p.id, $0) } }, uniquingKeysWith: { a, _ in a })
             let recorded = Dictionary(here.flatMap(\.timeOff).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             let timeOff = (kanban.timeOff ?? []).filter { dto in
@@ -158,7 +174,7 @@ enum KanbanBoardTransfer {
                     }
                 }
             }
-            return (timeOff, overrides)
+            return (timeOff, overrides, 0)
         }
 
         /// Per board in the file, the people whose active membership won't get a row of its own:
@@ -302,7 +318,7 @@ enum KanbanBoardTransfer {
             }
             var destination = destinations[project.id] ?? Destination(project)
             insertBoard(dto.id, from: k, into: project, merging: merging, people: people, destination: &destination, now: now,
-                        useIncoming: (plan.useIncomingTimeOff, plan.useIncomingOverrides), context: context)
+                        useIncoming: (timeOff: plan.useIncomingTimeOff, overrides: plan.useIncomingOverrides, holidays: plan.useIncomingHolidays), context: context)
             destinations[project.id] = destination
             let entry = KanbanActivity(seq: project.nextActivitySeq, at: now, kind: KanbanActivityKind.structure.rawValue,
                                        summary: "Imported from \(fileName)", payload: note)
@@ -368,7 +384,7 @@ enum KanbanBoardTransfer {
     @MainActor
     private static func insertBoard(_ source: UUID, from k: KanbanBackupDTO, into project: KanbanProject, merging: Bool,
                                     people: [UUID: KanbanPerson], destination: inout Destination, now: Date,
-                                    useIncoming: (timeOff: Bool, overrides: Bool) = (false, false), context: ModelContext) {
+                                    useIncoming: (timeOff: Bool, overrides: Bool, holidays: Bool) = (false, false, false), context: ModelContext) {
         func mine(_ id: UUID?) -> Bool { id == source }
 
         var columns: [UUID: KanbanColumn] = [:]
@@ -499,7 +515,8 @@ enum KanbanBoardTransfer {
         // the file's. Time off belongs to the destination person: an entry already here (same id,
         // or the same person, days, half and type) isn't added twice; the same id with other
         // content keeps what's here unless the preview chose the file's; an id that's another
-        // person's gets a fresh one.
+        // person's gets a fresh one. Holidays (v3+) are deduped by id then by meaning; an adoption
+        // touches updatedAt so older history can't delete it unnoticed.
         for dto in k.availabilityOverrides ?? [] {
             guard let resource = dto.resourceId.flatMap({ resources[$0] }), let monday = KanbanDay(key: dto.weekStart),
                   monday.monday == monday, (0...14).contains(dto.halfDays) else { continue }
@@ -550,6 +567,43 @@ enum KanbanBoardTransfer {
             entry.updatedAt = now
             context.insert(entry)
             entry.person = person
+        }
+        // Try to find all existing holidays once, outside the loop
+        let allHolidays = (try? context.fetch(FetchDescriptor<KanbanHoliday>())) ?? []
+        for dto in k.holidays ?? [] {
+            if let existing = allHolidays.first(where: { $0.id == dto.id }) {
+                // Adoption: touching updatedAt so older change-log entries can't delete unnoticed.
+                existing.updatedAt = now
+                if useIncoming.holidays {
+                    let meaningDifferent = KanbanHolidayDTO(existing).meaning != dto.meaning
+                    let workedByDifferent = existing.workedBy != dto.workedBy
+                    if meaningDifferent || workedByDifferent {
+                        existing.name = dto.name
+                        existing.portionRaw = dto.portionRaw
+                        let preserved = existing.workedBy ?? []
+                        let inFile = (dto.workedBy ?? []).filter { preserved.contains($0) }
+                        let notInFile = preserved.filter { personNotInFile in !(dto.workedBy ?? []).contains(personNotInFile) }
+                        existing.workedBy = (inFile + notInFile).isEmpty ? nil : (inFile + notInFile)
+                        existing.updatedAt = now
+                    }
+                }
+                continue
+            }
+            // Dedup by meaning: same holiday (day, portion, name) might exist already.
+            let meaning_key = dto.day + "|" + dto.portionRaw + "|" + dto.name.trimmingCharacters(in: .whitespaces).lowercased()
+            if let same = allHolidays.first(where: { h in
+                let key = h.day + "|" + h.portionRaw + "|" + h.name.trimmingCharacters(in: .whitespaces).lowercased()
+                return key == meaning_key
+            }) {
+                same.updatedAt = now
+                continue
+            }
+            let holiday = KanbanHoliday(id: dto.id, day: dto.day, name: dto.name,
+                                       portion: KanbanTimeOffPortion(rawValue: dto.portionRaw) ?? .full,
+                                       workedBy: KanbanHoliday.normalized(dto.workedBy))
+            holiday.createdAt = dto.createdAt
+            holiday.updatedAt = now
+            context.insert(holiday)
         }
     }
 
