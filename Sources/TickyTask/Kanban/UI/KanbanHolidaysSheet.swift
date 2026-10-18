@@ -73,6 +73,8 @@ struct KanbanHolidaysSheet: View {
         .padding(20)
         .frame(minWidth: 500, minHeight: 400)
         .sheet(item: $editing) { KanbanHolidayEditor(draft: $0, project: project, people: allPeople) }
+        // Keeps the buttons' own identifiers: a container's identifier otherwise replaces them.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-holidays-sheet")
     }
 }

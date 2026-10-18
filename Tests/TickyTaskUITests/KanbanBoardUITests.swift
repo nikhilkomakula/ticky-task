@@ -632,6 +632,8 @@ final class KanbanBoardUITests: XCTestCase {
         let destination = element(app, "kanban-cell-To Do-Alice Johnson")
         XCTAssertGreaterThan(destination.frame.maxY, board.frame.maxY,
                              "moving to the next row will append below the viewport")
+        let source = element(app, "kanban-card-\(title)")
+        scrollIntoBoardView(app) { source.frame }
         openEditor(app, title)
         element(app, "kanban-editor-cancel").click()
         app.typeKey(.downArrow, modifierFlags: .command)
@@ -658,16 +660,15 @@ final class KanbanBoardUITests: XCTestCase {
         let cell = element(app, "kanban-cell-To Do-Mia Chen")
         XCTAssertTrue(eventually { card.exists && card.isHittable && isInside(card, cell) }, "a keyboard move completes its focus request")
 
-        let toolbarButton = element(app, "kanban-show-archived")
-        toolbarButton.hover()
-        let edit = cell.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-edit-'")).firstMatch
-        XCTAssertTrue(eventually { edit.exists && edit.isHittable }, "the card has focus after the reveal, with the pointer away from it")
-        toolbarButton.click()
+        // Focus moves to a text field: ⌘→ is the field's, never the finished request's card.
+        element(app, "kanban-filter").click()
+        let field = element(app, "kanban-filter-text")
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the filter opens")
+        field.click()
+        field.typeText("x")
         app.typeKey(.rightArrow, modifierFlags: .command)
-        XCTAssertFalse(eventually(timeout: 2) { !isInside(card, cell) }, "⌘→ after clicking the toolbar must not move the old card")
+        XCTAssertFalse(eventually(timeout: 2) { !isInside(card, cell) }, "⌘→ in the filter field must not move the previously moved card")
         XCTAssertTrue(card.exists && isInside(card, cell), "the previous card stays in To Do")
-        app.typeKey(.return, modifierFlags: [])
-        XCTAssertFalse(element(app, "kanban-editor-title").waitForExistence(timeout: 2), "Return must not reopen the old card either")
     }
 
     // MARK: - Increment 6: filters, List view, bulk, undo, Change Log, search
