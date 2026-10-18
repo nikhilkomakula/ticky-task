@@ -168,6 +168,32 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 
 ---
 
+## Availability
+
+**Give the board dates.** Open **Board settings…** from the board's menu in the sidebar (or **Board actions** in the toolbar) and turn on **Starts on** and **Ends on**. You can also set them in **New board**. Both are optional. The Availability tab shows every week between them; without dates it shows 12 weeks from this week, with arrows to move.
+
+**Read the tab.** Choose **Availability** in the view picker. Each row is a resource on the board, and each column is a week, always Monday to Sunday (the header shows the dates, with the month and year above). A cell shows how many days that person is available that week, after their recorded time off, out of the days they could work:
+
+| Cell | Means |
+|---|---|
+| **5** of 5 days, green | Available more than 60 % of the week (on a five-day week, more than 3 days) |
+| **3** of 5 days, yellow | Exactly 60 % (3 days) |
+| **2.5** of 5 days, red | Less than 60 % (fewer than 3 days) |
+| **3** of 3 days, green | A short week (the board starts midweek, or the person joins or leaves that week), fully available |
+| — | They can't work that week on this board (outside the board's dates or their membership) |
+
+The **Team** row adds everyone's days, for example *12.5 of 15 · 83%*. The number counts days present only: someone at 50 % allocation with no time off still shows 5 of 5 (their allocation shows in the row header when **Show allocation in row headers** is on). Card filters don't apply here.
+
+**Record time off.** Click **Add time off** above the grid, or right-click a resource and choose **Add time off…**. Pick the dates, **Full day**, **Morning** or **Afternoon** (a single day), and a type (PTO, Sick, Personal, Training, Other), with an optional note. Time off belongs to the person, so it counts on every board they're on. **Time off…** lists, edits and removes someone's entries. Days covered by more than one entry count once.
+
+**Override a week.** Click a cell (or focus it and press **Return**) to see the possible days, the time off counted and the result. **Override…** replaces that week's available days for this board (in half days), with an optional note; a small pencil marks the cell. **Clear override** goes back to the worked-out value. If you later change the board's or the person's dates so the week has fewer days than the override, the override is kept, marked with a warning, and not used until you change or clear it.
+
+Every change here is one entry in the board's **Change Log**, and **⌘Z** undoes it. Undo refuses if the same time off was changed again since, on any board.
+
+Arrow keys move between cells, **Return** opens the details and **Esc** closes them.
+
+---
+
 ## Change log, undo and revert
 
 **Undo and redo.** Press **⌘Z** to undo the last board change. Press **⇧⌘Z** to redo. These are scoped to the current project and cleared on relaunch.

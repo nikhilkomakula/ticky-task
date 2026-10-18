@@ -219,8 +219,10 @@ private struct KanbanRow2View: View {
 
             if let project = projects.first(where: { projectMatches($0) }) {
                 KanbanViewControls(project: project)
+                let onAvailability = KanbanBoardState.decode(project.boardState).view == .availability
 
                 // Expand rows menu
+                if !onAvailability {
                 Menu {
                     Button("Expand all rows") { setAll(project, collapsed: false) }
                         .keyboardShortcut(.downArrow, modifiers: [.control, .command])
@@ -234,6 +236,7 @@ private struct KanbanRow2View: View {
                 .fixedSize()
                 .help("Expand or collapse rows")
                 .accessibilityIdentifier("kanban-expand-collapse")
+                }
 
                 Spacer()
 
@@ -249,6 +252,10 @@ private struct KanbanRow2View: View {
 
                 // Board actions menu
                 Menu {
+                    Button(action: { app.kanbanBoardSettingsProjectID = project.id }) {
+                        Label("Board settings…", systemImage: "slider.horizontal.3")
+                    }
+                    .accessibilityIdentifier("kanban-board-settings")
                     Button(action: { app.kanbanLabelManagerProjectID = project.id }) {
                         Label("Edit labels", systemImage: "tag")
                     }
@@ -285,6 +292,7 @@ private struct KanbanRow2View: View {
                     .accessibilityIdentifier("kanban-summary")
 
                 // + Card
+                if !onAvailability {
                 Button(action: onNewCard) {
                     Label("Card", systemImage: "plus")
                 }
@@ -292,6 +300,7 @@ private struct KanbanRow2View: View {
                 .frame(height: 28)
                 .help("New card")
                 .accessibilityIdentifier("kanban-new-card")
+                }
             }
         } else {
             Spacer()

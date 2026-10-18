@@ -152,4 +152,58 @@ struct KanbanCardSnapshotTests {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("sidebar-\(scheme == .dark ? "dark" : "light").png"))
         }
     }
+
+    @Test("The Availability grid (header, team row, members with time off and an override), legend and a cell popover render in light and dark")
+    func renderAvailability() throws {
+        guard let dir = ProcessInfo.processInfo.environment["CARD_SNAPSHOT_DIR"] else { return }
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context, history: KanbanHistory())
+        let project = try s.createProject(name: "Platform", key: "PLAT", startDay: "20261021", endDay: "20261206")
+        let names = ["Ravi Kumar", "Mia Chen", "Alexandra Montgomery"]
+        var resources: [KanbanResource] = []
+        for name in names {
+            resources.append(try s.addMembership(try s.createPerson(name: name, initials: String(name.prefix(2)).uppercased()), to: project))
+        }
+        let ravi = try #require(resources[0].person), mia = try #require(resources[1].person)
+        try s.addTimeOff(KanbanTimeOffDTO(personId: ravi.id, startDay: "20261027", endDay: "20261028"), on: project)
+        try s.addTimeOff(KanbanTimeOffDTO(personId: ravi.id, startDay: "20261110", endDay: "20261113", kind: .sick), on: project)
+        try s.addTimeOff(KanbanTimeOffDTO(personId: mia.id, startDay: "20261104", endDay: "20261104", portion: .pm), on: project)
+        try s.addTimeOff(KanbanTimeOffDTO(personId: mia.id, startDay: "20261116", endDay: "20261120"), on: project)
+        try s.setOverride(resources[2], week: KanbanDay(key: "20261102")!, halfDays: 5, note: "Conference")
+        let board = KanbanAvailability.Board(project)
+        let today = KanbanDay(key: "20261028")!
+        let weeks = KanbanAvailability.window(board: board, today: today)
+        let rows = resources.map { r in (r, weeks.map { KanbanAvailability.cell(week: $0, board: board, member: KanbanAvailability.Member(r)) }) }
+        let app = AppState()
+        for scheme in [ColorScheme.light, .dark] {
+            let grid = VStack(alignment: .leading, spacing: 0) {
+                KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: 0)
+                ForEach(rows, id: \.0.id) { resource, cells in
+                    HStack(spacing: 0) {
+                        KanbanAvailabilityRowHeader(resource: resource, showAllocation: true)
+                            .frame(width: KanbanAvailabilityView.headerWidth, height: 60, alignment: .leading)
+                        ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in KanbanAvailabilityCellView(cell: cell, focused: false) }
+                    }
+                    Divider()
+                }
+                KanbanAvailabilityLegend(hasTimeOff: true)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(app)
+            .environment(\.colorScheme, scheme)
+            let popover = KanbanAvailabilityCellPopover(resource: resources[0], week: KanbanDay(key: "20261026")!, cell: rows[0].1[1],
+                                                        onTimeOff: {}, onAddTimeOff: {})
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(app)
+                .modelContext(context)
+                .environment(\.colorScheme, scheme)
+            for (name, view) in [("availability", AnyView(grid)), ("availability-popover", AnyView(popover))] {
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png"))
+            }
+        }
+    }
 }
