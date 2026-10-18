@@ -152,4 +152,39 @@ struct KanbanAvailabilityTransferTests {
         let off = try #require(lines.first { $0.contains(",2026-10-19,") }).components(separatedBy: ",")
         #expect(off[8] == "2" && off[9] == "" && off[10] == "2" && off[11] == "100", "Tue–Thu off leaves 2 of 5")
     }
+
+    @Test("Import conflicts are counted for the preview and keep what's here unless the file's version is chosen")
+    func conflicts() throws {
+        let (_, context, board, ravi, _) = try source()
+        let file = try KanbanBoardTransfer.export([board], context: context)
+        // Same store, merged back into the same board: change one entry and one override here first.
+        let entry = try #require(ravi.timeOff.first { $0.startDay == "20261020" })
+        entry.kindRaw = KanbanTimeOffKind.sick.rawValue
+        let override = try #require(ravi.memberships.first?.availabilityOverrides.first)
+        override.halfDays = 2
+        try context.save()
+        var plan = try KanbanBoardTransfer.plan(file, context: context)
+        plan.boards[0].mergeInto = board.id
+        let people = try context.fetch(FetchDescriptor<KanbanPerson>())
+        let projects = try context.fetch(FetchDescriptor<KanbanProject>())
+        #expect(plan.availabilityConflicts(projects: projects, people: people) == (1, 1))
+        try KanbanBoardTransfer.apply(plan, fileName: "f", context: context)
+        #expect(entry.kind == .sick && override.halfDays == 2, "kept by default")
+
+        var incoming = try KanbanBoardTransfer.plan(file, context: context)
+        incoming.boards[0].mergeInto = board.id
+        incoming.useIncomingTimeOff = true
+        incoming.useIncomingOverrides = true
+        try KanbanBoardTransfer.apply(incoming, fileName: "f", context: context)
+        #expect(entry.kind == .pto && override.halfDays == 6)
+        #expect(ravi.timeOff.count == 3, "nothing duplicated")
+    }
+
+    @Test("An undated board's default export range starts at its start (or this week) and stops at its end")
+    func defaultRange() {
+        let today = KanbanDay(key: "20261021")!
+        #expect(KanbanBoardTransfer.defaultTimeOffRange(startDay: nil, endDay: nil, today: today) == ("20261019", "20270110"))
+        #expect(KanbanBoardTransfer.defaultTimeOffRange(startDay: "20270104", endDay: nil, today: today).start == "20270104")
+        #expect(KanbanBoardTransfer.defaultTimeOffRange(startDay: nil, endDay: "20261106", today: today) == ("20261019", "20261106"))
+    }
 }

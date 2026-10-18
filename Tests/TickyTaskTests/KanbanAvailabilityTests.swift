@@ -95,6 +95,29 @@ struct KanbanAvailabilityTests {
         #expect(KanbanAvailability.total([]) == nil)
     }
 
+    @Test("Days convert in Gregorian terms whatever calendar the Mac uses")
+    func calendars() {
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = TimeZone(identifier: "Asia/Bangkok")!
+        let date = buddhist.date(from: DateComponents(year: 2569, month: 10, day: 19, hour: 9))!   // 19 Oct 2026
+        #expect(KanbanDay(date, calendar: buddhist) == day("20261019"))
+        #expect(KanbanDay(day("20261019").date(in: buddhist), calendar: buddhist) == day("20261019"))
+        var hebrew = Calendar(identifier: .hebrew)
+        hebrew.timeZone = TimeZone(identifier: "UTC")!
+        #expect(KanbanDay(day("20260320").utcDate, calendar: hebrew) == day("20260320"), "no crash on a 13-month year")
+    }
+
+    @Test("The arrows move an open window from where it starts, never past its bound")
+    func shifting() {
+        let today = day("20261021")
+        let future = KanbanAvailability.Board(start: day("20270104"), end: nil, workWeekDays: weekdays)
+        #expect(KanbanAvailability.window(board: future, today: today, shift: 4).first == day("20270201"), "one click moves it")
+        #expect(KanbanAvailability.window(board: future, today: today, shift: -4).first == day("20270104"))
+        let past = KanbanAvailability.Board(start: nil, end: day("20260306"), workWeekDays: weekdays)
+        #expect(KanbanAvailability.window(board: past, today: today, shift: -4).last == day("20260202"))
+        #expect(KanbanAvailability.window(board: past, today: today, shift: 4).last == day("20260302"))
+    }
+
     @Test("The window: every week of a dated board; otherwise 12 weeks kept inside the set bound")
     func window() {
         let today = day("20261021")
@@ -207,6 +230,33 @@ struct KanbanAvailabilityServiceTests {
         #expect(try context.fetchCount(FetchDescriptor<KanbanAvailabilityOverride>()) == 0)
         #expect(try context.fetchCount(FetchDescriptor<KanbanTimeOff>()) == 1)
         _ = data
+    }
+
+    @Test("Revert can't leave a board's dates out of order, or delete a membership's overrides")
+    func revertGuards() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        try s.editBoardDetails(platform, name: "Platform", startDay: "20261010", endDay: "20261020")
+        try s.editBoardDetails(platform, name: "Platform", startDay: "20261010", endDay: "20261030")
+        let extension_ = try #require(platform.activities.max { $0.seq < $1.seq })
+        try s.editBoardDetails(platform, name: "Platform", startDay: "20261025", endDay: "20261030")
+        #expect(throws: KanbanServiceError.self) { try s.revert(extension_) }
+        #expect(platform.startDay == "20261025" && platform.endDay == "20261030")
+
+        let sam = try s.createPerson(name: "Sam", initials: "SA")
+        let added = try s.addMembership(sam, to: platform)
+        let addition = try #require(platform.activities.max { $0.seq < $1.seq })
+        try s.setOverride(added, week: KanbanDay(key: "20261026")!, halfDays: 4)
+        #expect(throws: KanbanServiceError.self) { try s.revert(addition) }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanAvailabilityOverride>()) == 1)
+        _ = ravi
+    }
+
+    @Test("An override can't be more than the week's possible days")
+    func overrideLimit() throws {
+        let (s, platform, _, _, membership, _) = try setup()
+        try s.editBoardDetails(platform, name: "Platform", startDay: "20261021", endDay: nil)
+        #expect(throws: KanbanServiceError.self) { try s.setOverride(membership, week: KanbanDay(key: "20261019")!, halfDays: 8) }
+        try s.setOverride(membership, week: KanbanDay(key: "20261019")!, halfDays: 6)
     }
 
     @Test("Older change-log entries (payload v1, no availability key) still read")

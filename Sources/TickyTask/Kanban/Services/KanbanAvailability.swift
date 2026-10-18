@@ -25,10 +25,17 @@ struct KanbanDay: Hashable, Comparable, Sendable, CustomStringConvertible {
         self.init(year: value / 10000, month: value / 100 % 100, day: value % 100)
     }
 
-    /// The day `date` falls on in `calendar` (the app's), as membership dates are read.
+    /// The day `date` falls on in `calendar`'s time zone, as membership dates are read. Always
+    /// in Gregorian terms, whatever calendar the Mac uses (Buddhist, Hebrew, …).
     init(_ date: Date, calendar: Calendar = .current) {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let c = Self.gregorian(calendar.timeZone).dateComponents([.year, .month, .day], from: date)
         self.init(year: c.year ?? 2000, month: c.month ?? 1, day: c.day ?? 1)!
+    }
+
+    private static func gregorian(_ timeZone: TimeZone) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
     }
 
     var key: String { String(format: "%04d%02d%02d", year, month, day) }
@@ -37,9 +44,9 @@ struct KanbanDay: Hashable, Comparable, Sendable, CustomStringConvertible {
     /// Midnight UTC; for formatting with a UTC formatter, and for arithmetic.
     var utcDate: Date { Self.calendar.date(from: DateComponents(year: year, month: month, day: day))! }
 
-    /// This day at the start of the day in `calendar`, for date pickers and labels.
+    /// This day's start in `calendar`'s time zone, for date pickers.
     func date(in calendar: Calendar = .current) -> Date {
-        calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? utcDate
+        Self.gregorian(calendar.timeZone).date(from: DateComponents(year: year, month: month, day: day)) ?? utcDate
     }
 
     func adding(days: Int) -> KanbanDay { KanbanDay(utcDate, offset: days) }
@@ -185,10 +192,11 @@ enum KanbanAvailability {
             let count = max(start.days(to: end) / 7 + 1, 1)
             return (0..<count).map { start.adding(days: 7 * $0) }
         case let (start?, nil):
-            let first = max(start, thisWeek.adding(days: 7 * shift))
+            // The arrows move the window as first shown, never before the start.
+            let first = max(start, max(start, thisWeek).adding(days: 7 * shift))
             return (0..<length).map { first.adding(days: 7 * $0) }
         case let (nil, end?):
-            let last = min(end, thisWeek.adding(days: 7 * (length - 1 + shift)))
+            let last = min(end, min(end, thisWeek.adding(days: 7 * (length - 1))).adding(days: 7 * shift))
             return (0..<length).map { last.adding(days: -7 * (length - 1 - $0)) }
         case (nil, nil):
             let first = thisWeek.adding(days: 7 * shift)

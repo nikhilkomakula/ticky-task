@@ -127,16 +127,22 @@ enum KanbanAvailabilityAssistant {
         func string(_ object: [String: Any], _ key: String) -> String? {
             (object[key] as? String).map { $0.count > maxText ? String($0.prefix(maxText)) : $0 }
         }
-        func strings(_ object: [String: Any], _ key: String) -> [String] {
-            ((object[key] as? [Any]) ?? []).compactMap { $0 as? String }.prefix(10).map { $0.count > maxText ? String($0.prefix(maxText)) : $0 }
+        /// A list of strings, or nil when the field is missing or isn't one (never quietly emptied).
+        func strings(_ object: [String: Any], _ key: String) -> [String]? {
+            guard let list = object[key] as? [Any], list.allSatisfy({ $0 is String }) else { return nil }
+            return list.compactMap { $0 as? String }.prefix(10).map { $0.count > maxText ? String($0.prefix(maxText)) : $0 }
         }
         let entryKeys: Set<String> = ["sourceRef", "personText", "startDate", "endDate", "portion", "kind", "dateText", "evidence", "confidence", "issues"]
-        var result = Extraction(candidates: [], unresolved: [], warnings: strings(root, "warnings"))
+        var result = Extraction(candidates: [], unresolved: [], warnings: strings(root, "warnings") ?? [])
         for entry in entries {
             let evidence = string(entry, "evidence") ?? ""
             let ref = string(entry, "sourceRef") ?? ""
             func reject(_ issue: String) { result.unresolved.append(Unresolved(sourceRef: ref, evidence: evidence, issues: [issue])) }
-            guard Set(entry.keys).isSubset(of: entryKeys) else { reject("The reply had unexpected fields."); continue }
+            guard Set(entry.keys) == entryKeys else { reject("The reply's fields weren't as expected."); continue }
+            guard let issuesIn = strings(entry, "issues"), entry["dateText"] is String, entry["evidence"] is String,
+                  let confidence = string(entry, "confidence"), ["high", "medium", "low"].contains(confidence) else {
+                reject("The reply's fields weren't as expected."); continue
+            }
             guard sources.contains(ref) else { reject("It doesn't say which material it came from."); continue }
             guard let person = string(entry, "personText")?.trimmingCharacters(in: .whitespaces), !person.isEmpty else { reject("No name."); continue }
             guard let start = isoDay(string(entry, "startDate")), let end = isoDay(string(entry, "endDate")) else { reject("The dates aren't real days."); continue }
@@ -144,16 +150,15 @@ enum KanbanAvailabilityAssistant {
             guard start.days(to: end) <= 366 else { reject("The range is longer than a year."); continue }
             guard let portion = KanbanTimeOffPortion(rawValue: string(entry, "portion") ?? ""),
                   let kind = KanbanTimeOffKind(rawValue: string(entry, "kind") ?? "") else { reject("Unknown day part or type."); continue }
-            var issues = strings(entry, "issues")
+            var issues = issuesIn
             if portion != .full, start != end { issues.append("A morning or afternoon must be a single day.") }
-            let confidence = string(entry, "confidence") ?? "low"
             result.candidates.append(Candidate(sourceRef: ref, personText: person, start: start, end: end, portion: portion, kind: kind,
                                                dateText: string(entry, "dateText") ?? "", evidence: evidence,
-                                               confidence: ["high", "medium", "low"].contains(confidence) ? confidence : "low", issues: issues))
+                                               confidence: confidence, issues: issues))
         }
         for item in unresolvedIn {
             result.unresolved.append(Unresolved(sourceRef: string(item, "sourceRef") ?? "", evidence: string(item, "evidence") ?? "",
-                                                issues: strings(item, "issues")))
+                                                issues: strings(item, "issues") ?? []))
         }
         return result
     }
@@ -210,6 +215,8 @@ enum KanbanAvailabilityAssistant {
         case overlaps
         case unmatched
         case needsReview(String)
+        /// Shares half days with another suggestion for the same person: apply at most one.
+        case clash
     }
 
     struct Row: Identifiable, Equatable, Sendable {
@@ -221,19 +228,67 @@ enum KanbanAvailabilityAssistant {
         var selected: Bool
         var rememberName = false
         var status: Status
+        /// Matched to someone who isn't on this board: applied only when ticked.
+        var offBoard = false
+
+        /// Whether ticking it can apply it.
+        var isApplicable: Bool { personID != nil && [.new, .overlaps, .clash].contains(status) }
     }
 
     /// One row per candidate, with its status against the time off already recorded.
     static func review(_ extraction: Extraction, people: [Person], timeOff: [KanbanTimeOffDTO]) -> [Row] {
-        extraction.candidates.map { candidate in
+        let onBoard = Set(people.filter(\.onBoard).map(\.id))
+        var rows = extraction.candidates.map { candidate in
             let match = match(candidate.personText, among: people)
             var personID: UUID?
             if case let .person(id) = match { personID = id }
             var row = Row(candidate: candidate, match: match, personID: personID, selected: false, status: .new)
             row.status = status(of: row, timeOff: timeOff)
-            row.selected = row.status == .new
+            row.offBoard = personID.map { !onBoard.contains($0) } ?? false
             return row
         }
+        markClashes(&rows)
+        for index in rows.indices { rows[index].selected = rows[index].status == .new && !rows[index].offBoard }
+        return rows
+    }
+
+    /// Suggestions for the same person sharing a half day (but saying different things) clash;
+    /// identical ones aren't added twice anyway.
+    static func markClashes(_ rows: inout [Row]) {
+        let applicable = rows.indices.filter { [.new, .overlaps, .clash].contains(rows[$0].status) && rows[$0].personID != nil }
+        for i in applicable where rows[i].status == .clash { rows[i].status = .new }
+        for (n, i) in applicable.enumerated() {
+            for j in applicable[(n + 1)...] where rows[i].personID == rows[j].personID {
+                let a = entry(rows[i]), b = entry(rows[j])
+                guard a.meaning != b.meaning, !slots(of: a).isDisjoint(with: slots(of: b)) else { continue }
+                rows[i].status = .clash
+                rows[j].status = .clash
+            }
+        }
+    }
+
+    /// Selected rows that clash with another selected row: Apply waits until only one is ticked.
+    static func clashingSelection(_ rows: [Row]) -> [Row] {
+        let chosen = rows.filter { $0.selected && $0.isApplicable }
+        return chosen.filter { row in
+            chosen.contains { other in
+                other.id != row.id && other.personID == row.personID && entry(other).meaning != entry(row).meaning
+                    && !slots(of: entry(other)).isDisjoint(with: slots(of: entry(row)))
+            }
+        }
+    }
+
+    static func entry(_ row: Row) -> KanbanTimeOffDTO {
+        KanbanTimeOffDTO(personId: row.personID, startDay: row.candidate.start.key, endDay: row.candidate.end.key,
+                         portion: row.candidate.portion, kind: row.candidate.kind)
+    }
+
+    /// What applying this one row would leave of the person's recorded entries it overlaps.
+    static func preview(of row: Row, timeOff: [KanbanTimeOffDTO]) -> (replaced: [KanbanTimeOffDTO], kept: [KanbanTimeOffDTO]) {
+        guard let personID = row.personID else { return ([], []) }
+        let taken = slots(of: entry(row))
+        let touched = timeOff.filter { $0.personId == personID && !slots(of: $0).isDisjoint(with: taken) }
+        return (touched, touched.flatMap { remainder(of: $0, removing: taken, now: Date()) })
     }
 
     /// Recomputes a row's status, after the person was chosen or the records changed.
@@ -315,9 +370,9 @@ enum KanbanAvailabilityAssistant {
         var added = 0
         var people = Set<UUID>()
         var aliasChanges: [KanbanAvailabilityDelta.Aliases] = []
-        for row in rows where row.selected {
-            guard let personID = row.personID, ![.alreadyRecorded, .unmatched].contains(row.status) else { continue }
-            if case .needsReview = row.status { continue }
+        let clashing = Set(clashingSelection(rows).map(\.id))
+        for row in rows where row.selected && row.isApplicable && !clashing.contains(row.id) {
+            guard let personID = row.personID else { continue }
             let entry = KanbanTimeOffDTO(personId: personID, startDay: row.candidate.start.key, endDay: row.candidate.end.key,
                                          portion: row.candidate.portion, kind: row.candidate.kind, origin: .assistant,
                                          createdAt: now, updatedAt: now)

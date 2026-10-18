@@ -97,10 +97,11 @@ struct KanbanAvailabilityView: View {
             .task(id: weeks.first) {
                 // The current week, or the board's first or last week when today is outside it.
                 let target = weeks.first { $0 == today.monday } ?? (today < (weeks.first ?? today) ? weeks.first : weeks.last)
-                if let target { proxy.scrollTo(target, anchor: .leading) }
+                // Centred, so the frozen resource column never covers it.
+                if let target { proxy.scrollTo(target, anchor: .center) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .kanbanAvailabilityToday)) { _ in
-                if weeks.contains(today.monday) { withAnimation { proxy.scrollTo(today.monday, anchor: .leading) } }
+                if weeks.contains(today.monday) { withAnimation { proxy.scrollTo(today.monday, anchor: .center) } }
             }
         }
     }

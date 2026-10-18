@@ -21,6 +21,8 @@ struct KanbanAvailabilityAssistantSheet: View {
     @State private var rows: [KanbanAvailabilityAssistant.Row] = []
     @State private var unresolved: [KanbanAvailabilityAssistant.Unresolved] = []
     @State private var warnings: [String] = []
+    /// The recorded time off the rows were reviewed against; Apply refuses if it has changed.
+    @State private var reviewed: [KanbanTimeOffDTO] = []
     @State private var error: String?
     @State private var task: Task<Void, Never>?
     @State private var staging = KanbanAvailabilityStaging()
@@ -151,13 +153,15 @@ struct KanbanAvailabilityAssistantSheet: View {
     // MARK: Review
 
     private var reviewView: some View {
-        let timeOff = allTimeOff()
+        let timeOff = reviewed
         let change = KanbanAvailabilityAssistant.change(for: rows, timeOff: timeOff, aliases: aliasMap())
         let boards = boardCount(change.people)
+        let clashing = KanbanAvailabilityAssistant.clashingSelection(rows)
         return VStack(alignment: .leading, spacing: 8) {
             List {
                 group("New", .new, timeOff)
                 group("Overlaps recorded time off: replaces only these days", .overlaps, timeOff)
+                group("Overlaps another suggestion: tick only one", .clash, timeOff)
                 group("Name not matched: pick the person", .unmatched, timeOff)
                 needsReviewGroup(timeOff)
                 group("Already recorded", .alreadyRecorded, timeOff)
@@ -183,6 +187,10 @@ struct KanbanAvailabilityAssistantSheet: View {
                     .disabled(refine.trimmingCharacters(in: .whitespaces).isEmpty)
                     .help("Runs Codex again on the same material with your correction")
             }
+            if !clashing.isEmpty {
+                Text("Two ticked suggestions cover the same days for \(Set(clashing.map(\.candidate.personText)).sorted().joined(separator: ", ")). Untick one.")
+                    .font(.callout).foregroundStyle(.red)
+            }
             Text(change.added == 0 ? "Select the rows to apply."
                  : "Adds \(change.added) \(change.added == 1 ? "entry" : "entries")\(change.changed > 0 ? " and changes \(change.changed) recorded" : "") for \(change.people.count) \(change.people.count == 1 ? "person" : "people") across \(boards) \(boards == 1 ? "board" : "boards"). Time off counts on every board they're on.")
                 .font(.callout)
@@ -193,7 +201,7 @@ struct KanbanAvailabilityAssistantSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Apply \(change.added) \(change.added == 1 ? "change" : "changes")") { apply() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(change.added == 0)
+                    .disabled(change.added == 0 || !clashing.isEmpty)
                     .accessibilityIdentifier("kanban-assistant-apply")
             }
         }
@@ -217,11 +225,10 @@ struct KanbanAvailabilityAssistantSheet: View {
 
     private func rowView(_ index: Int, _ timeOff: [KanbanTimeOffDTO]) -> some View {
         let row = rows[index]
-        let applicable = row.personID != nil && [.new, .overlaps].contains(row.status)
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Toggle("", isOn: $rows[index].selected)
                 .labelsHidden()
-                .disabled(!applicable)
+                .disabled(!row.isApplicable)
                 .accessibilityLabel("Apply \(row.candidate.personText), \(span(row.candidate))")
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -231,6 +238,13 @@ struct KanbanAvailabilityAssistantSheet: View {
                 }
                 Text("“\(row.candidate.evidence)”").font(.caption).italic().foregroundStyle(.secondary).lineLimit(2)
                 if case let .needsReview(reason) = row.status { Text(reason).font(.caption).foregroundStyle(KanbanAvailabilityPalette.text(.yellow)) }
+                if row.offBoard { Text("Not on this board: tick to include their time off.").font(.caption).foregroundStyle(.secondary) }
+                if row.status == .overlaps {
+                    let preview = KanbanAvailabilityAssistant.preview(of: row, timeOff: timeOff)
+                    Text("Replaces: \(preview.replaced.map(describe).joined(separator: "; "))").font(.caption).foregroundStyle(.secondary)
+                    Text("Keeps: \(preview.kept.isEmpty ? "nothing else" : preview.kept.map(describe).joined(separator: "; "))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -266,10 +280,17 @@ struct KanbanAvailabilityAssistantSheet: View {
         }
     }
 
+    /// Picking someone is an explicit choice, so it includes them even when they're not on the board.
     private func choose(_ id: UUID, for index: Int, _ timeOff: [KanbanTimeOffDTO]) {
         rows[index].personID = id
+        rows[index].offBoard = !(people.first { $0.id == id }?.onBoard ?? false)
         rows[index].status = KanbanAvailabilityAssistant.status(of: rows[index], timeOff: timeOff)
-        rows[index].selected = [.new, .overlaps].contains(rows[index].status)
+        KanbanAvailabilityAssistant.markClashes(&rows)
+        rows[index].selected = rows[index].status == .new
+    }
+
+    private func describe(_ entry: KanbanTimeOffDTO) -> String {
+        "\(KanbanService.span(entry)) \(KanbanTimeOffKind(rawValue: entry.kindRaw)?.label ?? "")"
     }
 
     private func span(_ c: KanbanAvailabilityAssistant.Candidate) -> String {
@@ -302,7 +323,8 @@ struct KanbanAvailabilityAssistantSheet: View {
                 let extraction = try KanbanAvailabilityAssistant.parse(result.text, imageCount: pictures.count,
                                                                          hasText: !material.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 guard !Task.isCancelled else { return }
-                rows = KanbanAvailabilityAssistant.review(extraction, people: scope, timeOff: allTimeOff())
+                reviewed = allTimeOff()
+                rows = KanbanAvailabilityAssistant.review(extraction, people: scope, timeOff: reviewed)
                 unresolved = extraction.unresolved
                 warnings = extraction.warnings
                 phase = .review
@@ -320,8 +342,20 @@ struct KanbanAvailabilityAssistantSheet: View {
     }
 
     private func apply() {
-        // Worked out again from the store as it is now, so nothing changed meanwhile is overwritten.
-        let change = KanbanAvailabilityAssistant.change(for: rows, timeOff: allTimeOff(), aliases: aliasMap())
+        // If time off changed since the review (here or on another board), review again rather
+        // than overwrite it.
+        let now = allTimeOff()
+        if Set(now) != Set(reviewed) {
+            reviewed = now
+            for index in rows.indices {
+                rows[index].status = KanbanAvailabilityAssistant.status(of: rows[index], timeOff: now)
+                rows[index].selected = false
+            }
+            KanbanAvailabilityAssistant.markClashes(&rows)
+            error = "Recorded time off changed since you reviewed these. Check the rows and tick them again."
+            return
+        }
+        let change = KanbanAvailabilityAssistant.change(for: rows, timeOff: reviewed, aliases: aliasMap())
         do {
             try app.kanbanService(context).applyAvailability(change.delta, on: project,
                 summary: "Updated availability: \(change.added) time-off \(change.added == 1 ? "entry" : "entries") for \(change.people.count) \(change.people.count == 1 ? "person" : "people")")

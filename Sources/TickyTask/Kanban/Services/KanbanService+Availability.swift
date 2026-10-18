@@ -65,6 +65,12 @@ extension KanbanService {
     /// Sets (or, with nil, clears) a membership's available days for the week starting `monday`.
     func setOverride(_ resource: KanbanResource, week monday: KanbanDay, halfDays: Int?, note: String? = nil) throws {
         guard let project = resource.project else { throw KanbanServiceError.notFound }
+        if let halfDays {
+            let possible = KanbanAvailability.cell(week: monday, board: .init(project), member: .init(resource)).possibleHalfDays
+            guard halfDays <= possible else {
+                throw KanbanServiceError.invariant("That week has \(KanbanAvailability.days(possible)) possible days on this board.")
+            }
+        }
         let existing = resource.availabilityOverrides.first { $0.weekStart == monday.key }
         let after = halfDays.map { value in
             KanbanAvailabilityOverrideDTO(id: existing?.id ?? UUID(), resourceId: resource.id, weekStart: monday.key, halfDays: value,

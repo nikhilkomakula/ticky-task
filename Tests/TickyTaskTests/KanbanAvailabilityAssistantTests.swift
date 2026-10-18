@@ -136,4 +136,46 @@ struct KanbanAvailabilityAssistantTests {
         #expect(args.contains("read-only") && args.contains("--ephemeral"))
         #expect(SummaryRequest(instructions: "", payload: Data(), config: SummaryRunConfig()).images.isEmpty, "summaries attach nothing")
     }
+
+    @Test("Two suggestions for the same days clash and Apply waits; an off-board match needs a tick; malformed fields are refused")
+    func review2() throws {
+        let off = A.Person(id: UUID(), name: "Sam Lee", initials: "SL", aliases: [], onBoard: false)
+        let extraction = try A.parse(reply([
+            entry("Ravi Kumar", "2026-10-20", "2026-10-20"),
+            entry("Ravi Kumar", "2026-10-20", "2026-10-20", kind: "sick"),
+            entry("Sam Lee", "2026-10-21", "2026-10-21"),
+        ].joined(separator: ",")), imageCount: 0, hasText: true)
+        var rows = A.review(extraction, people: [ravi, mia, off], timeOff: [])
+        #expect(rows.map(\.status) == [.clash, .clash, .new])
+        #expect(rows.map(\.selected) == [false, false, false], "a clash and an off-board match start unticked")
+        #expect(rows[2].offBoard)
+        rows[0].selected = true
+        rows[1].selected = true
+        #expect(A.clashingSelection(rows).count == 2)
+        #expect(A.change(for: rows, timeOff: [], aliases: [:]).added == 0, "nothing applies while they clash")
+        rows[1].selected = false
+        rows[2].selected = true
+        #expect(A.change(for: rows, timeOff: [], aliases: [:]).added == 2)
+
+        let wrongTypes = try A.parse(reply(#"{"sourceRef":"text","personText":"Ravi","startDate":"2026-10-20","endDate":"2026-10-20","portion":"full","kind":"pto","dateText":"","evidence":"","confidence":"high","issues":"missing year"}"#),
+                                     imageCount: 0, hasText: true)
+        #expect(wrongTypes.candidates.isEmpty && wrongTypes.unresolved.count == 1, "issues must be a list, never quietly emptied")
+        let missing = try A.parse(reply(#"{"sourceRef":"text","personText":"Ravi","startDate":"2026-10-20","endDate":"2026-10-20","portion":"full","kind":"pto"}"#),
+                                  imageCount: 0, hasText: true)
+        #expect(missing.candidates.isEmpty)
+        let badConfidence = try A.parse(reply(entry("Ravi", "2026-10-20", "2026-10-20").replacingOccurrences(of: "\"high\"", with: "\"sure\"")),
+                                        imageCount: 0, hasText: true)
+        #expect(badConfidence.candidates.isEmpty)
+    }
+
+    @Test("The preview shows what an overlap replaces and what's kept")
+    func preview() {
+        let week = KanbanTimeOffDTO(personId: ravi.id, startDay: "20261019", endDay: "20261023")
+        let row = A.Row(candidate: .init(sourceRef: "text", personText: "Ravi", start: day("20261021"), end: day("20261021"), portion: .full,
+                                         kind: .sick, dateText: "", evidence: "", confidence: "high", issues: []),
+                        match: .person(ravi.id), personID: ravi.id, selected: true, status: .overlaps)
+        let preview = A.preview(of: row, timeOff: [week])
+        #expect(preview.replaced == [week])
+        #expect(preview.kept.map { "\($0.startDay)-\($0.endDay)" } == ["20261019-20261020", "20261022-20261023"])
+    }
 }

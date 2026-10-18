@@ -1145,6 +1145,18 @@ struct KanbanService {
             throw KanbanServiceError.conflict("That change can't be reverted here.")
         }
         let inverse = try inverse(of: kind, payload, in: project)
+        // A board's dates must stay in order after the revert (another edit may have moved one).
+        let dates = inverse.payload.changes.filter { $0.entity == .project && $0.id == project.id }
+        if dates.contains(where: { ["startDay", "endDay"].contains($0.field) }) {
+            func value(_ field: String, _ current: String?) -> String? {
+                guard let change = dates.last(where: { $0.field == field }) else { return current }
+                if case let .string(v)? = change.new { return v }
+                return nil
+            }
+            if let problem = KanbanAvailability.boardDatesProblem(value("startDay", project.startDay), value("endDay", project.endDay)) {
+                throw KanbanServiceError.conflict("Reverting that would leave the board's dates invalid: \(problem)")
+            }
+        }
         let archivedPeople = Set(try context.fetch(FetchDescriptor<KanbanPerson>()).filter { $0.archivedAt != nil }.map(\.id))
         if let problem = KanbanInvariants(project, archivedPeople: archivedPeople).applying(inverse.kind, inverse.payload).violation {
             throw KanbanServiceError.conflict("Reverting that would leave the board invalid: \(problem).")
@@ -1799,6 +1811,10 @@ struct KanbanService {
         for membership in memberships where project.tasks.contains(where: { $0.resource?.id == membership.id })
             || project.tasks.flatMap(\.subtasks).contains(where: { $0.assignee?.id == membership.id }) {
             throw KanbanServiceError.conflict("\(membership.displayName) has cards now; archive them instead.")
+        }
+        // Removing the row would delete its weekly overrides, which this entry can't bring back.
+        for membership in memberships where !membership.availabilityOverrides.isEmpty {
+            throw KanbanServiceError.conflict("\(membership.displayName) has availability overrides now; clear them first.")
         }
         // Dependents a put-back graph restored itself (its incoming edges) may stay; others block.
         let restoredEdges = Set(graph.incomingDependencies.compactMap { $0.count == 2 ? "\($0[0])>\($0[1])" : nil })
