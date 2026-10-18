@@ -83,14 +83,16 @@ struct KanbanAvailabilityView: View {
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
-                        teamRow(rows: rows, weeks: weeks)
-                        Divider()
                         ForEach(rows) { row in
                             memberRow(row, weeks: weeks, today: today)
                             Divider()
                         }
                     } header: {
-                        KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX)
+                        VStack(alignment: .leading, spacing: 0) {
+                            KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX)
+                            Divider()
+                            weeklyAvailabilityRow(rows: rows, weeks: weeks, today: today)
+                        }
                     }
                 }
             }
@@ -108,31 +110,57 @@ struct KanbanAvailabilityView: View {
         }
     }
 
-    private func teamRow(rows: [Row], weeks: [KanbanDay]) -> some View {
+    private func accessibility(total: (available: Int, possible: Int)?, percentage: Int) -> String {
+        guard let total else { return "No working days" }
+        return "\(percentage) percent, \(KanbanAvailability.days(total.available)) of \(KanbanAvailability.days(total.possible)) days available"
+    }
+
+    @ViewBuilder
+    private func weeklyAvailabilityContent(total: (available: Int, possible: Int)?, percentage: Int, band: KanbanAvailability.Band?) -> some View {
+        let textColor = band.flatMap { KanbanAvailabilityPalette.text($0) } ?? KanbanAvailabilityPalette.inactiveText
+        VStack(spacing: 2) {
+            if let total {
+                Text("\(percentage)%")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                Text("\(KanbanAvailability.days(total.available)) days")
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("—")
+                    .font(.system(size: 18, weight: .semibold).monospacedDigit())
+            }
+        }
+        .foregroundStyle(textColor)
+    }
+
+    private func weeklyAvailabilityRow(rows: [Row], weeks: [KanbanDay], today: KanbanDay) -> some View {
         HStack(spacing: 0) {
-            Text("Team")
+            Text("Weekly availability")
                 .font(.system(size: 13, weight: .semibold))
                 .frame(width: Self.headerWidth - 16, alignment: .leading)
                 .padding(.horizontal, 8)
-                .frame(height: 44)
+                .frame(height: 56)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .offset(x: scrollX)
                 .zIndex(1)
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let total = KanbanAvailability.total(rows.map { $0.cells[index] })
-                VStack(spacing: 1) {
-                    Text(total.map { KanbanAvailability.days($0.available) } ?? "—")
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    if let total {
-                        Text("of \(KanbanAvailability.days(total.possible)) · \(Int((Double(total.available) / Double(total.possible) * 100).rounded()))%")
-                            .font(.system(size: 10).monospacedDigit())
-                            .foregroundStyle(.secondary)
+                let band: KanbanAvailability.Band? = total.flatMap { KanbanAvailability.teamBand(available: $0.available, possible: $0.possible) }
+                let percentage: Int = {
+                    guard let total else { return 0 }
+                    return (100 * total.available) / total.possible
+                }()
+                ZStack {
+                    if week == today.monday {
+                        Color.accentColor.opacity(0.1)
                     }
+                    weeklyAvailabilityContent(total: total, percentage: percentage, band: band)
                 }
-                .frame(width: Self.weekWidth, height: 44)
+                .frame(width: Self.weekWidth, height: 56)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Team, week of \(KanbanAvailabilityFormat.long(week))")
-                .accessibilityValue(total.map { "\(KanbanAvailability.days($0.available)) of \(KanbanAvailability.days($0.possible)) days available" } ?? "No working days")
+                .accessibilityLabel("Weekly availability, week of \(KanbanAvailabilityFormat.long(week))")
+                .accessibilityValue(accessibility(total: total, percentage: percentage))
+                .accessibilityIdentifier("kanban-availability-weekly-\(week.key)")
             }
         }
     }
@@ -152,27 +180,32 @@ struct KanbanAvailabilityView: View {
                 .zIndex(1)
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let id = CellID(resourceID: row.resource.id, week: week)
-                KanbanAvailabilityCellView(cell: row.cells[index], focused: focus == id)
-                    .frame(width: Self.weekWidth, height: 60)
-                    .contentShape(Rectangle())
-                    .focusable()
-                    .focused($focus, equals: id)
-                    .onTapGesture { focus = id; popover = id }
-                    .onKeyPress(.return) { popover = id; return .handled }
-                    .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
-                        move(from: id, press.key, weeks: weeks)
-                        return .handled
+                ZStack {
+                    if week == today.monday {
+                        Color.accentColor.opacity(0.08)
                     }
-                    .popover(isPresented: Binding(get: { popover == id }, set: { if !$0 { popover = nil } }), arrowEdge: .bottom) {
-                        KanbanAvailabilityCellPopover(resource: row.resource, week: week, cell: row.cells[index],
-                                                      onTimeOff: { popover = nil; timeOffFor = row.resource.person },
-                                                      onAddTimeOff: { popover = nil; newTimeOff = KanbanTimeOffDraft(person: row.resource.person, week: week) })
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(row.resource.displayName), week of \(KanbanAvailabilityFormat.long(week))")
-                    .accessibilityValue(KanbanAvailabilityFormat.spoken(row.cells[index], timeOff: row.resource.person?.timeOff ?? []))
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityIdentifier("kanban-availability-\(row.resource.displayName)-\(week.key)")
+                    KanbanAvailabilityCellView(cell: row.cells[index], focused: focus == id)
+                }
+                .frame(width: Self.weekWidth, height: 60)
+                .contentShape(Rectangle())
+                .focusable()
+                .focused($focus, equals: id)
+                .onTapGesture { focus = id; popover = id }
+                .onKeyPress(.return) { popover = id; return .handled }
+                .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+                    move(from: id, press.key, weeks: weeks)
+                    return .handled
+                }
+                .popover(isPresented: Binding(get: { popover == id }, set: { if !$0 { popover = nil } }), arrowEdge: .bottom) {
+                    KanbanAvailabilityCellPopover(resource: row.resource, week: week, cell: row.cells[index],
+                                                  onTimeOff: { popover = nil; timeOffFor = row.resource.person },
+                                                  onAddTimeOff: { popover = nil; newTimeOff = KanbanTimeOffDraft(person: row.resource.person, week: week) })
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(row.resource.displayName), week of \(KanbanAvailabilityFormat.long(week))")
+                .accessibilityValue(KanbanAvailabilityFormat.spoken(row.cells[index], timeOff: row.resource.person?.timeOff ?? []))
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("kanban-availability-\(row.resource.displayName)-\(week.key)")
             }
         }
     }
@@ -303,7 +336,14 @@ struct KanbanAvailabilityHeader: View {
                         .overlay(alignment: .leading) {
                             if firstOfMonth && index > 0 { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1) }
                         }
-                    VStack(spacing: 2) {
+                    VStack(spacing: week == today.monday ? 1 : 2) {
+                        if week == today.monday {
+                            Text("This week")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.accentColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        }
                         Text(KanbanAvailabilityFormat.week(week))
                             .font(.system(size: week.month == week.adding(days: 6).month ? 12 : 11,
                                           weight: week == today.monday ? .semibold : .regular).monospacedDigit())
@@ -316,6 +356,13 @@ struct KanbanAvailabilityHeader: View {
                     .frame(width: KanbanAvailabilityView.weekWidth, height: 40)
                 }
                 .id(week)
+                .overlay(alignment: .center) {
+                    if week == today.monday {
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
+                            .padding(2)
+                    }
+                }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Week of \(KanbanAvailabilityFormat.long(week))\(week == today.monday ? ", this week" : "")")
             }
@@ -330,23 +377,35 @@ struct KanbanAvailabilityLegend: View {
     let hasTimeOff: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("Available days").font(.caption.weight(.semibold))
-            ForEach([(KanbanAvailability.Band.green, "> 60%"), (.yellow, "60%"), (.red, "< 60%")], id: \.1) { band, text in
-                HStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 3).fill(KanbanAvailabilityPalette.fill(band)).frame(width: 14, height: 10)
-                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(KanbanAvailabilityPalette.text(band), lineWidth: 0.5))
-                    Text(text).font(.caption)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text("Available days").font(.caption.weight(.semibold))
+                ForEach([(KanbanAvailability.Band.green, "> 60%"), (.yellow, "60%"), (.red, "< 60%")], id: \.1) { band, text in
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 3).fill(KanbanAvailabilityPalette.fill(band)).frame(width: 14, height: 10)
+                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(KanbanAvailabilityPalette.text(band), lineWidth: 0.5))
+                        Text(text).font(.caption)
+                    }
                 }
-            }
-            Text("On a five-day week: more than 3 / exactly 3 / fewer than 3.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if !hasTimeOff {
-                Text("No PTO recorded; assumes no time off.")
+                Text("(on a five-day week: more than 3 / exactly 3 / fewer than 3)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Spacer()
+                if !hasTimeOff {
+                    Text("No PTO recorded; assumes no time off.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            HStack(spacing: 12) {
+                Text("Weekly availability").font(.caption.weight(.semibold))
+                ForEach([(KanbanAvailability.Band.green, "80% or more"), (.yellow, "60–79%"), (.red, "below 60%")], id: \.1) { band, text in
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 3).fill(KanbanAvailabilityPalette.fill(band)).frame(width: 14, height: 10)
+                            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(KanbanAvailabilityPalette.text(band), lineWidth: 0.5))
+                        Text(text).font(.caption)
+                    }
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -386,8 +445,8 @@ struct KanbanAvailabilityRowHeader: View {
     }
 }
 
-/// One week: the available days large, "of N days" under it, in the band's colours; "—" when
-/// they can't work that week. A pencil marks an override, a warning one that needs review.
+/// One week: the available days centred, in the band's colours; "—" when they can't work that
+/// week. A pencil marks an override, a warning one that needs review.
 struct KanbanAvailabilityCellView: View {
     let cell: KanbanAvailability.Cell
     let focused: Bool
@@ -397,16 +456,10 @@ struct KanbanAvailabilityCellView: View {
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: 6)
                 .fill(band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill)
-            VStack(spacing: 0) {
-                Text(cell.isActive ? KanbanAvailability.days(cell.effectiveHalfDays) : "—")
-                    .font(.system(size: 17, weight: .semibold).monospacedDigit())
-                if cell.isActive {
-                    Text("of \(KanbanAvailability.days(cell.possibleHalfDays)) days")
-                        .font(.system(size: 11).monospacedDigit())
-                }
-            }
-            .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(cell.isActive ? KanbanAvailability.days(cell.effectiveHalfDays) : "—")
+                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             if cell.isOverridden {
                 Image(systemName: "pencil")
                     .font(.system(size: 9, weight: .bold))

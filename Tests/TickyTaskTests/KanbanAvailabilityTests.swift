@@ -75,6 +75,27 @@ struct KanbanAvailabilityTests {
         #expect(KanbanAvailability.band(6, of: 6) == .green, "a full 3-day week")
     }
 
+    @Test("Team bands: 5*available ≥ 4*possible green, 5*available ≥ 3*possible amber, else red")
+    func teamBands() {
+        // Green: 5*available >= 4*possible (80% and above, floored)
+        #expect(KanbanAvailability.teamBand(available: 100, possible: 100) == .green, "5*100 >= 4*100")
+        #expect(KanbanAvailability.teamBand(available: 80, possible: 100) == .green, "5*80 >= 4*100")
+        #expect(KanbanAvailability.teamBand(available: 40, possible: 50) == .green, "5*40 >= 4*50")
+        // Amber: 5*available >= 3*possible but < 4*possible (60–79%, floored)
+        #expect(KanbanAvailability.teamBand(available: 79, possible: 100) == .yellow, "5*79 < 4*100, >= 3*100")
+        #expect(KanbanAvailability.teamBand(available: 60, possible: 100) == .yellow, "5*60 >= 3*100")
+        #expect(KanbanAvailability.teamBand(available: 39, possible: 50) == .yellow, "78%: 5*39 >= 3*50")
+        #expect(KanbanAvailability.teamBand(available: 30, possible: 50) == .yellow, "60%: 5*30 >= 3*50")
+        // Red: 5*available < 3*possible (below 60%)
+        #expect(KanbanAvailability.teamBand(available: 59, possible: 100) == .red, "5*59 < 3*100")
+        #expect(KanbanAvailability.teamBand(available: 0, possible: 100) == .red)
+        #expect(KanbanAvailability.teamBand(available: 29, possible: 50) == .red, "58%: 5*29 < 3*50")
+        // Boundary: 79.6% displays as "79%" amber (not green)
+        #expect(KanbanAvailability.teamBand(available: 398, possible: 500) == .yellow, "398/500 = 79.6%, 5*398 = 1990 < 4*500 = 2000")
+        // Nil when no work days
+        #expect(KanbanAvailability.teamBand(available: 0, possible: 0) == nil)
+    }
+
     @Test("An override replaces the week; one above the possible days needs review and isn't used")
     func overrides() {
         let week = day("20261019")

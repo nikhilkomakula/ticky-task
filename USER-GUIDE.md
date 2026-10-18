@@ -172,17 +172,17 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 
 **Give the board dates.** Open **Board settings…** from the board's menu in the sidebar (or **Board actions** in the toolbar) and turn on **Starts on** and **Ends on**. You can also set them in **New board**. Both are optional. The Availability tab shows every week between them; without dates it shows 12 weeks from this week, with arrows to move.
 
-**Read the tab.** Choose **Availability** in the view picker. Each row is a resource on the board, and each column is a week, always Monday to Sunday (the header shows the dates, with the month and year above). A cell shows how many days that person is available that week, after their recorded time off, out of the days they could work:
+**Read the tab.** Choose **Availability** in the view picker. Each row is a resource on the board, and each column is a week, always Monday to Sunday (the header shows the dates, with the month and year above). This week's column is highlighted with a subtle tinted background and labelled "This week" in the header. A cell shows how many days that person is available that week, after their recorded time off, out of the days they could work:
 
 | Cell | Means |
 |---|---|
-| **5** of 5 days, green | Available more than 60 % of the week (on a five-day week, more than 3 days) |
-| **3** of 5 days, yellow | Exactly 60 % (3 days) |
-| **2.5** of 5 days, red | Less than 60 % (fewer than 3 days) |
-| **3** of 3 days, green | A short week (the board starts midweek, or the person joins or leaves that week), fully available |
+| **5**, green | Available more than 60 % of the week (on a five-day week, more than 3 days) |
+| **3**, yellow | Exactly 60 % (3 days) |
+| **2.5**, red | Less than 60 % (fewer than 3 days) |
+| **3**, green | A short week (the board starts midweek, or the person joins or leaves that week), fully available |
 | — | They can't work that week on this board (outside the board's dates or their membership) |
 
-The **Team** row adds everyone's days, for example *12.5 of 15 · 83%*. The number counts days present only: someone at 50 % allocation with no time off still shows 5 of 5 (their allocation shows in the row header when **Show allocation in row headers** is on). Card filters don't apply here.
+The **Weekly availability** row (frozen below the header) shows the team's total available time that week as a percentage (floored) and the total days. The colour coding reflects capacity-planning thresholds: green for 80 % or more, amber for 60–79 %, and red for below 60 %. The number counts days present only: someone at 50 % allocation with no time off still shows 5 of 5 (their allocation shows in the row header when **Show allocation in row headers** is on). Card filters don't apply here.
 
 **Record time off.** Click **Add time off** above the grid, or right-click a resource and choose **Add time off…**. Pick the dates, **Full day**, **Morning** or **Afternoon** (a single day), and a type (PTO, Sick, Personal, Training, Other), with an optional note. Time off belongs to the person, so it counts on every board they're on. **Time off…** lists, edits and removes someone's entries. Days covered by more than one entry count once.
 

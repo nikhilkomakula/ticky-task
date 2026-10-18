@@ -147,6 +147,13 @@ enum KanbanAvailability {
         return lhs > rhs ? .green : lhs == rhs ? .yellow : .red
     }
 
+    /// Team capacity thresholds: 5*available ≥ 4*possible green (80%+), 5*available ≥ 3*possible amber (60–79%), red (<60%), nil when no work days.
+    static func teamBand(available: Int, possible: Int) -> Band? {
+        guard possible > 0 else { return nil }
+        let lhs = 5 * available
+        return lhs >= 4 * possible ? .green : lhs >= 3 * possible ? .yellow : .red
+    }
+
     /// Days a member could work in the week starting `monday`: inside the board's and the
     /// membership's dates, on the board's work days.
     static func workDays(week monday: KanbanDay, board: Board, member: Member) -> [KanbanDay] {
