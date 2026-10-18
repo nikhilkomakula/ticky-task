@@ -1726,7 +1726,7 @@ struct KanbanService {
             for edge in g.incomingDependencies where edge.count == 2 { touches[edge[0], default: []].insert("dependsOn") }
         }
         if let a = p.availability {
-            for id in a.timeOff.map(\.id) + a.overrides.map(\.id) { touches[id, default: []].insert("*") }
+            for id in a.timeOff.map(\.id) + a.overrides.map(\.id) + a.holidays.map(\.id) { touches[id, default: []].insert("*") }
             for alias in a.aliases { touches[alias.personID, default: []].insert("aliases") }
         }
         return touches

@@ -124,13 +124,14 @@ struct KanbanAvailabilityView: View {
                     .font(.system(size: 18, weight: .semibold).monospacedDigit())
                 Text("\(KanbanAvailability.days(total.available)) days")
                     .font(.system(size: 10).monospacedDigit())
-                    .foregroundStyle(.secondary)
             } else {
                 Text("—")
                     .font(.system(size: 18, weight: .semibold).monospacedDigit())
             }
         }
         .foregroundStyle(textColor)
+        .frame(width: 80, height: 48)
+        .background(RoundedRectangle(cornerRadius: 6).fill(band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill))
     }
 
     private func weeklyAvailabilityRow(rows: [Row], weeks: [KanbanDay], today: KanbanDay) -> some View {
@@ -146,10 +147,7 @@ struct KanbanAvailabilityView: View {
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let total = KanbanAvailability.total(rows.map { $0.cells[index] })
                 let band: KanbanAvailability.Band? = total.flatMap { KanbanAvailability.teamBand(available: $0.available, possible: $0.possible) }
-                let percentage: Int = {
-                    guard let total else { return 0 }
-                    return (100 * total.available) / total.possible
-                }()
+                let percentage = total.map { KanbanAvailability.percent($0.available, of: $0.possible) } ?? 0
                 ZStack {
                     if week == today.monday {
                         Color.accentColor.opacity(0.1)

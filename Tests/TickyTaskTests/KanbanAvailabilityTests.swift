@@ -94,6 +94,7 @@ struct KanbanAvailabilityTests {
         #expect(KanbanAvailability.teamBand(available: 398, possible: 500) == .yellow, "398/500 = 79.6%, 5*398 = 1990 < 4*500 = 2000")
         // Nil when no work days
         #expect(KanbanAvailability.teamBand(available: 0, possible: 0) == nil)
+        #expect(KanbanAvailability.percent(398, of: 500) == 79 && KanbanAvailability.percent(299, of: 500) == 59, "floored, never rounded up")
     }
 
     @Test("An override replaces the week; one above the possible days needs review and isn't used")
@@ -287,5 +288,50 @@ struct KanbanAvailabilityServiceTests {
         #expect(payload.availability == nil && payload.version == 1)
         let delta = try JSONDecoder().decode(KanbanAvailabilityDelta.self, from: Data("{}".utf8))
         #expect(delta.isEmpty)
+    }
+}
+
+extension KanbanAvailabilityTests {
+    @Test("Holidays aren't working days: out of possible, never subtracted twice, PTO on them not counted, per-record exceptions")
+    func holidays() {
+        let week = day("20261123")   // Thanksgiving Thursday 26 Nov
+        let board = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays)
+        let person = UUID()
+        func h(_ key: String, _ portion: KanbanTimeOffPortion = .full, worked: Set<UUID> = []) -> KanbanAvailability.Holiday {
+            .init(id: UUID(), day: day(key), portion: portion, workedBy: worked)
+        }
+        var m = member([off("20261126", "20261127")])
+        m.personID = person
+        let thanksgiving = h("20261126")
+        let one = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([thanksgiving]))
+        #expect(one.possibleHalfDays == 8 && one.holidayHalfDays == 2 && one.absentHalfDays == 2, "4 working days, Friday off")
+        #expect(one.effectiveHalfDays == 6 && one.band == .green && one.holidayIDs == [thanksgiving.id])
+        let duplicate = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([thanksgiving, h("20261126", .pm)]))
+        #expect(duplicate.possibleHalfDays == 8 && duplicate.holidayHalfDays == 2, "overlapping holidays count once")
+        let half = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([h("20261124", .pm)]))
+        #expect(half.possibleHalfDays == 9 && half.effectiveHalfDays == 9)
+        // Working one holiday doesn't exempt another on the same day.
+        let works = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([h("20261126", worked: [person])]))
+        #expect(works.possibleHalfDays == 10 && works.absentHalfDays == 4 && works.holidayHalfDays == 0)
+        let mixed = KanbanAvailability.cell(week: week, board: board, member: m,
+                                            holidays: .init([h("20261126", worked: [person]), h("20261126", .am)]))
+        #expect(mixed.possibleHalfDays == 9 && mixed.absentHalfDays == 3)
+        // A weekend holiday only matters on a board that works weekends.
+        let saturday = KanbanAvailability.Holidays([h("20261128")])
+        #expect(KanbanAvailability.cell(week: week, board: board, member: member(), holidays: saturday).possibleHalfDays == 10)
+        let sixDays = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays.union([7]))
+        #expect(KanbanAvailability.cell(week: week, board: sixDays, member: member(), holidays: saturday).possibleHalfDays == 10)
+        // All work days are holidays: its own state, not "—".
+        let shutdown = KanbanAvailability.Holidays(["20261123", "20261124", "20261125", "20261126", "20261127"].map { h($0) })
+        let closed = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: shutdown)
+        #expect(!closed.isActive && closed.isAllHoliday && closed.band == nil)
+        #expect(!KanbanAvailability.cell(week: day("20261019"), board: .init(start: nil, end: nil, workWeekDays: []), member: member()).isAllHoliday)
+        // An override is capped by the holiday-aware possible days.
+        var capped = member(overrides: [week: 10])
+        capped.personID = person
+        #expect(KanbanAvailability.cell(week: week, board: board, member: capped, holidays: .init([thanksgiving])).overrideNeedsReview)
+        // The weekly total ignores holidays: everyone working all their working days is 100 %.
+        let total = KanbanAvailability.total([one, KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([thanksgiving])), closed])
+        #expect(total.map { KanbanAvailability.percent($0.available, of: $0.possible) } == 87, "14 of 16 half days; the closed cell adds nothing")
     }
 }

@@ -377,6 +377,41 @@ struct KanbanTimeOffDTO: Codable, Equatable, Hashable, Sendable {
     var meaning: [String] { [personId?.uuidString ?? "", startDay, endDay, portionRaw, kindRaw] }
 }
 
+/// A public holiday (design 04). `workedBy` holds person ids, sorted and unique.
+struct KanbanHolidayDTO: Codable, Equatable, Hashable, Sendable {
+    var id: UUID
+    var day: String
+    var name: String
+    var portionRaw: String
+    var workedBy: [UUID]?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: KanbanHoliday) {
+        id = model.id
+        day = model.day
+        name = model.name
+        portionRaw = model.portionRaw
+        workedBy = model.workedBy
+        createdAt = model.createdAt
+        updatedAt = model.updatedAt
+    }
+
+    init(id: UUID = UUID(), day: String, name: String, portion: KanbanTimeOffPortion = .full, workedBy: [UUID]? = nil,
+         createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id
+        self.day = day
+        self.name = name
+        self.portionRaw = portion.rawValue
+        self.workedBy = KanbanHoliday.normalized(workedBy)
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    /// Two holidays alike here are the same holiday.
+    var meaning: [String] { [day, portionRaw, name.trimmingCharacters(in: .whitespaces).lowercased()] }
+}
+
 struct KanbanAvailabilityOverrideDTO: Codable, Equatable, Hashable, Sendable {
     var id: UUID
     var resourceId: UUID?
