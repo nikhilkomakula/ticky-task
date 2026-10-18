@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// A board row's header (design 01 §5): avatar, name, employment and assignment icons,
-/// the load gauge, a roll-off badge, a cross-board badge, the collapse chevron and the priority
-/// sort (click to sort once; its menu keeps the row sorted).
+/// the load gauge, a roll-off badge, a cross-board badge and the collapse chevron.
 struct KanbanRowHeader: View {
     let project: KanbanProject
     let row: KanbanRowSnapshot
@@ -11,14 +10,11 @@ struct KanbanRowHeader: View {
     let person: KanbanMetrics.PersonRow?
     let collapsed: Bool
     var drag: BoardDragController?
-    var keepsSorted = false
-    var onSortOnce: () -> Void = {}
-    var onKeepSorted: (Bool) -> Void = { _ in }
     var onToggle: () -> Void
     var onEdit: () -> Void
     var onRemove: () -> Void
     @Environment(AppState.self) private var app
-    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = true
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = false
 
     var body: some View {
         let _ = app.kanbanClock   // the roll-off badge counts days from today
@@ -36,49 +32,21 @@ struct KanbanRowHeader: View {
 
             avatar
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Text(row.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    if let resource { icons(resource) }
-                }
+                name
                 if let load { gauge(load) }
                 badges
             }
             Spacer(minLength: 0)
-            sortControl
         }
         .padding(8)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kanban-rowhdr-\(row.name)")
         .contextMenu {
-            Button("Sort by priority", action: onSortOnce)
-            Toggle("Keep sorted by priority", isOn: Binding(get: { keepsSorted }, set: onKeepSorted))
             if resource != nil {
-                Divider()
                 Button("Edit membership…", action: onEdit)
                 Button("Remove from board…", role: .destructive, action: onRemove)
             }
         }
-    }
-
-    /// Click: this person's cards highest priority first, once. Menu: keep them that way.
-    private var sortControl: some View {
-        Menu {
-            Button("Sort by priority now", action: onSortOnce)
-            Toggle("Keep sorted by priority", isOn: Binding(get: { keepsSorted }, set: onKeepSorted))
-        } label: {
-            Image(systemName: "arrow.up.arrow.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(keepsSorted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
-        } primaryAction: {
-            onSortOnce()
-        }
-        .menuStyle(.button)
-        .buttonStyle(.borderless)
-        .fixedSize()
-        .help(keepsSorted ? "Kept sorted by priority (click to sort, or use the menu to stop)" : "Sort by priority (the menu can keep it sorted)")
-        .accessibilityLabel("Sort \(row.name)’s cards by priority")
-        .accessibilityValue(keepsSorted ? "Kept sorted by priority" : "")
-        .accessibilityIdentifier("kanban-row-sort-\(row.name)")
     }
 
     @ViewBuilder
@@ -97,31 +65,39 @@ struct KanbanRowHeader: View {
         }
     }
 
-    private func icons(_ resource: KanbanResource) -> some View {
+    /// The whole name, wrapping onto more lines in a narrow column, with the employment icon
+    /// (and the allocation, if shown) after its last word so the name gets the full width;
+    /// no-break spaces keep the icons with that word.
+    @ViewBuilder
+    private var name: some View {
+        let title = Text(row.name).font(.subheadline.weight(.semibold))
+        if let resource {
+            let info = icons(resource)
+            Text("\(title)\u{00A0}\(info.icons.font(.caption2).foregroundStyle(.secondary))")
+                .fixedSize(horizontal: false, vertical: true)
+                .help(info.help)
+                // What's spoken matches what's shown; the name stays the element's label.
+                .accessibilityLabel(row.name)
+                .accessibilityValue(info.spoken)
+        } else {
+            title.fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func icons(_ resource: KanbanResource) -> (icons: Text, help: String, spoken: String) {
         let contractor = resource.person?.employment == .contractor
         let partTime = resource.effectiveAssignment == .partTime
         let employment = contractor ? "Contractor" : "Employee"
         let assignment = partTime ? "Part-time" : "Full-time"
-        let allocation = resource.allocationPercent < 100 ? ", \(resource.allocationPercent)%" : ""
-        return HStack(spacing: 3) {
-            Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark")
-                .help(employment)
-                .accessibilityHidden(true)
-            if showAllocation {
-                Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill")
-                    .help("Allocation")
-                    .accessibilityHidden(true)
-            }
-            if showAllocation, resource.allocationPercent < 100 {
-                Text("\(resource.allocationPercent)%").monospacedDigit()
-                    .accessibilityHidden(true)
-            }
+        var icons = Text(Image(systemName: contractor ? "person.badge.clock" : "person.badge.shield.checkmark"))
+        guard showAllocation else { return (icons, employment, employment) }
+        icons = Text("\(icons)\u{00A0}\(Image(systemName: partTime ? "circle.lefthalf.filled" : "circle.fill"))")
+        var spoken = "\(employment), \(assignment)"
+        if resource.allocationPercent < 100 {
+            icons = Text("\(icons)\u{00A0}\(Text("\(resource.allocationPercent)%").monospacedDigit())")
+            spoken += ", \(resource.allocationPercent)%"
         }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .ignore)
-        // What's spoken matches what's shown.
-        .accessibilityLabel(showAllocation ? "\(employment), \(assignment)\(allocation)" : employment)
+        return (icons, "\(employment), \(assignment)", spoken)
     }
 
     /// A bar filled to the utilisation (capped at the bar's end), coloured by band.

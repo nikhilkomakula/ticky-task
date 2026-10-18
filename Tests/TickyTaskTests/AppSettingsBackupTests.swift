@@ -49,14 +49,14 @@ struct AppSettingsBackupTests {
     @Test("Show allocation travels in the settings backup; an older backup without it restores the default")
     func showAllocation() {
         let source = suite()
-        source.set(false, forKey: KanbanBoardDefaults.showAllocationKey)
+        source.set(true, forKey: KanbanBoardDefaults.showAllocationKey)
         let dto = AppSettingsDTO.capture(from: source)
-        #expect(dto.kanbanShowAllocation == false)
+        #expect(dto.kanbanShowAllocation == true)
         let target = suite()
         dto.apply(to: target)
-        #expect(target.object(forKey: KanbanBoardDefaults.showAllocationKey) as? Bool == false)
+        #expect(target.object(forKey: KanbanBoardDefaults.showAllocationKey) as? Bool == true)
         AppSettingsDTO().apply(to: target)
-        #expect(target.object(forKey: KanbanBoardDefaults.showAllocationKey) == nil, "absent: back to the default (shown)")
+        #expect(target.object(forKey: KanbanBoardDefaults.showAllocationKey) == nil, "absent: back to the default (hidden)")
     }
 
     @Test("Settings survive a plaintext backup round-trip")

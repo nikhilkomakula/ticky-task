@@ -52,10 +52,9 @@ struct KanbanBoardView: View {
         let people = app.kanbanMetrics.people(allProjects, key: key, calendar: calendar)
         let tasks = Dictionary(project.tasks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let collapsed = Set(project.collapsedRowKeys)
-        // Each cell's cards after the board's filter, in its sort order (or by priority, in a row kept sorted).
-        let grouped = Dictionary(grouping: snapshot.cards.compactMap { card in tasks[card.id].map { (CellKey(column: card.columnID, row: card.row), $0) } }
-            .filter { state.filter.matches($0.1, calendar: calendar) }, by: \.0)
-        let cells = Dictionary(uniqueKeysWithValues: grouped.map { key, pairs in (key, state.sorted(pairs.map(\.1), row: key.row)) })
+        // Each cell's cards after the board's filter, in its sort order.
+        let cells = Dictionary(grouping: snapshot.cards.compactMap { card in tasks[card.id].map { (CellKey(column: card.columnID, row: card.row), $0) } }
+            .filter { state.filter.matches($0.1, calendar: calendar) }, by: \.0).mapValues { state.sorted($0.map(\.1)) }
         let doneHidden = hiddenDone(cells, columns: columns, state: state)
         // What's on screen: everything below (focus, keyboard moves, drops) works on this.
         let shown = Dictionary(uniqueKeysWithValues: cells.map { key, cell in
@@ -148,9 +147,6 @@ struct KanbanBoardView: View {
                           collapsed: Bool, dragIDs: [UUID]) -> some View {
         HStack(alignment: .top, spacing: 0) {
             KanbanRowHeader(project: project, row: row, resource: resource, load: load, person: person, collapsed: collapsed, drag: drag,
-                            keepsSorted: KanbanBoardState.decode(project.boardState).keepsSortedByPriority(row.key),
-                            onSortOnce: { sortOnce(row.key) },
-                            onKeepSorted: { on in app.updateBoardState(project, context: context) { $0.setKeepsSortedByPriority(row.key, on) } },
                             onToggle: { toggle(row.key, collapsed: collapsed) },
                             onEdit: { editingMembership = resource },
                             onRemove: { archivingMembership = resource })
@@ -249,10 +245,10 @@ struct KanbanBoardView: View {
         drag.metrics = metrics
         if drag.rowOrder != rowOrder { drag.rowOrder = rowOrder }
         drag.commit = { [app, context, project] op in
-            // Reordering within a cell under another sort, or in a row kept sorted by priority, is
-            // a manual-order action: the cell takes the order on screen with the drop applied,
-            // and the board (and the row) switch to manual so it stays (as the planner does).
-            if case let .cards(ids, .cell(column, row, before)) = op, state.sort != .manual || state.keepsSortedByPriority(row),
+            // Reordering within a cell under another sort is a manual-order action: the cell
+            // takes the order on screen with the drop applied, and the board switches to
+            // manual so it stays (as the planner does).
+            if state.sort != .manual, case let .cards(ids, .cell(column, row, before)) = op,
                project.tasks.filter({ ids.contains($0.id) }).allSatisfy({ $0.column?.id == column && Self.rowKey($0) == row }) {
                 let shown = (cells[CellKey(column: column, row: row)] ?? []).filter { $0.archivedAt == nil }
                 let moving = shown.filter { ids.contains($0.id) }
@@ -260,7 +256,7 @@ struct KanbanBoardView: View {
                 order.insert(contentsOf: moving, at: before.flatMap { id in order.firstIndex { $0.id == id } } ?? order.count)
                 app.runKanban {
                     try app.kanbanService(context).arrange(order)
-                    app.updateBoardState(project, context: context) { $0.becomeManual(in: row) }
+                    app.updateBoardState(project, context: context) { $0.sort = .manual }
                 }
             } else {
                 app.runKanban { _ = try app.kanbanService(context).move(op, in: project) }
@@ -326,8 +322,7 @@ struct KanbanBoardView: View {
             // visibly moves one place.
             let viewState = KanbanBoardState.decode(project.boardState)
             if command && option, [.upArrow, .downArrow, .leftArrow, .rightArrow].contains(press.key),
-               viewState.sort != .manual || viewState.filter.isActive || shortened.contains(CellKey(column: card.columnID, row: card.row))
-                || viewState.keepsSortedByPriority(card.row) {
+               viewState.sort != .manual || viewState.filter.isActive || shortened.contains(CellKey(column: card.columnID, row: card.row)) {
                 var order = (cells[CellKey(column: card.columnID, row: card.row)] ?? []).filter { $0.archivedAt == nil }
                 guard let from = order.firstIndex(where: { $0.id == id }) else { return .handled }
                 let to = from + ([.upArrow, .leftArrow].contains(press.key) ? -1 : 1)
@@ -335,7 +330,7 @@ struct KanbanBoardView: View {
                 order.swapAt(from, to)
                 app.runKanban {
                     try service.arrange(order)
-                    app.updateBoardState(project, context: context) { $0.becomeManual(in: card.row) }
+                    if viewState.sort != .manual { app.updateBoardState(project, context: context) { $0.sort = .manual } }
                 }
                 return .handled
             }
@@ -413,17 +408,6 @@ struct KanbanBoardView: View {
 
     private func menuTasks(for task: KanbanTask) -> [KanbanTask] {
         selected.contains(task.id) ? selection() : [task]
-    }
-
-    /// Puts the row in priority order as its manual order. Under another board Sort that order
-    /// wouldn't show, so the board goes to Manual, as it does after any hand reorder.
-    private func sortOnce(_ row: KanbanRowKey) {
-        app.runKanban {
-            try app.kanbanService(context).sortRowByPriority(row, in: project)
-            if KanbanBoardState.decode(project.boardState).sort != .manual {
-                app.updateBoardState(project, context: context) { $0.sort = .manual }
-            }
-        }
     }
 
     /// Adds a copy right after the card and shows it highlighted.

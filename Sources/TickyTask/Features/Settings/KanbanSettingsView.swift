@@ -15,7 +15,7 @@ struct KanbanSettingsView: View {
     @AppStorage(KanbanBoardDefaults.openTaskTargetKey) private var openTaskTarget = 5.0
     @AppStorage(KanbanBoardDefaults.dueSoonKey) private var dueSoon = 3
     @AppStorage(KanbanBoardDefaults.suggestDoneKey) private var suggestDone = true
-    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = true
+    @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = false
     @AppStorage("kanban.notifyDueDates") private var notifyDueDates = false
     @AppStorage("kanban.notifyDueMinutes") private var notifyDueMinutes = 9 * 60
     @AppStorage(KanbanBoardDefaults.autoArchiveEnabledKey) private var autoArchive = false

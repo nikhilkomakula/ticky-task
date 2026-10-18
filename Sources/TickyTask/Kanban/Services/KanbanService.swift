@@ -969,32 +969,6 @@ struct KanbanService {
     /// Puts these cards of one cell in this order (a reorder under a non-manual sort, from
     /// the order on screen). Cards the view hides keep their places; the whole cell is then
     /// renumbered densely, so no two share a position. One entry.
-    /// Puts every live card in one person's row (Unassigned too) in priority order, cell by cell,
-    /// as their manual order: one entry for the whole row, none when it's already in order.
-    /// Cards a filter or a shortened Done cell hides are sorted too.
-    @discardableResult
-    func sortRowByPriority(_ row: KanbanRowKey, in project: KanbanProject) throws -> Bool {
-        try RecurrenceMaterializer.checkpoint(context)
-        let rowCards = project.tasks.filter { card in
-            card.archivedAt == nil && (card.resource.flatMap { $0.archivedAt == nil ? KanbanRowKey.resource($0.id) : nil } ?? .unassigned) == row
-        }
-        var transitions: [KanbanTransition] = []
-        for (_, cell) in Dictionary(grouping: rowCards, by: { $0.column?.id }) {
-            for (index, task) in cell.sorted(by: KanbanBoardState.byPriority).enumerated() where task.sortIndex != Double(index) {
-                var to = placement(task)
-                to.sortIndex = Double(index)
-                transitions.append(KanbanTransition(taskID: task.id, from: placement(task), to: to))
-            }
-        }
-        guard !transitions.isEmpty else { return false }
-        var name = "Unassigned"
-        if case let .resource(id) = row, let resource = project.resources.first(where: { $0.id == id }) { name = resource.displayName }
-        let data = try KanbanActivityPayload(transitions: transitions).encoded()
-        applyTransitions(transitions, in: project)
-        try save(project, kind: .moved, taskIDs: transitions.map(\.taskID), summary: "Sorted \(name)’s cards by priority", encodedPayload: data)
-        return true
-    }
-
     func arrange(_ ordered: [KanbanTask]) throws {
         try RecurrenceMaterializer.checkpoint(context)
         let project = try sameProject(ordered)

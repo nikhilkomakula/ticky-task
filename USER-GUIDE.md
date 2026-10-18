@@ -67,7 +67,7 @@ The load target for each resource—how many cards they should have open—is ca
 
 **Duplicate a card.** Right-click it and choose **Duplicate**, or focus it and press **⌘D**. The copy (titled "… copy") lands right after it with the same fields, labels, dependencies and steps (steps start not done). It's one **Change Log** entry, so **⌘Z** removes it.
 
-**Sort someone's cards by priority.** Click the sort icon (↑↓) on a resource's row header to put their cards in every column in priority order: Critical, High, Medium, then Low, keeping the current order among equals. If the board's **Sort** isn't Manual, it switches to Manual so you see the new order. **⌘Z** undoes it. To keep that row sorted as cards change, open the icon's menu (or right-click the row header) and turn on **Keep sorted by priority**; the icon turns blue. It applies to that row only, over the board's **Sort**, and turns off when you reorder that row's cards by hand.
+**Sort by priority.** The board's **Sort** menu includes **Priority** (Critical, High, Medium, then Low), which orders every cell on the board, for all resources at once.
 
 **Archive a card.** Click **Archive** in the editor. Archived cards can be shown with **Show Archived** on the board toolbar.
 
@@ -199,7 +199,7 @@ The menu bar's calendar now marks days with due Kanban cards so you can see at a
 
 **New boards** defaults:
 - **Measure load in**: open tasks or hours. This affects all charts and capacity calculations.
-- **Show allocation in row headers** (under **Boards**, on by default): turn it off to hide the part-time icon and percentage beside each name. Allocation still sets capacity.
+- **Show allocation in row headers** (under **Boards**, off by default): turn it on to show the part-time icon and percentage beside each name. Allocation still sets capacity.
 - **Open-task target per resource**: the default load target (e.g., 5 tasks per resource).
 - **Weight Critical and High cards**: if on, High and Critical cards count extra toward load (e.g., 2 or 1.5 × their count).
 - **Over a WIP limit**: warn (show red but allow drop) or block the move.

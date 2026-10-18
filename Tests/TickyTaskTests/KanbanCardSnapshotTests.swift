@@ -77,4 +77,37 @@ struct KanbanCardSnapshotTests {
             try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("columns-\(scheme == .dark ? "dark" : "light").png"))
         }
     }
+
+    @Test("Row headers with short and long names render in light and dark, at narrow and default widths")
+    func renderRowHeaders() throws {
+        guard let dir = ProcessInfo.processInfo.environment["CARD_SNAPSHOT_DIR"] else { return }
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
+        let s = KanbanService(context)
+        let project = try s.createProject(name: "Platform", key: "PLAT")
+        let resources = try ["Ravi", "Alexandra Montgomery-Richardson", "Priyanka Venkataraman Subramanian"].map { name in
+            try s.addMembership(try s.createPerson(name: name, initials: String(name.prefix(2)).uppercased()), to: project)
+        }
+        let app = AppState()
+        for scheme in [ColorScheme.light, .dark] {
+            for width in [160.0, 230.0] {
+                let headers = VStack(alignment: .leading, spacing: 0) {
+                    ForEach(resources) { resource in
+                        KanbanRowHeader(project: project, row: KanbanRowSnapshot(key: .resource(resource.id), resourceID: resource.id, personID: resource.person?.id,
+                                                                                 name: resource.displayName, sortIndex: 0, archived: false),
+                                        resource: resource, load: nil, person: nil, collapsed: false, onToggle: {}, onEdit: {}, onRemove: {})
+                            .frame(width: width, alignment: .topLeading)
+                        Divider()
+                    }
+                }
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(app)
+                .environment(\.colorScheme, scheme)
+                let renderer = ImageRenderer(content: headers)
+                renderer.scale = 2
+                guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+                try png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("rows-\(scheme == .dark ? "dark" : "light")-\(Int(width)).png"))
+            }
+        }
+    }
 }

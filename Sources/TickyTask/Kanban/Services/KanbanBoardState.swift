@@ -32,9 +32,6 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
     var columnWidths: [String: Double]?
     /// Done cells show every card rather than the most recent few.
     var showAllDone = false
-    /// Rows (by `KanbanRowKey.storageKey`) whose cells always show highest priority first,
-    /// whatever the board's Sort.
-    var prioritySortedRows: [String]?
 
     init() {}
 
@@ -57,31 +54,6 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
         }, uniquingKeysWith: max)
         columnWidths = widths.isEmpty ? nil : widths
         showAllDone = (try? c.decodeIfPresent(Bool.self, forKey: .showAllDone)) ?? false
-        // Only real row keys, each once.
-        var seen = Set<String>()
-        let rows = (((try? c.decodeIfPresent([String].self, forKey: .prioritySortedRows)) ?? nil) ?? [])
-            .filter { KanbanRowKey.from(storageKey: $0) != nil && seen.insert($0).inserted }
-        prioritySortedRows = rows.isEmpty ? nil : rows
-    }
-
-    func keepsSortedByPriority(_ row: KanbanRowKey) -> Bool { prioritySortedRows?.contains(row.storageKey) ?? false }
-
-    mutating func setKeepsSortedByPriority(_ row: KanbanRowKey, _ on: Bool) {
-        var rows = (prioritySortedRows ?? []).filter { $0 != row.storageKey }
-        if on { rows.append(row.storageKey) }
-        prioritySortedRows = rows.isEmpty ? nil : rows
-    }
-
-    /// After a hand reorder: the board's Sort goes to Manual and the row stops keeping sorted,
-    /// so the order you made stays.
-    mutating func becomeManual(in row: KanbanRowKey) {
-        sort = .manual
-        setKeepsSortedByPriority(row, false)
-    }
-
-    /// Orders one cell's cards: by priority in a row kept sorted, otherwise by the board's Sort.
-    func sorted(_ tasks: [KanbanTask], row: KanbanRowKey) -> [KanbanTask] {
-        keepsSortedByPriority(row) ? tasks.sorted(by: Self.byPriority) : sorted(tasks)
     }
 
     /// Critical first, then High, Medium, Low; equal ones keep their manual order.

@@ -39,7 +39,7 @@ struct KanbanBoardDefaults: Equatable, Sendable {
     static let openTaskTargetKey = "kanban.openTaskTargetDefault"
     static let dueSoonKey = "kanban.dueSoonThresholdDefault"
     static let suggestDoneKey = "kanban.suggestDoneDefault"
-    /// Row headers show each member's allocation (part-time icon and percentage); on unless turned off.
+    /// Row headers show each member's allocation (part-time icon and percentage); off unless turned on.
     static let showAllocationKey = "kanban.showAllocation"
     static let autoArchiveEnabledKey = "kanban.autoArchiveEnabled"
     static let autoArchiveDaysKey = "kanban.autoArchiveDays"

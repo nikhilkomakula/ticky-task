@@ -94,14 +94,14 @@ struct KanbanCardView: View {
             ForEach(task.labels.sorted { $0.sortIndex < $1.sortIndex }) { label in
                 let color = KanbanUI.color(label.colorHex) ?? .gray
                 Text(label.name)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 9))   // for information only: as small as stays legible
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)   // a very long name wraps inside its tag
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)   // off the 4 / 6 / 8 scale on purpose: tags read smaller than the title
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)   // off the 4 / 6 / 8 scale on purpose: tags read smaller than the title
                     .background(Capsule().fill(color.opacity(dark ? 0.2 : 0.12)))
                     .overlay(Capsule().strokeBorder(color.opacity(dark ? 0.4 : 0.3), lineWidth: 0.5))
-                    .help("Label")
+                    .help(label.name)   // the full name, for when the small type is hard to read
             }
         }
     }
