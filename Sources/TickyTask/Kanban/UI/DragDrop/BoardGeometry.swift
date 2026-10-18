@@ -19,10 +19,17 @@ enum BoardDropTarget: Equatable, Sendable {
     case rowSlot(Int)
 }
 
-/// Board element frames in global coordinates, as published by the views.
+/// Cards and cells use scroll-content coordinates; pinned headers and the viewport stay global.
 struct BoardFrames: Equatable, Sendable {
     struct Card: Equatable, Sendable { var id: UUID; var columnID: UUID; var row: KanbanRowKey; var frame: CGRect }
-    struct Cell: Equatable, Sendable { var columnID: UUID; var row: KanbanRowKey; var frame: CGRect }
+    struct CardLayout: Equatable, Sendable { var id: UUID; var offset: CGFloat; var height: CGFloat }
+    struct Cell: Equatable, Sendable {
+        var columnID: UUID
+        var row: KanbanRowKey
+        var frame: CGRect
+        /// Complete displayed order, including cards outside the realized window. Offsets include cell padding.
+        var cardLayouts: [CardLayout] = []
+    }
     struct ColumnHeader: Equatable, Sendable { var id: UUID; var frame: CGRect }
     struct RowHeader: Equatable, Sendable {
         var row: KanbanRowKey
@@ -41,10 +48,48 @@ struct BoardFrames: Equatable, Sendable {
     var rowOrder: [UUID] = []
     /// The pinned top-left corner, which covers whatever scrolls under it.
     var corner: CGRect = .zero
+    /// The scroll content's origin in global coordinates. Scrolling changes only this translation.
+    var contentOrigin: CGPoint = .zero
+
+    func globalFrame(_ contentFrame: CGRect) -> CGRect {
+        contentFrame.offsetBy(dx: contentOrigin.x, dy: contentOrigin.y)
+    }
+
+    func cardFrame(id: UUID) -> CGRect? {
+        if let card = cards.first(where: { $0.id == id }) { return globalFrame(card.frame) }
+        for cell in cells {
+            if let layout = cell.cardLayouts.first(where: { $0.id == id }) {
+                return globalFrame(estimatedFrame(layout, in: cell))
+            }
+        }
+        return nil
+    }
+
+    /// Realized measurements win; the complete cell layout supplies frames for virtualized cards.
+    func cardFrames(in cell: Cell, excluding excluded: Set<UUID> = []) -> [Card] {
+        let realized = cards.filter { $0.columnID == cell.columnID && $0.row == cell.row && !excluded.contains($0.id) }
+        guard !cell.cardLayouts.isEmpty else {
+            return realized.sorted { $0.frame.minY < $1.frame.minY }.map {
+                Card(id: $0.id, columnID: $0.columnID, row: $0.row, frame: globalFrame($0.frame))
+            }
+        }
+        let measured = Dictionary(uniqueKeysWithValues: realized.map { ($0.id, $0.frame) })
+        return cell.cardLayouts.filter { !excluded.contains($0.id) }.map { layout in
+            Card(id: layout.id, columnID: cell.columnID, row: cell.row,
+                 frame: globalFrame(measured[layout.id] ?? estimatedFrame(layout, in: cell)))
+        }
+    }
+
+    private func estimatedFrame(_ layout: CardLayout, in cell: Cell) -> CGRect {
+        CGRect(x: cell.frame.minX + 6, y: cell.frame.minY + layout.offset,
+               width: max(0, cell.frame.width - 12), height: layout.height)
+    }
 }
 
 /// Pure drop resolution, unit-tested without any UI (design 01 §4).
 enum BoardGeometry {
+    static let contentSpace = "kanban-board-content"
+
     /// The drop target under `pointer`, or nil over nothing that accepts the drag.
     /// For cards, header zones win over cells; inside a cell the insertion point follows
     /// the planner's midpoint rule (drop on a card's lower half to land after it).
@@ -62,10 +107,8 @@ enum BoardGeometry {
             }
             if let header = frames.rowHeaders.first(where: { !$0.isSummary && $0.frame.contains(pointer) }) { return .rowHeader(header.row) }
             if let strip = frames.rowHeaders.first(where: { $0.isSummary && $0.frame.contains(pointer) }) { return .rowHeader(strip.row) }
-            guard let cell = frames.cells.first(where: { $0.frame.contains(pointer) }) else { return nil }
-            let siblings = frames.cards
-                .filter { $0.columnID == cell.columnID && $0.row == cell.row && !dragged.contains($0.id) }
-                .sorted { $0.frame.minY < $1.frame.minY }
+            guard let cell = frames.cells.first(where: { frames.globalFrame($0.frame).contains(pointer) }) else { return nil }
+            let siblings = frames.cardFrames(in: cell, excluding: dragged)
             let before = siblings.first { pointer.y < $0.frame.midY }?.id
             return .cell(columnID: cell.columnID, row: cell.row, beforeCardID: before)
         case let .column(id):

@@ -52,6 +52,86 @@ struct KanbanBoardGeometryTests {
                 == .cell(columnID: todo, row: .resource(ravi), beforeCardID: c))
     }
 
+    var virtualizedFrames: BoardFrames {
+        var result = frames
+        result.cells[2].cardLayouts = [
+            .init(id: a, offset: 6, height: 40),
+            .init(id: b, offset: 52, height: 40),
+            .init(id: c, offset: 98, height: 40),
+        ]
+        return result
+    }
+
+    @Test func missingCardFramesUseTheCompleteCellOrder() {
+        var f = virtualizedFrames
+        f.cards = []
+        let resolve = { (y: CGFloat) in BoardGeometry.resolve(pointer: CGPoint(x: 300, y: y), source: .cards([UUID()]), frames: f) }
+        #expect(resolve(150) == .cell(columnID: todo, row: .resource(ravi), beforeCardID: a))
+        #expect(resolve(200) == .cell(columnID: todo, row: .resource(ravi), beforeCardID: b))
+        #expect(resolve(250) == .cell(columnID: todo, row: .resource(ravi), beforeCardID: c))
+        #expect(resolve(290) == .cell(columnID: todo, row: .resource(ravi), beforeCardID: nil))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 200), source: .cards([b]), frames: f)
+                == .cell(columnID: todo, row: .resource(ravi), beforeCardID: c))
+    }
+
+    @Test func realizedMidpointsOverrideEstimatedCardHeights() {
+        var f = virtualizedFrames
+        f.cards = [.init(id: b, columnID: todo, row: .resource(ravi), frame: CGRect(x: 206, y: 192, width: 238, height: 70))]
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 220), source: .cards([UUID()]), frames: f)
+                == .cell(columnID: todo, row: .resource(ravi), beforeCardID: b), "the estimate's midpoint was 212; the measured midpoint is 227")
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 227), source: .cards([UUID()]), frames: f)
+                == .cell(columnID: todo, row: .resource(ravi), beforeCardID: c), "the exact midpoint still lands after the card")
+    }
+
+    @Test func contentTranslationPreservesTargetsWithoutChangingPublishedFrames() {
+        var f = virtualizedFrames
+        let cards = f.cards, cells = f.cells
+        f.contentOrigin = CGPoint(x: -50, y: -100)
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 250, y: 50), source: .cards([UUID()]), frames: f)
+                == .cell(columnID: todo, row: .resource(ravi), beforeCardID: a))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 500, y: 20), source: .cards([a]), frames: f) == .columnHeader(doing),
+                "the pinned header is already global")
+        #expect(f.cardFrame(id: a) == CGRect(x: 156, y: 46, width: 238, height: 40))
+        #expect(f.cards == cards && f.cells == cells)
+        f.cards.removeAll()
+        #expect(f.cardFrame(id: a) == CGRect(x: 156, y: 46, width: 238, height: 40), "unrealized cards use the same translation")
+    }
+
+    @Test func aLongCellResolvesNeverRealizedCardsNearItsEnd() {
+        let ids = (0..<200).map { _ in UUID() }
+        let layouts = ids.enumerated().map { index, id in
+            BoardFrames.CardLayout(id: id, offset: 6 + CGFloat(index) * 46, height: 40)
+        }
+        let f = BoardFrames(cells: [.init(columnID: todo, row: .unassigned,
+                                         frame: CGRect(x: 200, y: 0, width: 250, height: 9212), cardLayouts: layouts)],
+                            viewport: CGRect(x: 0, y: 0, width: 700, height: 360), contentOrigin: CGPoint(x: 0, y: -9000))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 120), source: .cards([UUID()]), frames: f)
+                == .cell(columnID: todo, row: .unassigned, beforeCardID: ids[198]))
+        #expect(BoardGeometry.resolve(pointer: CGPoint(x: 300, y: 200), source: .cards([UUID()]), frames: f)
+                == .cell(columnID: todo, row: .unassigned, beforeCardID: nil))
+    }
+
+    @Test @MainActor func preferenceRefreshRetainsScrollOriginAndVirtualInsertionFrames() {
+        let controller = BoardDragController()
+        controller.setContentOrigin(CGPoint(x: -50, y: -100))
+        var f = virtualizedFrames
+        f.cards = []
+        controller.frames = f
+        #expect(controller.frames.contentOrigin == CGPoint(x: -50, y: -100))
+        #expect(controller.cardFrame(id: b) == CGRect(x: 156, y: 92, width: 238, height: 40))
+        controller.begin(.cards([UUID()]), frame: nil, start: CGPoint(x: 250, y: 100))
+        defer { controller.cancel() }
+        #expect(controller.target == .cell(columnID: todo, row: .resource(ravi), beforeCardID: b))
+        #expect(controller.insertionLine?.midY == 89)
+        #expect(controller.highlight == CGRect(x: 150, y: 40, width: 250, height: 160))
+        controller.setContentOrigin(CGPoint(x: -50, y: -146))
+        #expect(controller.target == .cell(columnID: todo, row: .resource(ravi), beforeCardID: c))
+        #expect(controller.insertionLine?.midY == 89)
+        controller.update(pointer: CGPoint(x: 250, y: 150))
+        #expect(controller.target == .cell(columnID: todo, row: .resource(ravi), beforeCardID: nil))
+        #expect(controller.insertionLine?.midY == 135, "the end marker follows the last virtual card")
+    }
+
     @Test func headersWinOverCells() {
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 100, y: 200), source: .cards([a]), frames: frames) == .rowHeader(.resource(ravi)))
         #expect(BoardGeometry.resolve(pointer: CGPoint(x: 500, y: 20), source: .cards([a]), frames: frames) == .columnHeader(doing))

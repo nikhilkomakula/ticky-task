@@ -35,8 +35,12 @@ final class BoardDragController {
 
     // Set by the board; not observed, so frame churn while scrolling redraws nothing.
     @ObservationIgnored var frames = BoardFrames() {
-        didSet { if frames.rowOrder != rowOrder { frames.rowOrder = rowOrder } }
+        didSet {
+            if frames.rowOrder != rowOrder { frames.rowOrder = rowOrder }
+            if frames.contentOrigin != contentOrigin { frames.contentOrigin = contentOrigin }
+        }
     }
+    @ObservationIgnored private var contentOrigin: CGPoint = .zero
     /// Every membership row in board order (the lazy grid publishes only drawn rows).
     @ObservationIgnored var rowOrder: [UUID] = [] {
         didSet { frames.rowOrder = rowOrder }
@@ -48,6 +52,15 @@ final class BoardDragController {
     @ObservationIgnored private var autoScroll: Timer?
 
     var isActive: Bool { source != nil }
+
+    func setContentOrigin(_ point: CGPoint) {
+        guard point != contentOrigin else { return }
+        contentOrigin = point
+        frames.contentOrigin = point
+        framesChanged()
+    }
+
+    func cardFrame(id: UUID) -> CGRect? { frames.cardFrame(id: id) }
 
     func isDragging(card id: UUID) -> Bool {
         if case let .cards(ids)? = source { return ids.contains(id) }
@@ -191,17 +204,19 @@ final class BoardDragController {
         switch target {
         case let .cell(column, row, before):
             guard let cell = frames.cells.first(where: { $0.columnID == column && $0.row == row }) else { return nil }
-            let siblings = frames.cards.filter { $0.columnID == column && $0.row == row && !isDragging(card: $0.id) }
-                .sorted { $0.frame.minY < $1.frame.minY }
+            let excluded: Set<UUID>
+            if case let .cards(ids)? = source { excluded = Set(ids) } else { excluded = [] }
+            let siblings = frames.cardFrames(in: cell, excluding: excluded)
+            let cellFrame = frames.globalFrame(cell.frame)
             let y: CGFloat
             if let before, let card = siblings.first(where: { $0.id == before }) {
                 y = card.frame.minY - 3
             } else if let last = siblings.last {
                 y = last.frame.maxY + 3
             } else {
-                y = cell.frame.minY + 8
+                y = cellFrame.minY + 8
             }
-            return CGRect(x: cell.frame.minX + 6, y: y - thickness / 2, width: max(0, cell.frame.width - 12), height: thickness)
+            return CGRect(x: cellFrame.minX + 6, y: y - thickness / 2, width: max(0, cellFrame.width - 12), height: thickness)
         case let .columnSlot(index):
             let others = frames.columnHeaders.filter { !isDragging(column: $0.id) }.sorted { $0.frame.minX < $1.frame.minX }
             guard let reference = others.first ?? frames.columnHeaders.first else { return nil }
@@ -233,7 +248,7 @@ final class BoardDragController {
         return switch target {
         case let .columnHeader(id)?: frames.columnHeaders.first { $0.id == id }?.frame
         case let .rowHeader(row)?: frames.rowHeaders.first { $0.row == row && !$0.isSummary }?.frame
-        case let .cell(column, row, _)?: frames.cells.first { $0.columnID == column && $0.row == row }?.frame
+        case let .cell(column, row, _)?: frames.cells.first { $0.columnID == column && $0.row == row }.map { frames.globalFrame($0.frame) }
         default: nil
         }
     }
@@ -243,7 +258,7 @@ extension KanbanRowKey {
     var resourceID: UUID? { if case let .resource(id) = self { id } else { nil } }
 }
 
-/// Board views publish their frames (global coordinates) up to the board.
+/// Board views publish content frames and global pinned frames up to the board.
 struct BoardFramesKey: PreferenceKey {
     static let defaultValue = BoardFrames()
     static func reduce(value: inout BoardFrames, nextValue: () -> BoardFrames) {
@@ -258,8 +273,8 @@ struct BoardFramesKey: PreferenceKey {
 }
 
 extension View {
-    func publishBoardFrame(_ make: @escaping (CGRect) -> BoardFrames) -> some View {
-        background(GeometryReader { geo in Color.clear.preference(key: BoardFramesKey.self, value: make(geo.frame(in: .global))) })
+    func publishBoardFrame(in space: CoordinateSpace = .global, _ make: @escaping (CGRect) -> BoardFrames) -> some View {
+        background(GeometryReader { geo in Color.clear.preference(key: BoardFramesKey.self, value: make(geo.frame(in: space))) })
     }
 
     /// Makes this view a drag source. `minimumDistance: 4` keeps a click a click (open the
