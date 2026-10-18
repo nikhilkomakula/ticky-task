@@ -291,10 +291,10 @@ struct KanbanAvailabilityAssistantSheet: View {
             Toggle("", isOn: $rows[index].selected)
                 .labelsHidden()
                 .disabled(!row.isApplicable)
-                .accessibilityLabel("Apply \(row.title)")
+                .accessibilityLabel(row.accessibilityLabel(snapshot: snapshot))
             VStack(alignment: .leading, spacing: 3) {
                 Label(row.title, systemImage: rowSymbol(row)).font(.callout.weight(.semibold))
-                if let detail = row.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                if let detail = row.detail(snapshot: snapshot) { Text(detail).font(.caption).foregroundStyle(.secondary) }
                 if row.operations.contains(where: { $0.personText != nil }) { personPicker(index, snapshot: snapshot) }
                 holidayPicker(index, snapshot: snapshot)
                 ForEach(Array(row.operations.enumerated()), id: \.offset) { _, operation in
@@ -351,8 +351,11 @@ struct KanbanAvailabilityAssistantSheet: View {
         let suggested = people.filter { suggestions.contains($0.id) }
         let onBoard = people.filter(\.onBoard)
         let others = people.filter { !$0.onBoard }
+        let names = row.operations.compactMap(\.personText).reduce(into: [String]()) { names, name in
+            if !names.contains(name) { names.append(name) }
+        }
         return HStack(spacing: 6) {
-            Text(row.operations.compactMap(\.personText).first ?? "Person")
+            Text(names.isEmpty ? "Person" : names.joined(separator: " / "))
             Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
             Menu(row.personID.map(personName) ?? "Choose…") {
                 if !suggested.isEmpty {
@@ -365,7 +368,7 @@ struct KanbanAvailabilityAssistantSheet: View {
             }
             .fixedSize()
             .accessibilityIdentifier("kanban-assistant-person-\(index)")
-            if let personID = row.personID, row.match != .person(personID) {
+            if !row.namesToRemember.isEmpty {
                 Toggle("Remember this name", isOn: $rows[index].rememberName).font(.caption).toggleStyle(.checkbox)
             }
         }
@@ -390,9 +393,7 @@ struct KanbanAvailabilityAssistantSheet: View {
     }
 
     private func choose(_ id: UUID, for index: Int, snapshot: KanbanAvailabilityAssistant.Snapshot) {
-        rows[index].personID = id
-        rows[index].offBoard = !(people.first { $0.id == id }?.onBoard ?? false)
-        refreshStatus(index, snapshot: snapshot)
+        KanbanAvailabilityAssistant.choosePerson(id, for: &rows[index], people: people, snapshot: snapshot)
     }
 
     private func refreshStatus(_ index: Int, snapshot: KanbanAvailabilityAssistant.Snapshot) {

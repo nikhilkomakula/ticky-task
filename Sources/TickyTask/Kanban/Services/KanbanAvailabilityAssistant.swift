@@ -610,10 +610,10 @@ extension KanbanAvailabilityAssistant {
     struct PlanRow: Identifiable, Equatable, Sendable {
         var id = UUID()
         var operations: [Operation]
-        var personID: UUID?
+        var operationMatches: [Int: Match] = [:]
+        var personChoices: [Int: UUID] = [:]
         var holidayID: UUID?
         var sourceTimeOffID: UUID?
-        var samePerson = true
         var match: Match = .unmatched(suggestions: [])
         var selected = false
         var rememberName = false
@@ -621,6 +621,28 @@ extension KanbanAvailabilityAssistant {
         var status: Status = .new
         var context: DateContext
         var allowedPeople: Set<UUID>
+
+        func resolvedPersonID(at index: Int) -> UUID? {
+            if let chosen = personChoices[index] { return chosen }
+            if case let .person(id)? = operationMatches[index] { return id }
+            return nil
+        }
+        var samePerson: Bool {
+            Set(operations.indices.compactMap { resolvedPersonID(at: $0) }).count <= 1
+        }
+        var personID: UUID? {
+            let indices = operations.indices.filter { operations[$0].personText != nil }
+            let ids = indices.compactMap { resolvedPersonID(at: $0) }
+            guard ids.count == indices.count, Set(ids).count == 1 else { return nil }
+            return ids.first
+        }
+        var namesToRemember: [String] {
+            guard let person = personID else { return [] }
+            return operations.indices.compactMap { index in
+                guard operationMatches[index] != .person(person) else { return nil }
+                return operations[index].personText
+            }
+        }
 
         var isApplicable: Bool {
             switch status {
@@ -641,13 +663,35 @@ extension KanbanAvailabilityAssistant {
                 }
             }.joined(separator: " · ")
         }
-        var detail: String? {
+        func detail(snapshot: Snapshot) -> String? {
             operations.map { op in
-                if let start = op.start, let end = op.end { return "\(iso(start)) – \(iso(end)) · \(op.portion.rawValue)" }
+                if op.kind == .timeOff || op.kind == .removeTimeOff {
+                    let dates: String
+                    if let start = op.start, let end = op.end { dates = "\(iso(start)) – \(iso(end))" }
+                    else { dates = "Dates need review" }
+                    return "\(dates) · \(op.portion.rawValue) · \(timeOffKindLabel(op, snapshot: snapshot))"
+                }
                 if let day = op.date { return iso(day) + " · " + op.portion.rawValue }
                 if let week = op.weekStart { return "Week of \(iso(week)): \(op.halfDays.map { KanbanAvailability.days($0) } ?? "clear")" }
                 return ""
             }.joined(separator: "; ")
+        }
+        private func timeOffKindLabel(_ op: Operation, snapshot: Snapshot) -> String {
+            if op.kind == .timeOff {
+                if let kind = op.timeOffKind { return kind.label }
+                if let source = sourceTimeOff(for: self, snapshot: snapshot) {
+                    return KanbanTimeOffKind(rawValue: source.kindRaw)?.label ?? source.kindRaw
+                }
+            } else if let person = personID,
+                      let cut = try? proposed(op, person: person, id: id, now: snapshot.capturedAt) {
+                let touched = snapshot.timeOff.filter { $0.personId == person && !slots(of: $0).isDisjoint(with: slots(of: cut)) }
+                let labels = touched.map { KanbanTimeOffKind(rawValue: $0.kindRaw)?.label ?? $0.kindRaw }
+                if !labels.isEmpty { return Set(labels).sorted().joined(separator: ", ") }
+            }
+            return "Kind needs review"
+        }
+        func accessibilityLabel(snapshot: Snapshot) -> String {
+            "Apply \(title), \(detail(snapshot: snapshot) ?? "")"
         }
     }
 
@@ -683,30 +727,44 @@ extension KanbanAvailabilityAssistant {
         }
         return groups.map { ops in
             var row = PlanRow(operations: ops, context: context, allowedPeople: Set(people.map(\.id)))
-            if let text = ops.compactMap(\.personText).first {
-                row.match = match(text, among: people)
-                if case let .person(id) = row.match { row.personID = id }
+            for index in ops.indices {
+                if let text = ops[index].personText { row.operationMatches[index] = match(text, among: people) }
             }
-            let personTexts = Set(ops.compactMap(\.personText).map(normalized))
-            if personTexts.count > 1 {
-                let matches = ops.compactMap(\.personText).map { match($0, among: people) }
-                let ids = matches.compactMap { value -> UUID? in if case let .person(id) = value { return id }; return nil }
-                row.samePerson = ids.count == matches.count && Set(ids).count == 1
-            }
+            let matches = ops.indices.compactMap { row.operationMatches[$0] }
+            let unmatched = matches.first { if case .unmatched = $0 { return true }; return false }
+            row.match = unmatched ?? matches.first ?? .unmatched(suggestions: [])
             if let target = ops.first(where: { $0.kind == .removeHoliday || $0.kind == .holidayException }) {
                 let candidates = holidayCandidates(target, snapshot: snapshot)
                 if candidates.count == 1 { row.holidayID = candidates[0].id }
             }
-            if ops.count == 2, let removal = ops.first(where: { $0.kind == .removeTimeOff }), let person = row.personID,
-               let cut = try? proposed(removal, person: person, id: row.id, now: snapshot.capturedAt) {
-                let touched = snapshot.timeOff.filter { $0.personId == person && !slots(of: $0).isDisjoint(with: slots(of: cut)) }
-                if touched.count == 1 { row.sourceTimeOffID = touched[0].id }
-            }
+            row.sourceTimeOffID = sourceTimeOff(for: row, snapshot: snapshot)?.id
             row.offBoard = row.personID.map { id in !people.contains { $0.id == id && $0.onBoard } } ?? false
             row.status = reviewStatus(of: row, snapshot: snapshot, context: context)
             row.selected = row.status == .new && !row.offBoard
             return row
         }
+    }
+
+    static func choosePerson(_ id: UUID, for row: inout PlanRow, people: [Person], snapshot: Snapshot) {
+        // A group choice resolves unknown names without merging two known people.
+        for index in row.operations.indices where row.operations[index].personText != nil {
+            if row.operations.count == 1 {
+                row.personChoices[index] = id
+            } else if case .unmatched? = row.operationMatches[index] {
+                row.personChoices[index] = id
+            }
+        }
+        row.sourceTimeOffID = sourceTimeOff(for: row, snapshot: snapshot)?.id
+        row.offBoard = row.personID.map { id in !people.contains { $0.id == id && $0.onBoard } } ?? false
+        row.status = reviewStatus(of: row, snapshot: snapshot, context: row.context)
+        row.selected = row.status == .new && !row.offBoard
+    }
+
+    private static func sourceTimeOff(for row: PlanRow, snapshot: Snapshot) -> KanbanTimeOffDTO? {
+        guard row.operations.count == 2, let removal = row.operations.first(where: { $0.kind == .removeTimeOff }),
+              let person = row.personID, let cut = try? proposed(removal, person: person, id: row.id, now: snapshot.capturedAt) else { return nil }
+        let touched = snapshot.timeOff.filter { $0.personId == person && !slots(of: $0).isDisjoint(with: slots(of: cut)) }
+        return touched.count == 1 ? touched[0] : nil
     }
 
     private static func holidayName(_ text: String) -> String {
@@ -720,6 +778,7 @@ extension KanbanAvailabilityAssistant {
     }
 
     static func reviewStatus(of row: PlanRow, snapshot: Snapshot, context: DateContext) -> Status {
+        if !row.samePerson { return .needsReview("Ask again with one person's change at a time.") }
         for op in row.operations {
             if let issue = op.issues.first { return .needsReview(issue) }
             let dates = [op.start, op.end, op.date].compactMap { $0 }
@@ -730,7 +789,6 @@ extension KanbanAvailabilityAssistant {
                 if op.kind == .override && !snapshot.members.contains(where: { $0.personID == id }) { return .unmatched }
             }
         }
-        if !row.samePerson { return .needsReview("Ask again with one person's change at a time.") }
         do {
             let result = try execute([row], snapshot: snapshot, aliases: [:], validateCapacity: false)
             if result.delta.isEmpty { return .alreadyRecorded }
@@ -814,11 +872,7 @@ extension KanbanAvailabilityAssistant {
     static func plan(for rows: [PlanRow], snapshot: Snapshot, aliases: [UUID: [String]] = [:]) throws -> Plan {
         let resolved = rows.map { row -> PlanRow in
             var copy = row
-            if copy.operations.count == 2, let removal = copy.operations.first(where: { $0.kind == .removeTimeOff }), let person = copy.personID,
-               let cut = try? proposed(removal, person: person, id: copy.id, now: snapshot.capturedAt) {
-                let touched = snapshot.timeOff.filter { $0.personId == person && !slots(of: $0).isDisjoint(with: slots(of: cut)) }
-                copy.sourceTimeOffID = touched.count == 1 ? touched[0].id : nil
-            }
+            copy.sourceTimeOffID = sourceTimeOff(for: copy, snapshot: snapshot)?.id
             return copy
         }
         guard clashingSelection(resolved).isEmpty else { throw ReplyError.wrongShape("Selected changes clash. Choose one change per slot, holiday or override.") }
@@ -970,9 +1024,12 @@ extension KanbanAvailabilityAssistant {
                     timeOff.append(entry)
                 }
             }
-            if row.rememberName, let person = row.personID, let name = row.operations.compactMap(\.personText).first {
+            if row.rememberName, let person = row.personID {
                 var list = aliasesAfter[person] ?? []
-                if !list.contains(where: { normalized($0) == normalized(name) }) { list.append(name); aliasesAfter[person] = list }
+                for name in row.namesToRemember where !list.contains(where: { normalized($0) == normalized(name) }) {
+                    list.append(name)
+                }
+                if !list.isEmpty { aliasesAfter[person] = list }
             }
         }
         for row in rows {
