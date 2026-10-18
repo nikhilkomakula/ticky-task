@@ -23,7 +23,7 @@ struct KanbanBoardPerformanceTests {
     /// Seeds 2,000 cards into a board with 30 people and times how long BoardSnapshot.make takes.
     /// This measures grid construction (grouping cards into cells) without rendering.
     @Test func boardSnapshotCreation() async throws {
-        let context = ModelContainerProvider.makeInMemoryContainer().mainContext
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let project = try KanbanVolumeSeed.seed(into: context, cardCount: 2000)
 
         let clock = ContinuousClock()
@@ -38,7 +38,7 @@ struct KanbanBoardPerformanceTests {
     /// Seeds 2,000 cards and times the board view state decoding and filter/sort operations.
     /// Measures how long it takes to compute which cards are on screen and in what order.
     @Test func boardStateFilterAndSort() async throws {
-        let context = ModelContainerProvider.makeInMemoryContainer().mainContext
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let project = try KanbanVolumeSeed.seed(into: context, cardCount: 2000)
 
         let snapshot = BoardSnapshot.make(project: project, includeArchived: false, includeArchivedRows: false)
@@ -64,7 +64,7 @@ struct KanbanBoardPerformanceTests {
 
     /// Seeds 2,000 cards and times metrics snapshot creation (load calculations, gauges, etc.).
     @Test func metricsSnapshot() async throws {
-        let context = ModelContainerProvider.makeInMemoryContainer().mainContext
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let project = try KanbanVolumeSeed.seed(into: context, cardCount: 2000)
 
         let calendar = KanbanUI.calendar(weekStartsMonday: true)
@@ -81,7 +81,7 @@ struct KanbanBoardPerformanceTests {
     /// Seeds 2,000 cards and times the full board state computation that KanbanBoardView.body performs:
     /// BoardSnapshot.make, decoding state, building the tasks dict, filtering, sorting, and metrics.
     @Test func completeBoardStateComputation() async throws {
-        let context = ModelContainerProvider.makeInMemoryContainer().mainContext
+        let context = ModelContext(ModelContainerProvider.makeInMemoryContainer())
         let project = try KanbanVolumeSeed.seed(into: context, cardCount: 2000)
 
         let clock = ContinuousClock()
