@@ -17,6 +17,7 @@ struct KanbanCardDraft: Equatable, Sendable {
     var dueDate: Date?
     var startDate: Date?
     var estimateHours: Double?
+    var complexity: Int?
 
     // Jira and blocking
     var jiraURL: String?

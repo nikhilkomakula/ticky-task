@@ -106,12 +106,13 @@ struct KanbanCardView: View {
         }
     }
 
-    /// Only what's set, right-aligned below the title and tags: due, estimate, Jira, blocked,
-    /// dependencies, notes, steps. A marker that doesn't fit moves to the next line whole.
+    /// Only what's set, right-aligned below the title and tags: due, estimate, complexity, Jira,
+    /// blocked, dependencies, notes, steps. A marker that doesn't fit moves to the next line whole.
     @ViewBuilder
     private var metadata: some View {
         let subtasks = task.subtasks
-        let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil
+        let complexity = task.complexity.flatMap(KanbanComplexity.init(rawValue:))
+        let hasAny = task.dueDate != nil || task.isBlocked || !task.dependsOn.isEmpty || task.jiraKey != nil || complexity != nil
             || task.hasNotes || !subtasks.isEmpty || (project.loadMeasure == .hours && task.estimateHours != nil)
         if hasAny {
             FlowLayout(spacing: 8, lineSpacing: 4, trailing: true) {
@@ -119,6 +120,16 @@ struct KanbanCardView: View {
                 if project.loadMeasure == .hours, let hours = task.estimateHours {
                     Text("\(hours.formatted(.number.precision(.fractionLength(0...1))))h").monospacedDigit()
                         .help("Estimate")
+                }
+                if let complexity {
+                    // Bars filled to the level, as a signal meter reads.
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: "cellularbars", variableValue: complexity.barsFilled)
+                        Text(complexity.shortLabel)
+                    }
+                        .help("Complexity: \(complexity.label)")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Complexity \(complexity.label)")
                 }
                 if let key = task.jiraKey { jiraChip(key) }
                 if task.isBlocked {

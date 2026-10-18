@@ -20,11 +20,11 @@ struct KanbanCardSnapshotTests {
                                     dueDate: Calendar.current.date(byAdding: .day, value: -2, to: Date()))
         try s.edit(full, [.priority: .int(TaskPriority.high.rawValue), .isCritical: .bool(true), .isBlocked: .bool(true),
                           .blockedReason: .string("Waiting on keys"), .jiraURL: .string("https://jira.example.com/browse/PLAT-1234"),
-                          .notes: .string("See the design doc")])
+                          .notes: .string("See the design doc"), .complexity: .int(3)])
         try s.setLabels(full, Array(labels.prefix(4)))
         _ = try s.addSubtask(to: full, title: "Endpoints")
         let medium = try s.createTask(in: project, title: "Write docs", dueDate: Date())
-        try s.edit(medium, [.priority: .int(TaskPriority.medium.rawValue)])
+        try s.edit(medium, [.priority: .int(TaskPriority.medium.rawValue), .complexity: .int(1)])
         try s.setLabels(medium, [labels[1]])
         let app = AppState()
         for scheme in [ColorScheme.light, .dark] {

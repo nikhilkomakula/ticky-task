@@ -37,6 +37,7 @@ struct KanbanTaskEditor: View {
     @State private var due = Date()
     @State private var hasEstimate = false
     @State private var estimate = 4.0
+    @State private var complexity: Int?
     @State private var jiraURL = ""
     @State private var isBlocked = false
     @State private var blockedReason = ""
@@ -217,6 +218,11 @@ struct KanbanTaskEditor: View {
         Section {
             PriorityPicker(selection: $priority)
             CriticalToggle(isOn: $isCritical, help: "Mark this card critical — shown with a red flag before its priority.")
+            Picker("Complexity", selection: $complexity) {
+                Text("None").tag(Int?.none)
+                ForEach(KanbanComplexity.allCases) { Text($0.label).tag(Int?.some($0.rawValue)) }
+            }
+            .accessibilityIdentifier("kanban-editor-complexity")
             Toggle("Blocked", isOn: $isBlocked)
                 .accessibilityIdentifier("kanban-editor-blocked")
             if isBlocked {
@@ -435,6 +441,7 @@ struct KanbanTaskEditor: View {
             due = task.dueDate ?? Date()
             hasEstimate = task.estimateHours != nil
             estimate = task.estimateHours ?? (project?.defaultEstimateHours ?? 4)
+            complexity = task.complexity
             jiraURL = task.jiraURL ?? ""
             isBlocked = task.isBlocked
             blockedReason = task.blockedReason ?? ""
@@ -494,6 +501,7 @@ struct KanbanTaskEditor: View {
         draft.startDate = hasStart ? day(start) : nil
         draft.dueDate = hasDue ? day(due) : nil
         draft.estimateHours = hasEstimate ? estimate : nil
+        draft.complexity = complexity
         draft.jiraURL = trimmedJira.isEmpty ? nil : trimmedJira
         draft.isBlocked = isBlocked
         draft.blockedReason = isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty
@@ -536,6 +544,7 @@ struct KanbanTaskEditor: View {
             .startDate: hasStart ? .date(day(start)) : nil,
             .dueDate: hasDue ? .date(day(due)) : nil,
             .estimateHours: hasEstimate ? .double(estimate) : nil,
+            .complexity: complexity.map(KanbanValue.int),
             .jiraURL: trimmedJira.isEmpty ? nil : .string(trimmedJira),
             .isBlocked: .bool(isBlocked),
             .blockedReason: isBlocked && !blockedReason.trimmingCharacters(in: .whitespaces).isEmpty

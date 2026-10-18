@@ -220,6 +220,8 @@ struct KanbanTaskDTO: Codable, Equatable, Sendable {
     var dueDate: Date?
     var startDate: Date?
     var estimateHours: Double?
+    /// Added in v0.2.0; optional, so older backups read as "not set".
+    var complexity: Int?
     var jiraURL: String?
     var isBlocked: Bool
     var blockedReason: String?
@@ -245,6 +247,7 @@ struct KanbanTaskDTO: Codable, Equatable, Sendable {
         self.dueDate = model.dueDate
         self.startDate = model.startDate
         self.estimateHours = model.estimateHours
+        self.complexity = model.complexity
         self.jiraURL = model.jiraURL
         self.isBlocked = model.isBlocked
         self.blockedReason = model.blockedReason

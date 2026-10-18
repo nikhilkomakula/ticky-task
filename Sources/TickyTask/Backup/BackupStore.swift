@@ -417,6 +417,7 @@ enum BackupStore {
             task.dueDate = dto.dueDate
             task.startDate = dto.startDate
             task.estimateHours = dto.estimateHours
+            task.complexity = dto.complexity.flatMap { KanbanComplexity(rawValue: $0)?.rawValue }
             task.jiraURL = dto.jiraURL
             task.isBlocked = dto.isBlocked
             task.blockedReason = dto.blockedReason

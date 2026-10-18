@@ -595,6 +595,7 @@ struct KanbanService {
         draft.dueDate = task.dueDate
         draft.startDate = task.startDate
         draft.estimateHours = task.estimateHours
+        draft.complexity = task.complexity
         draft.jiraURL = task.jiraURL
         draft.isBlocked = task.isBlocked
         draft.blockedReason = task.blockedReason
@@ -673,6 +674,7 @@ struct KanbanService {
             .priority: .int(draft.priority),
             .isCritical: .bool(draft.isCritical),
             .estimateHours: draft.estimateHours.map(KanbanValue.double),
+            .complexity: draft.complexity.map(KanbanValue.int),
             .jiraURL: draft.jiraURL.map(KanbanValue.string),
             .isBlocked: .bool(draft.isBlocked),
             .blockedReason: draft.blockedReason.map(KanbanValue.string),
@@ -689,6 +691,7 @@ struct KanbanService {
         task.dueDate = draft.dueDate
         task.startDate = draft.startDate
         task.estimateHours = draft.estimateHours
+        task.complexity = draft.complexity
         task.jiraURL = draft.jiraURL
         task.isBlocked = draft.isBlocked
         task.blockedReason = draft.blockedReason
@@ -851,7 +854,7 @@ struct KanbanService {
 
     /// The editable fields of a card.
     enum TaskField: String, CaseIterable {
-        case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason
+        case title, notes, notesRich, priority, isCritical, dueDate, startDate, estimateHours, jiraURL, isBlocked, blockedReason, complexity
     }
 
     /// Throws what `edit` would throw for `values`, changing nothing (the editor checks
@@ -862,8 +865,9 @@ struct KanbanService {
             case let (.title, .string(t)?): guard !t.trimmingCharacters(in: .whitespaces).isEmpty else { throw KanbanServiceError.invariant("A card needs a title.") }
             case (.notes, .string?), (.blockedReason, .string?), (.blockedReason, nil), (.isCritical, .bool?), (.isBlocked, .bool?),
                  (.notesRich, .data?), (.notesRich, nil), (.dueDate, .date?), (.dueDate, nil), (.startDate, .date?), (.startDate, nil),
-                 (.estimateHours, nil), (.jiraURL, nil): break
+                 (.estimateHours, nil), (.jiraURL, nil), (.complexity, nil): break
             case let (.priority, .int(p)?) where (0...2).contains(p): break
+            case let (.complexity, .int(c)?) where KanbanComplexity(rawValue: c) != nil: break
             case let (.estimateHours, .double(h)?): guard h.isFinite && h >= 0 else { throw KanbanServiceError.invariant("An estimate can't be negative.") }
             case let (.jiraURL, .string(url)?): guard KanbanMetrics.isWebURL(url) else { throw KanbanServiceError.invariant("The Jira link must be a web address.") }
             default: throw KanbanServiceError.invariant("\(field.rawValue) can't hold that value.")
@@ -1410,6 +1414,7 @@ struct KanbanService {
         case "dueDate": return task.dueDate.map(KanbanValue.date)
         case "startDate": return task.startDate.map(KanbanValue.date)
         case "estimateHours": return task.estimateHours.map(KanbanValue.double)
+        case "complexity": return task.complexity.map(KanbanValue.int)
         case "jiraURL": return task.jiraURL.map(KanbanValue.string)
         case "isBlocked": return .bool(task.isBlocked)
         case "blockedReason": return task.blockedReason.map(KanbanValue.string)
@@ -1432,6 +1437,7 @@ struct KanbanService {
         case "dueDate": if case let .date(d)? = v { task.dueDate = d } else { task.dueDate = nil }
         case "startDate": if case let .date(d)? = v { task.startDate = d } else { task.startDate = nil }
         case "estimateHours": if case let .double(d)? = v { task.estimateHours = d } else { task.estimateHours = nil }
+        case "complexity": if case let .int(i)? = v, KanbanComplexity(rawValue: i) != nil { task.complexity = i } else { task.complexity = nil }
         case "jiraURL": if case let .string(s)? = v { task.jiraURL = s } else { task.jiraURL = nil }
         case "isBlocked": if case let .bool(b)? = v { task.isBlocked = b }
         case "blockedReason": if case let .string(s)? = v { task.blockedReason = s } else { task.blockedReason = nil }
@@ -1845,6 +1851,7 @@ struct KanbanService {
                 let task = KanbanTask(id: dto.id, title: dto.title, priority: dto.priority, sortIndex: dto.sortIndex)
                 task.notes = dto.notes; task.notesRich = dto.notesRich; task.isCritical = dto.isCritical
                 task.dueDate = dto.dueDate; task.startDate = dto.startDate; task.estimateHours = dto.estimateHours
+                task.complexity = dto.complexity.flatMap { KanbanComplexity(rawValue: $0)?.rawValue }
                 task.jiraURL = dto.jiraURL; task.isBlocked = dto.isBlocked; task.blockedReason = dto.blockedReason
                 task.linkedPlannerTaskID = dto.linkedPlannerTaskID.flatMap { planner.contains($0) ? $0 : nil }
                 task.createdAt = dto.createdAt; task.updatedAt = dto.updatedAt; task.completedAt = dto.completedAt; task.archivedAt = dto.archivedAt

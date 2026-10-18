@@ -18,6 +18,8 @@ final class KanbanTask {
     var dueDate: Date?
     var startDate: Date?
     var estimateHours: Double?
+    /// `KanbanComplexity` raw value (1 low … 3 high); nil = not set.
+    var complexity: Int?
     var jiraURL: String?
     var isBlocked: Bool = false
     var blockedReason: String?

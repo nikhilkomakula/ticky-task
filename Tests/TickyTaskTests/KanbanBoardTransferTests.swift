@@ -115,7 +115,7 @@ struct KanbanBoardTransferTests {
         let (_, project) = try source()
         let text = T.csv(project)
         let lines = text.components(separatedBy: "\r\n")
-        #expect(lines.first == "Title,Column,Assignee,Priority,Critical,Due,Start,Estimate (h),Labels,Jira,Blocked,Subtasks")
+        #expect(lines.first == "Title,Column,Assignee,Priority,Critical,Due,Start,Estimate (h),Labels,Jira,Blocked,Subtasks,Complexity")
         #expect(lines.count == 5 && lines.last == "", "three cards and a trailing line end")
         #expect(T.quote("a,b") == "\"a,b\"" && T.quote("say \"hi\"") == "\"say \"\"hi\"\"\"" && T.quote("=SUM(A1)") == "'=SUM(A1)")
     }

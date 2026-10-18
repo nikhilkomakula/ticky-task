@@ -54,6 +54,7 @@ The load target for each resource—how many cards they should have open—is ca
 - **Title** and **Details** (rich-text notes with **⌘B / ⌘I / ⌘U** for bold, italic, underline; also strikethrough, links, and bulleted & numbered lists that continue on Enter and nest with Tab / Shift-Tab).
 - **On the board**: column, assignee, and labels.
 - **Priority** and **Critical** flag (the flag is independent and always shown in red).
+- **Complexity**: None (the default), **Low**, **Medium** or **High**, separate from priority and the estimate. When set, the card shows it among its markers as a small bar meter with *Low*, *Med* or *High* (hover for the full name). The List view has a sortable **Complexity** column, and right-clicking selected cards sets it for all of them.
 - **Blocked** and optional reason.
 - **Start date**, **Due date**, **Estimate** (hours, if the board measures load in hours).
 - **Jira link** (validated; shows the key if recognized).

@@ -374,6 +374,7 @@ enum KanbanBoardTransfer {
             task.dueDate = dto.dueDate
             task.startDate = dto.startDate
             task.estimateHours = dto.estimateHours
+            task.complexity = dto.complexity.flatMap { KanbanComplexity(rawValue: $0)?.rawValue }
             task.jiraURL = dto.jiraURL
             task.isBlocked = dto.isBlocked
             task.blockedReason = dto.blockedReason
@@ -416,7 +417,7 @@ enum KanbanBoardTransfer {
     /// One row per live card, RFC 4180 quoted, CRLF line ends.
     @MainActor
     static func csv(_ project: KanbanProject) -> String {
-        let header = ["Title", "Column", "Assignee", "Priority", "Critical", "Due", "Start", "Estimate (h)", "Labels", "Jira", "Blocked", "Subtasks"]
+        let header = ["Title", "Column", "Assignee", "Priority", "Critical", "Due", "Start", "Estimate (h)", "Labels", "Jira", "Blocked", "Subtasks", "Complexity"]
         let day = Date.FormatStyle(date: .numeric, time: .omitted)
         let columns = Dictionary(project.orderedColumns.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         let cards = project.tasks.filter { $0.archivedAt == nil }
@@ -429,6 +430,7 @@ enum KanbanBoardTransfer {
                 task.estimateHours.map { $0.formatted(.number.precision(.fractionLength(0...1))) } ?? "",
                 task.labels.sorted { $0.sortIndex < $1.sortIndex }.map(\.name).joined(separator: "; "),
                 task.jiraURL ?? "", task.isBlocked ? "Yes" : "No", "\(task.subtasks.filter(\.isDone).count)/\(task.subtasks.count)",
+                task.complexity.flatMap(KanbanComplexity.init(rawValue:))?.label ?? "",
             ]
         }
         return ([header] + rows).map { $0.map(quote).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"

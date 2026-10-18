@@ -23,7 +23,7 @@ struct KanbanBoardState: Codable, Equatable, Sendable {
     var sort: Sort = .manual
     var showArchived = false
     /// The List view's sorted column ("title", "column", "assignee", "priority", "due",
-    /// "labels", "estimate"); nil follows `sort`.
+    /// "labels", "estimate", "complexity"); nil follows `sort`.
     var listSortKey: String?
     var listSortAscending = true
     /// The People column's width; nil is the default.
