@@ -192,7 +192,7 @@ struct KanbanCardSnapshotTests {
             .environment(app)
             .environment(\.colorScheme, scheme)
             let popover = KanbanAvailabilityCellPopover(resource: resources[0], week: KanbanDay(key: "20261026")!, cell: rows[0].1[1],
-                                                        onTimeOff: {}, onAddTimeOff: {})
+                                                        holidays: [], onTimeOff: {}, onAddTimeOff: {})
                 .background(Color(nsColor: .windowBackgroundColor))
                 .environment(app)
                 .modelContext(context)

@@ -334,4 +334,25 @@ extension KanbanAvailabilityTests {
         let total = KanbanAvailability.total([one, KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([thanksgiving])), closed])
         #expect(total.map { KanbanAvailability.percent($0.available, of: $0.possible) } == 87, "14 of 16 half days; the closed cell adds nothing")
     }
+
+    @Test("Spoken format includes holiday information for VoiceOver")
+    func spokenFormat() {
+        let board = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays)
+        let week = day("20261019")
+        func h(_ key: String) -> KanbanAvailability.Holiday {
+            .init(id: UUID(), day: day(key), portion: .full, workedBy: [])
+        }
+        // No holidays or time off
+        let cell = KanbanAvailability.cell(week: week, board: board, member: member())
+        let spoken = KanbanAvailabilityFormat.spoken(cell, timeOff: [], holidays: [])
+        #expect(spoken == "5 of 5 days available")
+        // All-holiday cell
+        let shutdown = KanbanAvailability.Holidays(["20261021", "20261022", "20261023", "20261024", "20261025"].map { h($0) })
+        let closed = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: shutdown)
+        #expect(KanbanAvailabilityFormat.spoken(closed, timeOff: [], holidays: []) == "Public holiday all week")
+        // Holiday that affects availability
+        let thanksgiving = h("20261021")
+        let withHoliday = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([thanksgiving]))
+        #expect(KanbanAvailabilityFormat.spoken(withHoliday, timeOff: [], holidays: ["Thanksgiving"]) == "4 of 4 days available; 1 public holiday excluded (Thanksgiving)")
+    }
 }

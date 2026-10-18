@@ -11,11 +11,13 @@ struct KanbanAvailabilityView: View {
     @Environment(AppState.self) private var app
     @Environment(\.modelContext) private var context
     @AppStorage(KanbanBoardDefaults.showAllocationKey) private var showAllocation = false
+    @Query(sort: \KanbanHoliday.day) private var allHolidays: [KanbanHoliday]
     @State private var shift = 0
     @State private var scrollX: CGFloat = 0
     @State private var popover: CellID?
     @State private var timeOffFor: KanbanPerson?
     @State private var newTimeOff: KanbanTimeOffDraft?
+    @State private var holidaysEditor: Bool = false
     @State private var assistant: AssistantInput?
     @FocusState private var focus: CellID?
 
@@ -33,6 +35,7 @@ struct KanbanAvailabilityView: View {
     struct Row: Identifiable {
         let resource: KanbanResource
         let cells: [KanbanAvailability.Cell]
+        let holidays: [String]  // Holiday names for each cell
         var id: UUID { resource.id }
     }
 
@@ -45,20 +48,32 @@ struct KanbanAvailabilityView: View {
         let board = KanbanAvailability.Board(project)
         let weeks = KanbanAvailability.window(board: board, today: today, shift: shift)
         let members = project.resources.filter { $0.archivedAt == nil }.sorted { $0.sortIndex < $1.sortIndex }
+        let holidays = KanbanAvailability.Holidays(allHolidays)
+        let holidaysByID = Dictionary(allHolidays.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let holidaysByWeek = Dictionary(grouping: allHolidays) { holiday in
+            KanbanDay(key: holiday.day)?.monday ?? KanbanDay.today()
+        }
+        let holidayNamesPerWeek = holidaysByWeek.mapValues { holidays in holidays.map { $0.name } }
         let rows = members.map { resource in
             let member = KanbanAvailability.Member(resource)
-            return Row(resource: resource, cells: weeks.map { KanbanAvailability.cell(week: $0, board: board, member: member) })
+            let cells = weeks.map { KanbanAvailability.cell(week: $0, board: board, member: member, holidays: holidays) }
+            // Map cells to holiday names for VoiceOver; one name per cell for the spoken format
+            let holidayNames = cells.map { cell in
+                cell.holidayIDs.compactMap { holidaysByID[$0]?.name }.first ?? ""
+            }
+            return Row(resource: resource, cells: cells, holidays: holidayNames)
         }
         VStack(spacing: 0) {
             KanbanAvailabilityToolbar(project: project, board: board, today: today, weeks: weeks, shift: $shift,
                                       onAddTimeOff: { newTimeOff = KanbanTimeOffDraft(person: members.first?.person, week: today.monday) },
-                                      onUpdate: { assistant = AssistantInput() })
+                                      onUpdate: { assistant = AssistantInput() },
+                                      onHolidays: { holidaysEditor = true })
             Divider()
             if members.isEmpty {
                 ContentUnavailableView("Add resources to see weekly availability", systemImage: "person.2",
                                        description: Text("Availability is worked out for each resource on the board."))
             } else {
-                grid(rows: rows, weeks: weeks, today: today)
+                grid(rows: rows, weeks: weeks, today: today, holidaysByWeek: holidayNamesPerWeek, rawHolidaysByWeek: holidaysByWeek)
             }
             Divider()
             KanbanAvailabilityLegend(hasTimeOff: members.contains { !($0.person?.timeOff.isEmpty ?? true) })
@@ -68,6 +83,7 @@ struct KanbanAvailabilityView: View {
         .accessibilityIdentifier("kanban-availability")
         .sheet(item: $timeOffFor) { KanbanTimeOffSheet(person: $0, project: project) }
         .sheet(item: $newTimeOff) { KanbanTimeOffEditor(draft: $0, project: project) }
+        .sheet(isPresented: $holidaysEditor) { KanbanHolidaysSheet(project: project) }
         .sheet(item: $assistant) { KanbanAvailabilityAssistantSheet(project: project, window: weeks, images: $0.images) }
         // Dropping screenshots opens Update availability with them; nothing is sent until Extract.
         .dropDestination(for: URL.self) { urls, _ in
@@ -78,18 +94,18 @@ struct KanbanAvailabilityView: View {
         }
     }
 
-    private func grid(rows: [Row], weeks: [KanbanDay], today: KanbanDay) -> some View {
+    private func grid(rows: [Row], weeks: [KanbanDay], today: KanbanDay, holidaysByWeek: [KanbanDay: [String]], rawHolidaysByWeek: [KanbanDay: [KanbanHoliday]]) -> some View {
         ScrollViewReader { proxy in
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
                         ForEach(rows) { row in
-                            memberRow(row, weeks: weeks, today: today)
+                            memberRow(row, weeks: weeks, today: today, holidaysByWeek: holidaysByWeek, rawHolidaysByWeek: rawHolidaysByWeek)
                             Divider()
                         }
                     } header: {
                         VStack(alignment: .leading, spacing: 0) {
-                            KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX)
+                            KanbanAvailabilityHeader(weeks: weeks, today: today, scrollX: scrollX, holidays: allHolidays)
                             Divider()
                             weeklyAvailabilityRow(rows: rows, weeks: weeks, today: today)
                         }
@@ -163,7 +179,7 @@ struct KanbanAvailabilityView: View {
         }
     }
 
-    private func memberRow(_ row: Row, weeks: [KanbanDay], today: KanbanDay) -> some View {
+    private func memberRow(_ row: Row, weeks: [KanbanDay], today: KanbanDay, holidaysByWeek: [KanbanDay: [String]], rawHolidaysByWeek: [KanbanDay: [KanbanHoliday]]) -> some View {
         HStack(spacing: 0) {
             KanbanAvailabilityRowHeader(resource: row.resource, showAllocation: showAllocation)
                 .frame(width: Self.headerWidth, height: 60, alignment: .leading)
@@ -196,12 +212,14 @@ struct KanbanAvailabilityView: View {
                 }
                 .popover(isPresented: Binding(get: { popover == id }, set: { if !$0 { popover = nil } }), arrowEdge: .bottom) {
                     KanbanAvailabilityCellPopover(resource: row.resource, week: week, cell: row.cells[index],
+                                                  holidays: rawHolidaysByWeek[week] ?? [],
                                                   onTimeOff: { popover = nil; timeOffFor = row.resource.person },
                                                   onAddTimeOff: { popover = nil; newTimeOff = KanbanTimeOffDraft(person: row.resource.person, week: week) })
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(row.resource.displayName), week of \(KanbanAvailabilityFormat.long(week))")
-                .accessibilityValue(KanbanAvailabilityFormat.spoken(row.cells[index], timeOff: row.resource.person?.timeOff ?? []))
+                .accessibilityValue(KanbanAvailabilityFormat.spoken(row.cells[index], timeOff: row.resource.person?.timeOff ?? [],
+                                                                    holidays: row.holidays[index].isEmpty ? [] : [row.holidays[index]]))
                 .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("kanban-availability-\(row.resource.displayName)-\(week.key)")
             }
@@ -237,6 +255,7 @@ struct KanbanAvailabilityToolbar: View {
     @Binding var shift: Int
     var onAddTimeOff: () -> Void
     var onUpdate: () -> Void
+    var onHolidays: () -> Void
     @Environment(AppState.self) private var app
 
     var body: some View {
@@ -278,6 +297,8 @@ struct KanbanAvailabilityToolbar: View {
                 .help("Paste text or screenshots of your team's PTO list; review Codex's suggestions before applying")
                 .accessibilityIdentifier("kanban-availability-update")
             Menu {
+                Button("Public holidays…", action: onHolidays)
+                    .accessibilityIdentifier("kanban-availability-holidays-menu")
                 Button("Export availability CSV…") {
                     let panel = NSSavePanel()
                     panel.allowedContentTypes = [.commaSeparatedText]
@@ -311,6 +332,22 @@ struct KanbanAvailabilityHeader: View {
     let weeks: [KanbanDay]
     let today: KanbanDay
     let scrollX: CGFloat
+    let holidaysByWeek: [KanbanDay: [String]]  // Holiday names per week
+
+    init(weeks: [KanbanDay], today: KanbanDay, scrollX: CGFloat, holidays: [KanbanHoliday] = []) {
+        self.weeks = weeks
+        self.today = today
+        self.scrollX = scrollX
+        // Group holidays by week Monday
+        var byWeek: [KanbanDay: [String]] = [:]
+        for holiday in holidays {
+            if let day = KanbanDay(key: holiday.day) {
+                let monday = day.monday
+                byWeek[monday, default: []].append(holiday.name)
+            }
+        }
+        self.holidaysByWeek = byWeek
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -325,6 +362,7 @@ struct KanbanAvailabilityHeader: View {
                 .zIndex(1)
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let firstOfMonth = index == 0 || weeks[index - 1].month != week.month
+                let hasHoliday = !(holidaysByWeek[week]?.isEmpty ?? true)
                 VStack(spacing: 0) {
                     // A month starts with its name and a rule at its left edge.
                     Text(firstOfMonth ? KanbanAvailabilityFormat.month(week) : "")
@@ -334,22 +372,31 @@ struct KanbanAvailabilityHeader: View {
                         .overlay(alignment: .leading) {
                             if firstOfMonth && index > 0 { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1) }
                         }
-                    VStack(spacing: week == today.monday ? 1 : 2) {
-                        if week == today.monday {
-                            Text("This week")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
+                    HStack(spacing: 4) {
+                        VStack(spacing: week == today.monday ? 1 : 2) {
+                            if week == today.monday {
+                                Text("This week")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color.accentColor)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.85)
+                            }
+                            Text(KanbanAvailabilityFormat.week(week))
+                                .font(.system(size: week.month == week.adding(days: 6).month ? 12 : 11,
+                                              weight: week == today.monday ? .semibold : .regular).monospacedDigit())
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
+                            Rectangle()
+                                .fill(week == today.monday ? Color.accentColor : .clear)
+                                .frame(width: 40, height: 2)
                         }
-                        Text(KanbanAvailabilityFormat.week(week))
-                            .font(.system(size: week.month == week.adding(days: 6).month ? 12 : 11,
-                                          weight: week == today.monday ? .semibold : .regular).monospacedDigit())
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                        Rectangle()
-                            .fill(week == today.monday ? Color.accentColor : .clear)
-                            .frame(width: 40, height: 2)
+                        if hasHoliday {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .help("Includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")")
+                                .accessibilityLabel("Includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")")
+                        }
                     }
                     .frame(width: KanbanAvailabilityView.weekWidth, height: 40)
                 }
@@ -362,7 +409,7 @@ struct KanbanAvailabilityHeader: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Week of \(KanbanAvailabilityFormat.long(week))\(week == today.monday ? ", this week" : "")")
+                .accessibilityLabel("Week of \(KanbanAvailabilityFormat.long(week))\(week == today.monday ? ", this week" : "")\(hasHoliday ? ", includes \(holidaysByWeek[week]?.joined(separator: ", ") ?? "")" : "")")
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -451,23 +498,38 @@ struct KanbanAvailabilityCellView: View {
 
     var body: some View {
         let band = cell.band
+        let isHolidayCell = cell.isAllHoliday
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: 6)
-                .fill(band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill)
-            Text(cell.isActive ? KanbanAvailability.days(cell.effectiveHalfDays) : "—")
-                .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
+                .fill(isHolidayCell ? KanbanAvailabilityPalette.inactiveFill
+                    : band.map(KanbanAvailabilityPalette.fill) ?? KanbanAvailabilityPalette.inactiveFill)
+            if isHolidayCell {
+                VStack(spacing: 2) {
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Holiday")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(KanbanAvailabilityPalette.inactiveText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if cell.isOverridden {
-                Image(systemName: "pencil")
-                    .font(.system(size: 9, weight: .bold))
+            } else {
+                Text(cell.isActive ? KanbanAvailability.days(cell.effectiveHalfDays) : "—")
+                    .font(.system(size: 20, weight: .semibold).monospacedDigit())
                     .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
-                    .padding(4)
-            } else if cell.overrideNeedsReview {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(KanbanAvailabilityPalette.text(.yellow))
-                    .padding(4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            if !isHolidayCell {
+                if cell.isOverridden {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(band.map(KanbanAvailabilityPalette.text) ?? KanbanAvailabilityPalette.inactiveText)
+                        .padding(4)
+                } else if cell.overrideNeedsReview {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(KanbanAvailabilityPalette.text(.yellow))
+                        .padding(4)
+                }
             }
         }
         .frame(width: 80, height: 52)
@@ -541,13 +603,23 @@ enum KanbanAvailabilityFormat {
         day.utcDate.formatted(Date.FormatStyle(date: .long, time: .omitted, calendar: calendar, timeZone: utc))
     }
 
-    /// "3 of 5 days available. 2 days off (PTO). Manually overridden."
-    static func spoken(_ cell: KanbanAvailability.Cell, timeOff: [KanbanTimeOff]) -> String {
+    /// "3 of 5 days available. 2 days off (PTO); 1 public holiday excluded (Thanksgiving). Manually overridden."
+    static func spoken(_ cell: KanbanAvailability.Cell, timeOff: [KanbanTimeOff], holidays: [String] = []) -> String {
+        if cell.isAllHoliday { return "Public holiday all week" }
         guard cell.isActive else { return "Not working this week" }
         var parts = ["\(KanbanAvailability.days(cell.effectiveHalfDays)) of \(KanbanAvailability.days(cell.possibleHalfDays)) days available"]
-        if cell.absentHalfDays > 0 {
-            let kinds = Set(timeOff.filter { cell.absenceIDs.contains($0.id) }.map(\.kind.label)).sorted().joined(separator: ", ")
-            parts.append("\(KanbanAvailability.days(cell.absentHalfDays)) days off (\(kinds))")
+        if cell.absentHalfDays > 0 || cell.holidayHalfDays > 0 {
+            var fragments: [String] = []
+            if cell.absentHalfDays > 0 {
+                let kinds = Set(timeOff.filter { cell.absenceIDs.contains($0.id) }.map(\.kind.label)).sorted().joined(separator: ", ")
+                fragments.append("\(KanbanAvailability.days(cell.absentHalfDays)) days off (\(kinds))")
+            }
+            if !holidays.isEmpty {
+                let count = holidays.count
+                let holidayText = count == 1 ? "half a day" : "\(count) public holiday\(count > 1 ? "s" : "")"
+                fragments.append("\(holidayText) excluded (\(holidays.joined(separator: ", ")))")
+            }
+            parts.append(fragments.joined(separator: "; "))
         }
         if cell.isOverridden { parts.append("Manually overridden") }
         if cell.overrideNeedsReview { parts.append("Override needs review") }
