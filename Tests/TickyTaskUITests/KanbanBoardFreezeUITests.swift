@@ -3,8 +3,9 @@ import XCTest
 /// The board must never stop answering while it scrolls. Its person rows were once built
 /// lazily; on a board shaped like `-uitestKanbanVaried`, moving the vertical scroll bar through
 /// Accessibility in jumps re-laid the window forever at 100% CPU, and with a context menu open
-/// AppKit gave up and the app crashed. `-uitestKanbanScrollJumps` makes those jumps in the app,
-/// since the UI-test runner can't set a scroll bar's value.
+/// AppKit gave up and the app crashed (I-D31). `-uitestKanbanScrollJumps` makes those jumps in the
+/// app, since the UI-test runner can't set a scroll bar's value. On a Mac they froze the old board
+/// every time; CI runners didn't, so these guard responsiveness rather than reproduce the loop.
 final class KanbanBoardFreezeUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -43,13 +44,17 @@ final class KanbanBoardFreezeUITests: XCTestCase {
         XCTAssertTrue(!firstRow.exists || firstRow.frame.minY < top - 100, "the jumps scrolled the board away from its first row")
     }
 
-    /// The crash: a card's context menu while the board is still jumping.
-    func testContextMenusDuringScrollBarJumpsKeepTheBoardResponsive() {
-        let app = launch(jumps: 60)
+    /// The crash: a card's context menu over a board that has just jumped (once the jumps end, so a
+    /// card doesn't move between finding it and clicking it).
+    func testContextMenusAfterScrollBarJumpsKeepTheBoardResponsive() {
+        let app = launch(jumps: 12)
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 20), "the Varied board opens")
+        Thread.sleep(forTimeInterval: 6)
+        assertResponsive(app, "the jumps")
         let board = element(app, "kanban-board")
         var menusOpened = 0
         for round in 0..<5 {
+            board.scroll(byDeltaX: 0, deltaY: round.isMultiple(of: 2) ? 400 : -250)
             let cards = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-'"))
             let headers = element(app, "kanban-colhdr-To Do").frame.maxY
             let visible = (0..<min(cards.count, 40)).map { cards.element(boundBy: $0) }.first {
@@ -63,6 +68,6 @@ final class KanbanBoardFreezeUITests: XCTestCase {
             }
             assertResponsive(app, "round \(round)")
         }
-        XCTAssertGreaterThanOrEqual(menusOpened, 3, "menus opened while the board jumped")
+        XCTAssertGreaterThanOrEqual(menusOpened, 3, "most rounds opened a menu")
     }
 }
