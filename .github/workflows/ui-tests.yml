@@ -41,6 +41,7 @@ jobs:
             -configuration Debug \
             -destination 'platform=macOS' \
             "${only[@]}" \
+            -test-timeouts-enabled YES \
             -resultBundlePath UITests.xcresult
 
       - name: Upload results

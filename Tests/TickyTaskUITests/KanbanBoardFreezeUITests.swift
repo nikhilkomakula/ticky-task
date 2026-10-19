@@ -7,7 +7,11 @@ import XCTest
 /// app, since the UI-test runner can't set a scroll bar's value. On a Mac they froze the old board
 /// every time; CI runners didn't, so these guard responsiveness rather than reproduce the loop.
 final class KanbanBoardFreezeUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        // A hung app can stall XCTest's own queries; the run's test timeouts end the test instead.
+        executionTimeAllowance = 240
+    }
 
     private func launch(jumps: Int) -> XCUIApplication {
         let app = XCUIApplication()
@@ -22,7 +26,8 @@ final class KanbanBoardFreezeUITests: XCTestCase {
         app.descendants(matching: .any)[id].firstMatch
     }
 
-    /// Fails if the app crashed, or took over 10 s to answer (a hung main thread never does).
+    /// Fails if the app crashed, or took over 10 s to answer (an elapsed-time check; a hung main
+    /// thread never answers, and the execution allowance bounds the query itself).
     private func assertResponsive(_ app: XCUIApplication, _ step: String, file: StaticString = #filePath, line: UInt = #line) {
         let start = Date()
         let answered = element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10)
@@ -33,15 +38,15 @@ final class KanbanBoardFreezeUITests: XCTestCase {
     func testJumpingTheScrollBarDoesNotFreezeTheBoard() {
         let app = launch(jumps: 8)
         XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 20), "the Varied board opens")
-        let firstRow = element(app, "kanban-cell-To Do-Unassigned")
-        XCTAssertTrue(firstRow.waitForExistence(timeout: 5))
-        let top = firstRow.frame.minY
         // Eight sweeps of 13 jumps take about 2 s after a 2 s start; then the board rests at the bottom.
         for check in 0..<4 {
             Thread.sleep(forTimeInterval: 2)
             assertResponsive(app, "\(2 * (check + 1)) s of scroll bar jumps")
         }
-        XCTAssertTrue(!firstRow.exists || firstRow.frame.minY < top - 100, "the jumps scrolled the board away from its first row")
+        // The jumps end at the bottom: the first row has gone up under the pinned column headers.
+        let firstRow = element(app, "kanban-cell-To Do-Unassigned")
+        let headers = element(app, "kanban-colhdr-To Do").frame
+        XCTAssertTrue(!firstRow.exists || firstRow.frame.maxY <= headers.maxY, "the jumps scrolled the board to its end")
     }
 
     /// The crash: a card's context menu over a board that has just jumped (once the jumps end, so a
