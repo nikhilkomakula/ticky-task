@@ -7,6 +7,7 @@ struct KanbanAvailabilityCellPopover: View {
     let resource: KanbanResource
     let week: KanbanDay
     let cell: KanbanAvailability.Cell
+    let holidays: [KanbanHoliday]  // Holidays that week
     var onTimeOff: () -> Void
     var onAddTimeOff: () -> Void
     @Environment(AppState.self) private var app
@@ -24,12 +25,23 @@ struct KanbanAvailabilityCellPopover: View {
                 Text(resource.displayName).font(.headline)
                 Text("Week of \(KanbanAvailabilityFormat.long(week))").font(.subheadline).foregroundStyle(.secondary)
             }
-            if !cell.isActive {
+            if !cell.isActive && !cell.isAllHoliday {
                 Text("No working days this week for \(resource.displayName) on this board (outside the board's or their dates, or not a work day).")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if cell.isAllHoliday {
+                Text("Every work day this week is a public holiday.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if cell.overrideNeedsReview, let stored = cell.overrideHalfDays {
+                    Label("The override of \(KanbanAvailability.days(stored)) days no longer fits this week and isn't used. Clear it.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout).foregroundStyle(KanbanAvailabilityPalette.text(.yellow)).fixedSize(horizontal: false, vertical: true)
+                }
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     GridRow { Text("Possible"); Text("\(KanbanAvailability.days(cell.possibleHalfDays)) days").monospacedDigit() }
+                    if cell.holidayHalfDays > 0 {
+                        GridRow { Text("Holidays"); Text("\(KanbanAvailability.days(cell.holidayHalfDays)) days").monospacedDigit() }
+                    }
                     GridRow { Text("Time off"); Text("\(KanbanAvailability.days(cell.absentHalfDays)) days").monospacedDigit() }
                     GridRow { Text("Computed").bold(); Text("\(KanbanAvailability.days(cell.computedHalfDays)) days").monospacedDigit().bold() }
                     if let stored {
@@ -56,6 +68,24 @@ struct KanbanAvailabilityCellPopover: View {
                 }
                 if editing {
                     overrideEditor(stored: stored)
+                }
+            }
+            // Holiday exceptions
+            if !holidays.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Public holidays").font(.callout.weight(.semibold))
+                    ForEach(holidays) { holiday in
+                        let works = resource.person.map { holiday.workedBy?.contains($0.id) ?? false } ?? false
+                        Toggle(isOn: .init(get: { works }, set: { newValue in
+                            guard let person = resource.person else { return }
+                            app.runKanban {
+                                try app.kanbanService(context).setWorks(person, holiday: holiday, works: newValue, on: resource.project!)
+                            }
+                        })) {
+                            Text("Works on \(holiday.name)")
+                        }
+                        .accessibilityIdentifier("kanban-holiday-works-\(holiday.day)")
+                    }
                 }
             }
             Divider()

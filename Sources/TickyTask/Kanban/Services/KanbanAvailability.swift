@@ -103,9 +103,42 @@ enum KanbanAvailability {
         }
     }
 
+    /// A public holiday as the arithmetic needs it (design 04).
+    struct Holiday: Equatable, Sendable {
+        var id: UUID
+        var day: KanbanDay
+        var portion: KanbanTimeOffPortion
+        var workedBy: Set<UUID> = []
+
+        var slots: Set<Int> {
+            switch portion {
+            case .full: [0, 1]
+            case .am: [0]
+            case .pm: [1]
+            }
+        }
+    }
+
+    /// Every holiday by day, built once per render.
+    struct Holidays: Equatable, Sendable {
+        private(set) var byDay: [KanbanDay: [Holiday]] = [:]
+
+        init(_ holidays: [Holiday] = []) {
+            byDay = Dictionary(grouping: holidays, by: \.day)
+        }
+
+        static let none = Holidays()
+
+        /// The holidays `person` doesn't work on `day`.
+        func observed(on day: KanbanDay, by person: UUID?) -> [Holiday] {
+            (byDay[day] ?? []).filter { holiday in person.map { !holiday.workedBy.contains($0) } ?? true }
+        }
+    }
+
     /// A board member as the arithmetic needs them.
     struct Member: Equatable, Sendable {
         var resourceID: UUID
+        var personID: UUID? = nil
         var start: KanbanDay?
         var end: KanbanDay?
         var absences: [Absence]
@@ -128,6 +161,9 @@ enum KanbanAvailability {
         var overrideHalfDays: Int?
         /// The time off counted this week.
         var absenceIDs: [UUID]
+        /// Work half days taken by public holidays; they aren't possible days.
+        var holidayHalfDays = 0
+        var holidayIDs: [UUID] = []
 
         var computedHalfDays: Int { possibleHalfDays - absentHalfDays }
         /// A stored override above the possible days (after the dates changed) is kept but not used.
@@ -136,6 +172,8 @@ enum KanbanAvailability {
         var effectiveHalfDays: Int { isOverridden ? overrideHalfDays! : computedHalfDays }
         /// False when the member can't work any day that week (outside a range, no work days): "—".
         var isActive: Bool { possibleHalfDays > 0 }
+        /// Every work day that week is a holiday: shown as "Holiday", not "—".
+        var isAllHoliday: Bool { !isActive && holidayHalfDays > 0 }
         var band: Band? { KanbanAvailability.band(effectiveHalfDays, of: possibleHalfDays) }
     }
 
@@ -145,6 +183,18 @@ enum KanbanAvailability {
         guard possible > 0 else { return nil }
         let (lhs, rhs) = (5 * available, 3 * possible)
         return lhs > rhs ? .green : lhs == rhs ? .yellow : .red
+    }
+
+    /// Team capacity thresholds: 5*available ≥ 4*possible green (80%+), 5*available ≥ 3*possible amber (60–79%), red (<60%), nil when no work days.
+    static func teamBand(available: Int, possible: Int) -> Band? {
+        guard possible > 0 else { return nil }
+        let lhs = 5 * available
+        return lhs >= 4 * possible ? .green : lhs >= 3 * possible ? .yellow : .red
+    }
+
+    /// Whole percent, floored, so an amber week never reads "80%".
+    static func percent(_ available: Int, of possible: Int) -> Int {
+        possible > 0 ? 100 * available / possible : 0
     }
 
     /// Days a member could work in the week starting `monday`: inside the board's and the
@@ -157,22 +207,29 @@ enum KanbanAvailability {
         }
     }
 
-    static func cell(week monday: KanbanDay, board: Board, member: Member) -> Cell {
+    static func cell(week monday: KanbanDay, board: Board, member: Member, holidays: Holidays = .none) -> Cell {
         let days = workDays(week: monday, board: board, member: member)
-        var absent = 0
+        var (possible, absent, holiday) = (0, 0, 0)
         var counted: [UUID] = []
+        var holidayIDs: [UUID] = []
         for day in days {
-            // The union of slots, so overlapping or duplicate entries count once.
+            // Unions throughout, so overlapping or duplicate entries count once.
+            var closed = Set<Int>()
+            for h in holidays.observed(on: day, by: member.personID) {
+                if !holidayIDs.contains(h.id) { holidayIDs.append(h.id) }
+                closed.formUnion(h.slots)
+            }
+            let open = Set([0, 1]).subtracting(closed)
             var slots = Set<Int>()
             for absence in member.absences {
-                let taken = absence.slots(on: day)
+                let taken = Set(absence.slots(on: day)).intersection(open)
                 if !taken.isEmpty, !counted.contains(absence.id) { counted.append(absence.id) }
                 slots.formUnion(taken)
             }
-            absent += slots.count
+            (possible, absent, holiday) = (possible + open.count, absent + slots.count, holiday + closed.count)
         }
-        return Cell(possibleHalfDays: 2 * days.count, absentHalfDays: absent, overrideHalfDays: member.overrides[monday],
-                    absenceIDs: counted)
+        return Cell(possibleHalfDays: possible, absentHalfDays: absent, overrideHalfDays: member.overrides[monday],
+                    absenceIDs: counted, holidayHalfDays: holiday, holidayIDs: holidayIDs)
     }
 
     /// Effective over possible, summed (not an average of percentages); nil when nobody can work.
@@ -232,8 +289,16 @@ extension KanbanAvailability.Member {
         for o in resource.availabilityOverrides {
             if let monday = KanbanDay(key: o.weekStart) { overrides[monday] = o.halfDays }
         }
-        self.init(resourceID: resource.id, start: resource.startDate.map { KanbanDay($0, calendar: calendar) },
+        self.init(resourceID: resource.id, personID: resource.person?.id, start: resource.startDate.map { KanbanDay($0, calendar: calendar) },
                   end: resource.endDate.map { KanbanDay($0, calendar: calendar) },
                   absences: (resource.person?.timeOff ?? []).compactMap(KanbanAvailability.Absence.init), overrides: overrides)
+    }
+}
+
+extension KanbanAvailability.Holidays {
+    init(_ holidays: [KanbanHoliday]) {
+        self.init(holidays.compactMap { h in
+            KanbanDay(key: h.day).map { KanbanAvailability.Holiday(id: h.id, day: $0, portion: h.portion, workedBy: Set(h.workedBy ?? [])) }
+        })
     }
 }

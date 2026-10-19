@@ -5,10 +5,10 @@ import SwiftData
 
 /// Backup of all Kanban data: people, projects (boards), columns, resources
 /// (memberships), labels, tasks, subtasks, activities, and availability data
-/// (time off and overrides). Every field is optional with stable JSON keys so
+/// (time off, overrides, and holidays). Every field is optional with stable JSON keys so
 /// future releases decode older files unchanged.
 struct KanbanBackupDTO: Codable, Equatable, Sendable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     var version: Int = currentVersion
     var people: [KanbanPersonDTO] = []
@@ -23,6 +23,8 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
     var timeOff: [KanbanTimeOffDTO]?
     /// Availability overrides (v2+, optional for v1 compatibility).
     var availabilityOverrides: [KanbanAvailabilityOverrideDTO]?
+    /// Public holidays (v3+, optional for v1/v2 compatibility).
+    var holidays: [KanbanHolidayDTO]?
 
     /// Snapshot the entire Kanban graph, including archived items and availability data.
     @MainActor
@@ -37,6 +39,7 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
         let activities = try context.fetch(FetchDescriptor<KanbanActivity>())
         let timeOff = try context.fetch(FetchDescriptor<KanbanTimeOff>())
         let overrides = try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>())
+        let holidays = try context.fetch(FetchDescriptor<KanbanHoliday>())
 
         return KanbanBackupDTO(
             version: currentVersion,
@@ -49,7 +52,8 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
             subtasks: subtasks.map(KanbanSubtaskDTO.init),
             activities: activities.map(KanbanActivityDTO.init),
             timeOff: timeOff.isEmpty ? nil : timeOff.map(KanbanTimeOffDTO.init),
-            availabilityOverrides: overrides.isEmpty ? nil : overrides.map(KanbanAvailabilityOverrideDTO.init)
+            availabilityOverrides: overrides.isEmpty ? nil : overrides.map(KanbanAvailabilityOverrideDTO.init),
+            holidays: holidays.isEmpty ? nil : holidays.map(KanbanHolidayDTO.init)
         ).deterministicallySorted()
     }
 
@@ -66,7 +70,8 @@ struct KanbanBackupDTO: Codable, Equatable, Sendable {
             subtasks: subtasks.sorted { $0.id.uuidString < $1.id.uuidString },
             activities: activities.sorted { $0.id.uuidString < $1.id.uuidString },
             timeOff: timeOff?.sorted { $0.id.uuidString < $1.id.uuidString },
-            availabilityOverrides: availabilityOverrides?.sorted { $0.id.uuidString < $1.id.uuidString }
+            availabilityOverrides: availabilityOverrides?.sorted { $0.id.uuidString < $1.id.uuidString },
+            holidays: holidays?.sorted { $0.id.uuidString < $1.id.uuidString }
         )
     }
 }
@@ -375,6 +380,41 @@ struct KanbanTimeOffDTO: Codable, Equatable, Hashable, Sendable {
 
     /// What the entry says, without its id or timestamps: two entries alike here are the same time off.
     var meaning: [String] { [personId?.uuidString ?? "", startDay, endDay, portionRaw, kindRaw] }
+}
+
+/// A public holiday (design 04). `workedBy` holds person ids, sorted and unique.
+struct KanbanHolidayDTO: Codable, Equatable, Hashable, Sendable {
+    var id: UUID
+    var day: String
+    var name: String
+    var portionRaw: String
+    var workedBy: [UUID]?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(_ model: KanbanHoliday) {
+        id = model.id
+        day = model.day
+        name = model.name
+        portionRaw = model.portionRaw
+        workedBy = model.workedBy
+        createdAt = model.createdAt
+        updatedAt = model.updatedAt
+    }
+
+    init(id: UUID = UUID(), day: String, name: String, portion: KanbanTimeOffPortion = .full, workedBy: [UUID]? = nil,
+         createdAt: Date = Date(), updatedAt: Date = Date()) {
+        self.id = id
+        self.day = day
+        self.name = name
+        self.portionRaw = portion.rawValue
+        self.workedBy = KanbanHoliday.normalized(workedBy)
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    /// Two holidays alike here are the same holiday.
+    var meaning: [String] { [day, portionRaw, name.trimmingCharacters(in: .whitespaces).lowercased()] }
 }
 
 struct KanbanAvailabilityOverrideDTO: Codable, Equatable, Hashable, Sendable {

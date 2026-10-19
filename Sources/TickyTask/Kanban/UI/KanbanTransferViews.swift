@@ -86,6 +86,7 @@ struct KanbanImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \KanbanProject.sortIndex) private var projects: [KanbanProject]
     @Query(sort: \KanbanPerson.name) private var people: [KanbanPerson]
+    @Query private var holidays: [KanbanHoliday]
     @State private var error: String?
 
     private var repairs: [String] {
@@ -117,6 +118,18 @@ struct KanbanImportSheet: View {
                 .foregroundStyle(.secondary)
             Form {
                 let conflicts = request.plan.availabilityConflicts(projects: projects, people: people)
+                let holidayChanges = request.plan.holidayChanges(here: holidays, people: people)
+                if holidayChanges.adds + holidayChanges.differs > 0 {
+                    Section("Public holidays") {
+                        Toggle("Import public holidays: adds \(holidayChanges.adds)\(holidayChanges.differs > 0 ? ", \(holidayChanges.differs) differ" : "")",
+                               isOn: $request.plan.importHolidays)
+                            .accessibilityIdentifier("kanban-import-holidays")
+                        if holidayChanges.differs > 0 && request.plan.importHolidays {
+                            Toggle("Use the file's version of \(holidayChanges.differs) that differ from what's here", isOn: $request.plan.useIncomingHolidays)
+                        }
+                        Text("Holidays apply to everyone on every board.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if conflicts.timeOff + conflicts.overrides > 0 {
                     Section("Availability") {
                         if conflicts.timeOff > 0 {

@@ -99,6 +99,65 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue((element(app, "kanban-availability-dates").label).hasPrefix("From"), "the range chip shows the start")
     }
 
+    /// Public holidays (design 04): a holiday comes off the week's possible days, a person who works it gets the day
+    /// back (and the weekly total moves), a week closed by holidays still shows and clears an override that no longer
+    /// fits (reached with the keyboard), and the Public holidays sheet lists and adds holidays.
+    func testPublicHolidays() {
+        let app = launch(["-kanban.defaultBoard", "", "-uitestKanbanHolidays"])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10), "the board opens")
+        selectView(app, "Availability")
+        let monday = thisMonday(), nextMonday = dayKey(thisMonday(), plus: 7), wednesday = dayKey(thisMonday(), plus: 2)
+        let cell = element(app, "kanban-availability-Ravi Kumar-\(monday)")
+        XCTAssertTrue(cell.waitForExistence(timeout: 10), "Ravi's cell for this week")
+        wait(for: [expectation(for: NSPredicate(format: "value CONTAINS 'public holidays excluded (Seed Day)'"), evaluatedWith: cell)], timeout: 5)
+        let weekly = element(app, "kanban-availability-weekly-\(monday)")
+        XCTAssertTrue(weekly.exists, "the Weekly availability row")
+        let before = weekly.label
+
+        cell.click()
+        let works = element(app, "kanban-holiday-works-\(wednesday)")
+        XCTAssertTrue(works.waitForExistence(timeout: 5), "the cell's details list the holiday")
+        works.click()
+        wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS 'public holidays excluded')"), evaluatedWith: cell)], timeout: 5)
+        XCTAssertTrue(eventually { weekly.label != before }, "the team total counts his day again: \(before)")
+        app.typeKey(.escape, modifierFlags: [])
+
+        // Next week, from the keyboard: all holidays, and the override no longer fits.
+        let closed = element(app, "kanban-availability-Ravi Kumar-\(nextMonday)")
+        XCTAssertTrue(closed.waitForExistence(timeout: 5))
+        wait(for: [expectation(for: NSPredicate(format: "value CONTAINS 'Public holiday all week' AND value CONTAINS 'Override needs review'"),
+                               evaluatedWith: closed)], timeout: 5)
+        app.typeKey(.rightArrow, modifierFlags: [])
+        app.typeKey(.return, modifierFlags: [])
+        let clear = element(app, "kanban-availability-clear-override")
+        XCTAssertTrue(clear.waitForExistence(timeout: 5), "Return opens next week's details, with Clear override")
+        clear.click()
+        wait(for: [expectation(for: NSPredicate(format: "NOT (value CONTAINS 'needs review')"), evaluatedWith: closed)], timeout: 5)
+
+        // The sheet lists the shutdown and adds a holiday (today, by default).
+        element(app, "kanban-availability-more").click()
+        let menu = app.menuItems["kanban-availability-holidays-menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.click()
+        XCTAssertTrue(element(app, "kanban-holiday-\(nextMonday)").waitForExistence(timeout: 5), "the sheet lists the shutdown")
+        element(app, "kanban-holidays-add").click()
+        let name = element(app, "kanban-holiday-name")
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "the holiday editor opens")
+        name.click()
+        name.typeText("Team day")
+        element(app, "kanban-holiday-save").click()
+        XCTAssertTrue(app.staticTexts["Team day"].waitForExistence(timeout: 5), "the new holiday is listed")
+    }
+
+    /// A yyyyMMdd key `days` after another.
+    private func dayKey(_ key: String, plus days: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let base = calendar.date(from: DateComponents(year: Int(key.prefix(4)), month: Int(key.dropFirst(4).prefix(2)), day: Int(key.suffix(2))))!
+        let c = calendar.dateComponents([.year, .month, .day], from: calendar.date(byAdding: .day, value: days, to: base)!)
+        return String(format: "%04d%02d%02d", c.year!, c.month!, c.day!)
+    }
+
     /// Update availability with the UI-test stub (the first person by name, Mia Chen, off on Tuesday): review, Apply.
     func testUpdateAvailabilityFromPastedText() {
         let app = launch(["-kanban.defaultBoard", ""])
@@ -117,6 +176,31 @@ final class KanbanBoardUITests: XCTestCase {
         XCTAssertTrue(apply.isEnabled, "the new entry is selected")
         apply.click()
         XCTAssertFalse(apply.waitForExistence(timeout: 3), "the sheet closes after Apply")
+        let cell = element(app, "kanban-availability-Mia Chen-\(thisMonday())")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        let off = expectation(for: NSPredicate(format: "value CONTAINS 'days off'"), evaluatedWith: cell)
+        wait(for: [off], timeout: 5)
+    }
+
+    func testUpdateAvailabilityFromInstructionsOnly() {
+        let app = launch(["-kanban.defaultBoard", ""])
+        XCTAssertTrue(element(app, "kanban-colhdr-To Do").waitForExistence(timeout: 10))
+        selectView(app, "Availability")
+        let update = element(app, "kanban-availability-update")
+        XCTAssertTrue(update.waitForExistence(timeout: 10))
+        update.click()
+        let instructions = element(app, "kanban-assistant-instructions")
+        XCTAssertTrue(instructions.waitForExistence(timeout: 5))
+        instructions.click()
+        instructions.typeText("Mia is off next Tuesday")
+        XCTAssertTrue(element(app, "kanban-assistant-extract").isEnabled, "instructions alone can suggest changes")
+        element(app, "kanban-assistant-extract").click()
+        let apply = element(app, "kanban-assistant-apply")
+        XCTAssertTrue(apply.waitForExistence(timeout: 15))
+        XCTAssertTrue(element(app, "kanban-assistant-group-new").exists)
+        XCTAssertTrue(apply.isEnabled)
+        apply.click()
+        XCTAssertFalse(apply.waitForExistence(timeout: 3))
         let cell = element(app, "kanban-availability-Mia Chen-\(thisMonday())")
         XCTAssertTrue(cell.waitForExistence(timeout: 5))
         let off = expectation(for: NSPredicate(format: "value CONTAINS 'days off'"), evaluatedWith: cell)
@@ -321,6 +405,48 @@ final class KanbanBoardUITests: XCTestCase {
         outer.frame.contains(CGPoint(x: inner.frame.midX, y: inner.frame.midY))
     }
 
+    private func openVolume(_ app: XCUIApplication) {
+        let board = element(app, "kanban-sidebar-Volume")
+        XCTAssertTrue(board.waitForExistence(timeout: 10))
+        board.click()
+        XCTAssertTrue(element(app, "kanban-cell-To Do-Alice Johnson").waitForExistence(timeout: 10))
+    }
+
+    /// Keep the target clear of the pinned headers and the drag auto-scroll zones.
+    private func scrollIntoBoardView(_ app: XCUIApplication, targetFrame: () -> CGRect) {
+        let board = element(app, "kanban-board")
+        let top = element(app, "kanban-colhdr-To Do").frame.maxY + 4
+        let bottom = board.frame.maxY - 60
+        var direction: CGFloat = -1
+        for _ in 0..<80 {
+            let frame = targetFrame()
+            if frame.minY >= top, frame.maxY <= bottom { return }
+            let distance = frame.maxY > bottom ? frame.maxY - bottom : frame.minY - top
+            let amount = min(350, max(-350, distance))
+            board.scroll(byDeltaX: 0, deltaY: direction * amount)
+            _ = eventually(timeout: 1) { targetFrame().minY != frame.minY }
+            // Scroll-wheel deltas have different signs on local and CI setups.
+            if (targetFrame().minY - frame.minY) * distance >= 0 { direction = -direction }
+        }
+        XCTFail("the target did not scroll into the board viewport")
+    }
+
+    private func addCard(_ app: XCUIApplication, title: String, column: String, row: String) {
+        let cell = element(app, "kanban-cell-\(column)-\(row)")
+        XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        scrollIntoBoardView(app, targetFrame: { cell.frame.insetBy(dx: 6, dy: 6) })
+        cell.hover()
+        let add = element(app, "kanban-add-card-\(column)-\(row)")
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.click()
+        let field = element(app, "kanban-editor-title")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.click()
+        field.typeText(title)
+        element(app, "kanban-editor-done").click()
+        XCTAssertTrue(eventually { !element(app, "kanban-editor-title").exists })
+    }
+
     func testDragACardToAnotherCell() {
         let app = launch()
         openPlatform(app)
@@ -330,6 +456,40 @@ final class KanbanBoardUITests: XCTestCase {
         drag(app, card, to: cell, at: CGVector(dx: 0.5, dy: 0.9))
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Triage inbox"), element(app, "kanban-cell-In Progress-Ravi Kumar")) },
                       "the card moved to Ravi's In Progress cell")
+    }
+
+    func testDropAtTheEndOfALongCellLandsAfterItsPreviouslyUnrealizedTail() throws {
+        let app = launch(["-uitestKanbanVolume", "2000"])
+        openVolume(app)
+        let board = element(app, "kanban-board")
+        let destination = element(app, "kanban-cell-To Do-Alice Johnson")
+        // The cell's bottom padding is an end-of-cell drop target even while its add button is hidden.
+        let endOfCell = {
+            let frame = destination.frame
+            return CGRect(x: frame.minX + 6, y: frame.maxY - 6, width: frame.width - 12, height: 1)
+        }
+        let cards = destination.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'kanban-card-Task '"))
+        let initiallyRealized = Set(cards.allElementsBoundByIndex.map(\.identifier))
+        XCTAssertFalse(initiallyRealized.isEmpty, "the long cell starts with some realized cards")
+        XCTAssertGreaterThan(endOfCell().minY, board.frame.maxY + 300, "the tail starts beyond the viewport and overscan")
+
+        scrollIntoBoardView(app, targetFrame: endOfCell)
+        let tail = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+        let previousTail = try XCTUnwrap(tail.last)
+        let source = try XCTUnwrap(tail.dropLast().last)
+        let sourceID = source.identifier
+        let previousTailID = previousTail.identifier
+        XCTAssertFalse(initiallyRealized.contains(previousTail.identifier), "the seeded tail was never realized before the first scroll")
+        XCTAssertLessThan(previousTail.frame.maxY, endOfCell().minY, "the last seeded card is above the end-of-cell drop target")
+        XCTAssertLessThan(source.frame.minY, previousTail.frame.minY, "the source starts before the last card, so this is a real reorder")
+        XCTAssertTrue(source.isHittable, "the source and end of the long cell are both in view")
+        let drop = destination.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: -5.5))
+        source.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.3)).press(forDuration: 0.35, thenDragTo: drop)
+
+        XCTAssertTrue(eventually {
+            let order = cards.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+            return order.last?.identifier == sourceID && order.dropLast().last?.identifier == previousTailID
+        }, "dropping the penultimate card at the end makes it last, after the previous tail")
     }
 
     func testDragACardOntoARowHeaderReassignsIt() {
@@ -461,6 +621,54 @@ final class KanbanBoardUITests: XCTestCase {
         app.typeKey(.rightArrow, modifierFlags: .command)
         XCTAssertTrue(eventually { isInside(element(app, "kanban-card-Write docs"), element(app, "kanban-cell-Done-Mia Chen")) },
                       "⌘→ moves it to the next column")
+    }
+
+    func testKeyboardMoveToAnOffscreenCellRevealsAndFocusesTheCard() {
+        let app = launch(["-uitestKanbanVolume", "2000"])
+        openVolume(app)
+        let title = "Keyboard reveal source"
+        addCard(app, title: title, column: "To Do", row: "Unassigned")
+        let board = element(app, "kanban-board")
+        let destination = element(app, "kanban-cell-To Do-Alice Johnson")
+        XCTAssertGreaterThan(destination.frame.maxY, board.frame.maxY,
+                             "moving to the next row will append below the viewport")
+        let source = element(app, "kanban-card-\(title)")
+        scrollIntoBoardView(app) { source.frame }
+        openEditor(app, title)
+        element(app, "kanban-editor-cancel").click()
+        app.typeKey(.downArrow, modifierFlags: .command)
+        XCTAssertTrue(eventually {
+            let moved = element(app, "kanban-card-\(title)")
+            let visible = board.frame.insetBy(dx: 4, dy: 4)
+            let belowHeaders = moved.frame.minY >= element(app, "kanban-colhdr-To Do").frame.maxY
+            return moved.exists && moved.isHittable && visible.contains(moved.frame) && belowHeaders && isInside(moved, destination)
+        }, "⌘↓ scrolls the appended card fully into view")
+
+        app.typeKey(.return, modifierFlags: [])
+        let field = element(app, "kanban-editor-title")
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Return opens the newly focused card without another click")
+        XCTAssertEqual(field.value as? String, title, "focus follows the moved card")
+    }
+
+    func testToolbarFocusStopsShortcutsFromActingOnThePreviouslyFocusedCard() {
+        let app = launch()
+        openPlatform(app)
+        openEditor(app, "Write docs")
+        element(app, "kanban-editor-cancel").click()
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        let card = element(app, "kanban-card-Write docs")
+        let cell = element(app, "kanban-cell-To Do-Mia Chen")
+        XCTAssertTrue(eventually { card.exists && card.isHittable && isInside(card, cell) }, "a keyboard move completes its focus request")
+
+        // Focus moves to a text field: ⌘→ is the field's, never the finished request's card.
+        element(app, "kanban-filter").click()
+        let field = element(app, "kanban-filter-text")
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the filter opens")
+        field.click()
+        field.typeText("x")
+        app.typeKey(.rightArrow, modifierFlags: .command)
+        XCTAssertFalse(eventually(timeout: 2) { !isInside(card, cell) }, "⌘→ in the filter field must not move the previously moved card")
+        XCTAssertTrue(card.exists && isInside(card, cell), "the previous card stays in To Do")
     }
 
     // MARK: - Increment 6: filters, List view, bulk, undo, Change Log, search

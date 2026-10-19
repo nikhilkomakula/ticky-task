@@ -202,8 +202,8 @@ private struct RestoreConfirmSheet: View {
                 .font(.callout.monospacedDigit())
                 .padding(.vertical, 4)
                 // A backup from before availability replaces the Kanban data without any.
-                if let kanban = diff.kanban, kanban.timeOff.removed + kanban.availabilityOverrides.removed > 0 {
-                    Text("This removes \(kanban.timeOff.removed) time-off \(kanban.timeOff.removed == 1 ? "entry" : "entries") and \(kanban.availabilityOverrides.removed) availability \(kanban.availabilityOverrides.removed == 1 ? "override" : "overrides") recorded here that aren't in the backup.")
+                if let kanban = diff.kanban, kanban.timeOff.removed + kanban.availabilityOverrides.removed + kanban.holidays.removed > 0 {
+                    Text("This removes \(kanban.timeOff.removed) time-off \(kanban.timeOff.removed == 1 ? "entry" : "entries"), \(kanban.availabilityOverrides.removed) availability \(kanban.availabilityOverrides.removed == 1 ? "override" : "overrides") and \(kanban.holidays.removed) public \(kanban.holidays.removed == 1 ? "holiday" : "holidays") recorded here that aren't in the backup.")
                         .font(.callout)
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)

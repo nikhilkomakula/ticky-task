@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 
@@ -21,6 +22,51 @@ enum UITestSupport {
         let args = ProcessInfo.processInfo.arguments
         guard isRunning, let index = args.firstIndex(of: "-uitestStore"), index + 1 < args.count else { return nil }
         return URL(fileURLWithPath: args[index + 1])
+    }
+
+    /// `-uitestKanbanVolume <N>`: seeds a board with N cards for scrolling performance tests.
+    static var kanbanVolumeCardCount: Int? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestKanbanVolume"), index + 1 < args.count else { return nil }
+        return Int(args[index + 1])
+    }
+
+    /// `-uitestKanbanScrollJumps <N>`: N sweeps of the board's vertical scroll bar in 13 jumps each,
+    /// ending at the bottom, set through the app's own Accessibility elements as an assistive app
+    /// sets them (the path that once froze the board; programmatic scrolling doesn't take it).
+    static var kanbanScrollJumpRounds: Int? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestKanbanScrollJumps"), index + 1 < args.count else { return nil }
+        return Int(args[index + 1])
+    }
+
+    @MainActor
+    static func jumpKanbanScroller() async {
+        guard let rounds = kanbanScrollJumpRounds else { return }
+        try? await Task.sleep(for: .seconds(2))
+        func find(_ element: Any, depth: Int, where match: (AnyObject) -> Bool) -> AnyObject? {
+            let object = element as AnyObject
+            if match(object) { return object }
+            guard depth < 40 else { return nil }
+            for child in (object.accessibilityChildren?() ?? []) ?? [] {
+                if let found = find(child, depth: depth + 1, where: match) { return found }
+            }
+            return nil
+        }
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
+              let board = find(window, depth: 0, where: { ($0.accessibilityIdentifier?() ?? nil) == "kanban-board" }),
+              let bar = (board.accessibilityVerticalScrollBar?() ?? nil) as AnyObject? else {
+            return
+        }
+        for round in 0..<rounds {
+            for step in 0...12 {
+                guard !Task.isCancelled else { return }
+                let value = NSNumber(value: Double(round.isMultiple(of: 2) ? step : 12 - step) / 12)
+                _ = bar.setAccessibilityValue?(value)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+        _ = bar.setAccessibilityValue?(NSNumber(value: 1))
     }
 
     #if DEBUG
@@ -82,6 +128,12 @@ enum UITestSupport {
             if ProcessInfo.processInfo.arguments.contains("-uitestKanbanSeed") {
                 try seedKanban(context)
             }
+            if ProcessInfo.processInfo.arguments.contains("-uitestKanbanVaried") {
+                try seedVariedBoard(context)
+            }
+            if let cardCount = kanbanVolumeCardCount {
+                _ = try KanbanVolumeSeed.seed(into: context, cardCount: cardCount)
+            }
         } catch {
             // Seeding is best-effort; a failed seed just yields an empty test board.
         }
@@ -119,10 +171,57 @@ enum UITestSupport {
             }
             try context.save()
         }
+        // `-uitestKanbanHolidays`: this week's Wednesday is "Seed Day", and next week is a
+        // "Shutdown" closing a week Ravi had overridden, so the override needs review.
+        if ProcessInfo.processInfo.arguments.contains("-uitestKanbanHolidays") {
+            let monday = KanbanDay.today().monday, next = KanbanDay.today().monday.adding(days: 7)
+            try kanban.setOverride(ravi, week: next, halfDays: 8)
+            try kanban.addHoliday(KanbanHolidayDTO(day: monday.adding(days: 2).key, name: "Seed Day"), on: platform)
+            for day in 0..<5 { try kanban.addHoliday(KanbanHolidayDTO(day: next.adding(days: day).key, name: "Shutdown"), on: platform) }
+        }
         // `-uitestKanbanWide`: enough columns that the board scrolls sideways.
         if ProcessInfo.processInfo.arguments.contains("-uitestKanbanWide") {
             for index in 1...6 { _ = try kanban.addColumn(to: platform, name: "Stage \(index)", at: 2) }
         }
+    }
+
+    /// `-uitestKanbanVaried`: a small board shaped like a real one that once sent the lazily
+    /// built rows into an endless layout loop when scrolled in jumps: twelve people plus
+    /// Unassigned, 26 cards one to three per cell in To Do and In Progress, labelled titles that
+    /// wrap to one, two or three lines, sorted by priority.
+    @MainActor
+    private static func seedVariedBoard(_ context: ModelContext) throws {
+        let kanban = KanbanService(context)
+        let board = try kanban.createProject(name: "Varied", key: "VAR", template: .standard)
+        let names = ["Avery Stone", "Jordan Patel", "Riley Moreno", "Casey Lindqvist", "Morgan Oyelaran", "Quinn Adebayo",
+                     "Taylor Brooks", "Rowan Iyer", "Sam Okafor", "Drew Castellanos", "Harper Nakamura-Wells", "Elliot Fry"]
+        var rows: [KanbanRowKey] = []
+        for (index, name) in names.enumerated() {
+            let person = try kanban.createPerson(name: name, initials: String(name.split(separator: " ").compactMap(\.first)),
+                                                 employment: index % 5 < 2 ? .contractor : .fte)
+            rows.append(.resource(try kanban.addMembership(person, to: board).id))
+        }
+        rows.append(.unassigned)
+        let titles = ["Intro call with the data architect", "Pending wave one ops and resources", "Code isolation",
+                      "Discuss post go-live enhancements with the customer", "Review wave one documentation",
+                      "Evaluation pipeline", "Conversational flow type two", "Requirements review for analytics",
+                      "Audit agents", "Retrospective notes and follow-ups"]
+        // (row, column, cards): the real board's sparse cells.
+        let cells = [(0, 0, 1), (1, 0, 3), (2, 0, 1), (2, 1, 2), (3, 0, 1), (4, 0, 3), (5, 0, 3), (6, 1, 2), (7, 0, 1),
+                     (7, 1, 1), (8, 1, 1), (9, 1, 1), (10, 0, 2), (11, 1, 3), (12, 0, 1)]
+        let labels = board.labels.sorted { $0.sortIndex < $1.sortIndex }
+        var count = 0
+        for (row, column, cards) in cells {
+            for _ in 0..<cards {
+                let task = try kanban.createTask(in: board, title: titles[count % titles.count], column: board.orderedColumns[column],
+                                                 row: rows[row])
+                task.priority = [1, 2, 1, 0, 2][count % 5]
+                if !labels.isEmpty, count % 8 != 7 { task.labels = Array(labels.prefix(1 + count % 2)) }
+                count += 1
+            }
+        }
+        board.boardState = { var state = KanbanBoardState.decode(board.boardState); state.sort = .priority; return state.encoded() }()
+        try context.save()
     }
 
     /// Opt-in extra tasks for the Weekly Summary UI tests (kept out of the default

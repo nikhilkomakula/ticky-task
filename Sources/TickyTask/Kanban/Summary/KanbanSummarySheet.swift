@@ -305,8 +305,10 @@ private struct CardRow: View {
 
 // MARK: - Configuration Bar
 
-private struct KanbanSummaryConfigurationBar: View {
+struct KanbanSummaryConfigurationBar: View {
     @Bindable var session: KanbanSummarySession
+    var showsInstructions = true
+    var identifierPrefix = "kanban-summary"
     @State private var isEnteringCustomModel = false
     @State private var customModel = ""
     @State private var showConnection = false
@@ -321,7 +323,7 @@ private struct KanbanSummaryConfigurationBar: View {
                     Label("Codex · \(session.connection.label)", systemImage: session.connection.isLocal ? "desktopcomputer" : "person.crop.circle")
                 }
                 .help("Change how Codex connects")
-                .accessibilityIdentifier("kanban-summary-connection")
+                .accessibilityIdentifier("\(identifierPrefix)-connection")
                 .popover(isPresented: $showConnection, arrowEdge: .bottom) {
                     SummaryConnectionForm(
                         onChange: { Task { await session.syncConnection(); await session.refreshAccountStatus() } },
@@ -340,7 +342,7 @@ private struct KanbanSummaryConfigurationBar: View {
                     Text("Custom model ID…").tag(Self.customTag)
                 }
                 .frame(maxWidth: 240)
-                .accessibilityIdentifier("kanban-summary-model")
+                .accessibilityIdentifier("\(identifierPrefix)-model")
 
                 Button {
                     Task { await session.loadModels(refresh: true) }
@@ -360,15 +362,17 @@ private struct KanbanSummaryConfigurationBar: View {
                     ForEach(session.effortChoices, id: \.self) { Text(SummaryEffortResolver.label(for: $0)).tag($0) }
                 }
                 .frame(maxWidth: 200)
-                .accessibilityIdentifier("kanban-summary-effort")
+                .accessibilityIdentifier("\(identifierPrefix)-effort")
 
-                Button {
-                    showInstructions = true
-                } label: {
-                    Label("Instructions", systemImage: session.customInstructions.isEmpty ? "text.bubble" : "text.bubble.fill")
+                if showsInstructions {
+                    Button {
+                        showInstructions = true
+                    } label: {
+                        Label("Instructions", systemImage: session.customInstructions.isEmpty ? "text.bubble" : "text.bubble.fill")
+                    }
+                    .help(session.customInstructions.isEmpty ? "Add your own instructions" : "Edit your instructions")
+                    .accessibilityIdentifier("kanban-summary-instructions-button")
                 }
-                .help(session.customInstructions.isEmpty ? "Add your own instructions" : "Edit your instructions")
-                .accessibilityIdentifier("kanban-summary-instructions-button")
             }
             if session.connection == .chatGPTAccount, session.accountStatus == .signedOut {
                 HStack(spacing: 6) {

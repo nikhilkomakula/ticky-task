@@ -75,6 +75,28 @@ struct KanbanAvailabilityTests {
         #expect(KanbanAvailability.band(6, of: 6) == .green, "a full 3-day week")
     }
 
+    @Test("Team bands: 5*available ≥ 4*possible green, 5*available ≥ 3*possible amber, else red")
+    func teamBands() {
+        // Green: 5*available >= 4*possible (80% and above, floored)
+        #expect(KanbanAvailability.teamBand(available: 100, possible: 100) == .green, "5*100 >= 4*100")
+        #expect(KanbanAvailability.teamBand(available: 80, possible: 100) == .green, "5*80 >= 4*100")
+        #expect(KanbanAvailability.teamBand(available: 40, possible: 50) == .green, "5*40 >= 4*50")
+        // Amber: 5*available >= 3*possible but < 4*possible (60–79%, floored)
+        #expect(KanbanAvailability.teamBand(available: 79, possible: 100) == .yellow, "5*79 < 4*100, >= 3*100")
+        #expect(KanbanAvailability.teamBand(available: 60, possible: 100) == .yellow, "5*60 >= 3*100")
+        #expect(KanbanAvailability.teamBand(available: 39, possible: 50) == .yellow, "78%: 5*39 >= 3*50")
+        #expect(KanbanAvailability.teamBand(available: 30, possible: 50) == .yellow, "60%: 5*30 >= 3*50")
+        // Red: 5*available < 3*possible (below 60%)
+        #expect(KanbanAvailability.teamBand(available: 59, possible: 100) == .red, "5*59 < 3*100")
+        #expect(KanbanAvailability.teamBand(available: 0, possible: 100) == .red)
+        #expect(KanbanAvailability.teamBand(available: 29, possible: 50) == .red, "58%: 5*29 < 3*50")
+        // Boundary: 79.6% displays as "79%" amber (not green)
+        #expect(KanbanAvailability.teamBand(available: 398, possible: 500) == .yellow, "398/500 = 79.6%, 5*398 = 1990 < 4*500 = 2000")
+        // Nil when no work days
+        #expect(KanbanAvailability.teamBand(available: 0, possible: 0) == nil)
+        #expect(KanbanAvailability.percent(398, of: 500) == 79 && KanbanAvailability.percent(299, of: 500) == 59, "floored, never rounded up")
+    }
+
     @Test("An override replaces the week; one above the possible days needs review and isn't used")
     func overrides() {
         let week = day("20261019")
@@ -266,5 +288,162 @@ struct KanbanAvailabilityServiceTests {
         #expect(payload.availability == nil && payload.version == 1)
         let delta = try JSONDecoder().decode(KanbanAvailabilityDelta.self, from: Data("{}".utf8))
         #expect(delta.isEmpty)
+    }
+}
+
+extension KanbanAvailabilityTests {
+    @Test("Holidays aren't working days: out of possible, never subtracted twice, PTO on them not counted, per-record exceptions")
+    func holidays() {
+        let week = day("20261123")   // Thanksgiving Thursday 26 Nov
+        let board = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays)
+        let person = UUID()
+        func h(_ key: String, _ portion: KanbanTimeOffPortion = .full, worked: Set<UUID> = []) -> KanbanAvailability.Holiday {
+            .init(id: UUID(), day: day(key), portion: portion, workedBy: worked)
+        }
+        var m = member([off("20261126", "20261127")])
+        m.personID = person
+        let thanksgiving = h("20261126")
+        let one = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([thanksgiving]))
+        #expect(one.possibleHalfDays == 8 && one.holidayHalfDays == 2 && one.absentHalfDays == 2, "4 working days, Friday off")
+        #expect(one.effectiveHalfDays == 6 && one.band == .green && one.holidayIDs == [thanksgiving.id])
+        let duplicate = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([thanksgiving, h("20261126", .pm)]))
+        #expect(duplicate.possibleHalfDays == 8 && duplicate.holidayHalfDays == 2, "overlapping holidays count once")
+        let half = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([h("20261124", .pm)]))
+        #expect(half.possibleHalfDays == 9 && half.effectiveHalfDays == 9)
+        // Working one holiday doesn't exempt another on the same day.
+        let works = KanbanAvailability.cell(week: week, board: board, member: m, holidays: .init([h("20261126", worked: [person])]))
+        #expect(works.possibleHalfDays == 10 && works.absentHalfDays == 4 && works.holidayHalfDays == 0)
+        let mixed = KanbanAvailability.cell(week: week, board: board, member: m,
+                                            holidays: .init([h("20261126", worked: [person]), h("20261126", .am)]))
+        #expect(mixed.possibleHalfDays == 9 && mixed.absentHalfDays == 3)
+        // A weekend holiday only matters on a board that works weekends.
+        let saturday = KanbanAvailability.Holidays([h("20261128")])
+        #expect(KanbanAvailability.cell(week: week, board: board, member: member(), holidays: saturday).possibleHalfDays == 10)
+        let sixDays = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays.union([7]))
+        #expect(KanbanAvailability.cell(week: week, board: sixDays, member: member(), holidays: saturday).possibleHalfDays == 10)
+        // All work days are holidays: its own state, not "—".
+        let shutdown = KanbanAvailability.Holidays(["20261123", "20261124", "20261125", "20261126", "20261127"].map { h($0) })
+        let closed = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: shutdown)
+        #expect(!closed.isActive && closed.isAllHoliday && closed.band == nil)
+        #expect(!KanbanAvailability.cell(week: day("20261019"), board: .init(start: nil, end: nil, workWeekDays: []), member: member()).isAllHoliday)
+        // An override is capped by the holiday-aware possible days.
+        var capped = member(overrides: [week: 10])
+        capped.personID = person
+        #expect(KanbanAvailability.cell(week: week, board: board, member: capped, holidays: .init([thanksgiving])).overrideNeedsReview)
+        // The weekly total ignores holidays: everyone working all their working days is 100 %.
+        let total = KanbanAvailability.total([one, KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([thanksgiving])), closed])
+        #expect(total.map { KanbanAvailability.percent($0.available, of: $0.possible) } == 87, "14 of 16 half days; the closed cell adds nothing")
+    }
+
+    @Test("VoiceOver says how many holiday days a week excludes, and names them")
+    func spokenFormat() {
+        let board = KanbanAvailability.Board(start: nil, end: nil, workWeekDays: weekdays)
+        let week = day("20261123")
+        func h(_ key: String, _ portion: KanbanTimeOffPortion = .full) -> KanbanAvailability.Holiday {
+            .init(id: UUID(), day: day(key), portion: portion)
+        }
+        let plain = KanbanAvailability.cell(week: week, board: board, member: member())
+        #expect(KanbanAvailabilityFormat.spoken(plain, timeOff: []) == "5 of 5 days available")
+        let one = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([h("20261126")]))
+        #expect(KanbanAvailabilityFormat.spoken(one, timeOff: [], holidays: ["Thanksgiving"])
+                == "4 of 4 days available. 1 day of public holidays excluded (Thanksgiving)")
+        let half = KanbanAvailability.cell(week: week, board: board, member: member(), holidays: .init([h("20261124", .pm)]))
+        #expect(KanbanAvailabilityFormat.spoken(half, timeOff: [], holidays: ["Early close"]).hasSuffix("Half a day of public holidays excluded (Early close)"))
+        let closed = KanbanAvailability.cell(week: week, board: board, member: member(),
+                                             holidays: .init(["20261123", "20261124", "20261125", "20261126", "20261127"].map { h($0) }))
+        #expect(KanbanAvailabilityFormat.spoken(closed, timeOff: []) == "Public holiday all week")
+    }
+}
+
+extension KanbanAvailabilityServiceTests {
+    @Test("Public holidays: add, edit, works-it and delete are each undoable, logged at payload v3")
+    func holidays() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        let logged = try #require(platform.activities.max { $0.seq < $1.seq })
+        #expect(try KanbanActivityPayload.decode(logged.payload).version == 3)
+        try s.setWorks(ravi, holiday: holiday, works: true, on: platform)
+        #expect(holiday.workedBy == [ravi.id])
+        var moved = KanbanHolidayDTO(holiday)
+        moved.day = "20261127"
+        try s.editHoliday(holiday, to: moved, on: platform)
+        #expect(holiday.day == "20261127" && holiday.workedBy == [ravi.id], "an edit keeps who works it")
+        try s.undo(in: platform)
+        #expect(holiday.day == "20261126")
+        try s.undo(in: platform)
+        #expect(holiday.workedBy == nil)
+        try s.redo(in: platform)
+        try s.deleteHolidays([holiday], on: platform)
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
+        try s.undo(in: platform)
+        let back = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        #expect(back.id == holiday.id && back.workedBy == [ravi.id], "the same holiday comes back with its exception")
+    }
+
+    @Test("Bad holidays are refused, unknown people included; undo after a deletion logs what it restores")
+    func holidayValidation() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        for bad in [KanbanHolidayDTO(day: "20260231", name: "Nope"), KanbanHolidayDTO(day: "20261126", name: "  ")] {
+            #expect(throws: KanbanServiceError.self) { try s.addHoliday(bad, on: platform) }
+        }
+        #expect(throws: KanbanServiceError.self) {
+            try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, UUID()]), on: platform)
+        }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
+        // Undo after the person is deleted brings the holiday back without them, and redo still matches.
+        let sita = try s.createPerson(name: "Sita", initials: "ST")
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving", workedBy: [ravi.id, sita.id]), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        try s.deleteHolidays([holiday], on: platform)
+        try s.deletePerson(sita)
+        try s.undo(in: platform)
+        let back = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        #expect(back.workedBy == [ravi.id])
+        try s.redo(in: platform)
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 0)
+    }
+
+    @Test("Undo refuses when the holiday was changed again from another board")
+    func holidayCrossBoard() throws {
+        let (s, platform, data, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        try s.setWorks(ravi, holiday: holiday, works: true, on: data)
+        #expect(throws: KanbanServiceError.self) { try s.undo(in: platform) }
+        #expect(try context.fetchCount(FetchDescriptor<KanbanHoliday>()) == 1)
+    }
+
+    @Test("Overrides are capped by the holiday-aware week, also when one change adds both")
+    func holidayCapacity() throws {
+        let (s, platform, _, _, membership, _) = try setup()
+        let week = KanbanDay(key: "20261123")!
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        #expect(throws: KanbanServiceError.self) { try s.setOverride(membership, week: week, halfDays: 9) }
+        try s.setOverride(membership, week: week, halfDays: 8)
+        // Ten half days fit the week of 30 Nov until the same change closes its Monday.
+        let closed = KanbanHolidayDTO(day: "20261130", name: "Closed")
+        let override = KanbanAvailabilityOverrideDTO(id: UUID(), resourceId: membership.id, weekStart: "20261130", halfDays: 10,
+                                                     note: nil, createdAt: Date(), updatedAt: Date())
+        let both = KanbanAvailabilityDelta(overrides: [.init(id: override.id, before: nil, after: override)],
+                                           holidays: [.init(id: closed.id, before: nil, after: closed)])
+        #expect(throws: KanbanServiceError.self) { try s.applyAvailability(both, on: platform, summary: "x") }
+        #expect(membership.availabilityOverrides.count == 1, "nothing from the refused change")
+    }
+
+    @Test("A failed holiday save changes nothing and logs nothing")
+    func holidaySaveFailure() throws {
+        let (s, platform, _, ravi, _, context) = try setup()
+        try s.addHoliday(KanbanHolidayDTO(day: "20261126", name: "Thanksgiving"), on: platform)
+        let holiday = try #require(try context.fetch(FetchDescriptor<KanbanHoliday>()).first)
+        let entries = platform.activities.count
+        defer { PersistenceFaults.armed = [] }
+        PersistenceFaults.armed = [.transaction]
+        #expect(throws: (any Error).self) { try s.setWorks(ravi, holiday: holiday, works: true, on: platform) }
+        PersistenceFaults.armed = [.transaction]
+        #expect(throws: (any Error).self) { try s.addHoliday(KanbanHolidayDTO(day: "20261127", name: "Day after"), on: platform) }
+        let kept = try context.fetch(FetchDescriptor<KanbanHoliday>())
+        #expect(kept.count == 1 && kept.first?.workedBy == nil)
+        #expect(platform.activities.count == entries)
     }
 }

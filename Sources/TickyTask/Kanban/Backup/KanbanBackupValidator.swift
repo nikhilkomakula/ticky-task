@@ -55,6 +55,7 @@ enum KanbanBackupValidator {
         try requireUnique(kanban.activities.map(\.id), "change-log entry")
         try requireUnique((kanban.timeOff ?? []).map(\.id), "time-off entry")
         try requireUnique((kanban.availabilityOverrides ?? []).map(\.id), "availability override")
+        try requireUnique((kanban.holidays ?? []).map(\.id), "holiday")
         // Availability (v2): each record points at what's in the file and holds real values.
         for project in kanban.projects {
             if KanbanAvailability.boardDatesProblem(project.startDay, project.endDay) != nil {
@@ -77,6 +78,20 @@ enum KanbanBackupValidator {
             guard let monday = KanbanDay(key: override.weekStart), monday.monday == monday, (0...14).contains(override.halfDays),
                   overriddenWeeks.insert("\(resource)|\(override.weekStart)").inserted else {
                 throw BackupError.validationFailed(reason: "Override \(override.id) is invalid")
+            }
+        }
+        // Holidays (v3+): day is valid, name is non-empty, portion is known, workedBy ids are in file.
+        for holiday in kanban.holidays ?? [] {
+            guard KanbanDay(key: holiday.day) != nil, !holiday.name.trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw BackupError.validationFailed(reason: "Holiday \(holiday.id) has an invalid day or empty name")
+            }
+            guard KanbanTimeOffPortion(rawValue: holiday.portionRaw) != nil else {
+                throw BackupError.validationFailed(reason: "Holiday \(holiday.id) has an unknown portion")
+            }
+            for personId in holiday.workedBy ?? [] {
+                guard personIds.contains(personId) else {
+                    throw BackupError.validationFailed(reason: "Holiday \(holiday.id) names a person that isn't in the backup")
+                }
             }
         }
         for column in kanban.columns where KanbanColumnKind(rawValue: column.kindRaw) == nil {

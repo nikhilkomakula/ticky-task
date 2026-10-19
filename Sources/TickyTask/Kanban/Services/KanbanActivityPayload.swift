@@ -57,8 +57,9 @@ struct KanbanRemovedGraph: Codable, Equatable, Sendable {
 /// The versioned payload of one change-log entry: per-row transitions with their
 /// expected values, so it can be replayed (dashboards) and reverted with conflict checks.
 struct KanbanActivityPayload: Codable, Equatable, Sendable {
-    /// 2 (v0.3.0) adds `availability`; version-1 entries still read.
-    static let currentVersion = 2
+    /// 2 (v0.3.0) adds `availability`; 3 (v0.4.0) adds its `holidays`, so an older app refuses
+    /// to half-revert a change that touched them. Earlier entries still read.
+    static let currentVersion = 3
     var version = currentVersion
     /// Moves, including those caused by deleting a column or archiving a membership.
     var transitions: [KanbanTransition] = []
@@ -113,6 +114,12 @@ struct KanbanAvailabilityDelta: Codable, Equatable, Sendable {
         var after: KanbanAvailabilityOverrideDTO?
     }
 
+    struct Holiday: Codable, Equatable, Sendable {
+        var id: UUID
+        var before: KanbanHolidayDTO?
+        var after: KanbanHolidayDTO?
+    }
+
     struct Aliases: Codable, Equatable, Sendable {
         var personID: UUID
         var before: [String]?
@@ -122,9 +129,10 @@ struct KanbanAvailabilityDelta: Codable, Equatable, Sendable {
     var timeOff: [TimeOff] = []
     var overrides: [Override] = []
     var aliases: [Aliases] = []
+    var holidays: [Holiday] = []
 
-    init(timeOff: [TimeOff] = [], overrides: [Override] = [], aliases: [Aliases] = []) {
-        (self.timeOff, self.overrides, self.aliases) = (timeOff, overrides, aliases)
+    init(timeOff: [TimeOff] = [], overrides: [Override] = [], aliases: [Aliases] = [], holidays: [Holiday] = []) {
+        (self.timeOff, self.overrides, self.aliases, self.holidays) = (timeOff, overrides, aliases, holidays)
     }
 
     init(from decoder: Decoder) throws {
@@ -132,13 +140,21 @@ struct KanbanAvailabilityDelta: Codable, Equatable, Sendable {
         timeOff = try c.decodeIfPresent([TimeOff].self, forKey: .timeOff) ?? []
         overrides = try c.decodeIfPresent([Override].self, forKey: .overrides) ?? []
         aliases = try c.decodeIfPresent([Aliases].self, forKey: .aliases) ?? []
+        holidays = try c.decodeIfPresent([Holiday].self, forKey: .holidays) ?? []
     }
 
-    var isEmpty: Bool { timeOff.isEmpty && overrides.isEmpty && aliases.isEmpty }
+    var isEmpty: Bool { timeOff.isEmpty && overrides.isEmpty && aliases.isEmpty && holidays.isEmpty }
+
+    /// Without the records it wouldn't change.
+    var changesOnly: KanbanAvailabilityDelta {
+        KanbanAvailabilityDelta(timeOff: timeOff.filter { $0.before != $0.after }, overrides: overrides.filter { $0.before != $0.after },
+                                aliases: aliases.filter { $0.before != $0.after }, holidays: holidays.filter { $0.before != $0.after })
+    }
 
     var reversed: KanbanAvailabilityDelta {
         KanbanAvailabilityDelta(timeOff: timeOff.map { .init(id: $0.id, before: $0.after, after: $0.before) },
                                 overrides: overrides.map { .init(id: $0.id, before: $0.after, after: $0.before) },
-                                aliases: aliases.map { .init(personID: $0.personID, before: $0.after, after: $0.before) })
+                                aliases: aliases.map { .init(personID: $0.personID, before: $0.after, after: $0.before) },
+                                holidays: holidays.map { .init(id: $0.id, before: $0.after, after: $0.before) })
     }
 }

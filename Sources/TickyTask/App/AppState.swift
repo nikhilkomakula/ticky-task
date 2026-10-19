@@ -61,6 +61,8 @@ final class AppState {
     var popoverModule: AppModule?
     /// The open, unarchived board the Kanban module is showing (nil otherwise), for ⌘N.
     var kanbanActiveBoardID: UUID?
+    /// Header clicks relinquish board focus, even when a borderless button doesn't take it.
+    var kanbanBoardFocusResetToken = 0
 
     static func currentKanbanClock() -> String { "\(WeekMath.dayKey(for: Date()))|\(TimeZone.current.identifier)" }
 

@@ -172,45 +172,41 @@ Switch to **Dashboard** to see your board's metrics. Each chart shows counts or 
 
 **Give the board dates.** Open **Board settings…** from the board's menu in the sidebar (or **Board actions** in the toolbar) and turn on **Starts on** and **Ends on**. You can also set them in **New board**. Both are optional. The Availability tab shows every week between them; without dates it shows 12 weeks from this week, with arrows to move.
 
-**Read the tab.** Choose **Availability** in the view picker. Each row is a resource on the board, and each column is a week, always Monday to Sunday (the header shows the dates, with the month and year above). A cell shows how many days that person is available that week, after their recorded time off, out of the days they could work:
+**Read the tab.** Choose **Availability** in the view picker. Each row is a resource on the board, and each column is a week, always Monday to Sunday (the header shows the dates, with the month and year above). This week's column is highlighted with a subtle tinted background and labelled "This week" in the header. A cell shows how many days that person is available that week, after their recorded time off, out of the days they could work:
 
 | Cell | Means |
 |---|---|
-| **5** of 5 days, green | Available more than 60 % of the week (on a five-day week, more than 3 days) |
-| **3** of 5 days, yellow | Exactly 60 % (3 days) |
-| **2.5** of 5 days, red | Less than 60 % (fewer than 3 days) |
-| **3** of 3 days, green | A short week (the board starts midweek, or the person joins or leaves that week), fully available |
+| **5**, green | Available more than 60 % of the week (on a five-day week, more than 3 days) |
+| **3**, yellow | Exactly 60 % (3 days) |
+| **2.5**, red | Less than 60 % (fewer than 3 days) |
+| **3**, green | A short week (the board starts midweek, or the person joins or leaves that week), fully available |
 | — | They can't work that week on this board (outside the board's dates or their membership) |
 
-The **Team** row adds everyone's days, for example *12.5 of 15 · 83%*. The number counts days present only: someone at 50 % allocation with no time off still shows 5 of 5 (their allocation shows in the row header when **Show allocation in row headers** is on). Card filters don't apply here.
+The **Weekly availability** row (frozen below the header) shows the team's total available time that week as a percentage (floored) and the total days. The colour coding reflects capacity-planning thresholds: green for 80 % or more, amber for 60–79 %, and red for below 60 %. The number counts days present only: someone at 50 % allocation with no time off still shows 5 of 5 (their allocation shows in the row header when **Show allocation in row headers** is on). Card filters don't apply here.
 
 **Record time off.** Click **Add time off** above the grid, or right-click a resource and choose **Add time off…**. Pick the dates, **Full day**, **Morning** or **Afternoon** (a single day), and a type (PTO, Sick, Personal, Training, Other), with an optional note. Time off belongs to the person, so it counts on every board they're on. **Time off…** lists, edits and removes someone's entries. Days covered by more than one entry count once.
 
+**Public holidays.** Click **⋯ › Public holidays…** to add, edit and remove the holidays that apply to everyone on every board: a date, a name, and a full day, morning or afternoon. A holiday isn't a working day, so it comes off the week's possible days rather than counting as time off: a week with Thanksgiving has 4 possible days, and working all 4 is 100 % (green). Someone who works a holiday (on call, another country) is listed beside it in the sheet, or ticked **Works on …** in a cell's details; for them it's a normal day. A holiday on a day the board doesn't work changes nothing. A cell where every work day is a holiday shows **Holiday** with a sun; a week with a holiday shows an orange star in its header. The Weekly availability row leaves holidays out entirely.
+
 **Override a week.** Click a cell (or focus it and press **Return**) to see the possible days, the time off counted and the result. **Override…** replaces that week's available days for this board (in half days), with an optional note; a small pencil marks the cell. **Clear override** goes back to the worked-out value. If you later change the board's or the person's dates so the week has fewer days than the override, the override is kept, marked with a warning, and not used until you change or clear it.
 
-**Update from your PTO list (Update availability…).** If your team keeps PTO somewhere else (a Slack canvas, a spreadsheet, an email), you don't have to retype it:
+**Update availability…** accepts instructions and optional source material, so you can import a PTO list or ask for a specific change:
+
 1. Click **Update availability…**, or drop screenshots onto the grid.
-2. Paste the text (select the canvas and copy it), and/or add screenshots with **Paste image**, **Choose files…** or drag and drop. Text usually reads more accurately than a screenshot.
-3. Check the dates and people shown, read the note about what's sent, and click **Extract with Codex**. It uses the same Codex connection, model and privacy settings as the summaries (**Settings › AI**). Only what's shown is sent: the text, the images, the date range and the board's people's names.
-4. Review the suggestions, grouped as:
-   - **New**: ticked.
-   - **Overlaps recorded time off**: not ticked. Each row shows what it replaces and what's kept; applying it replaces only its own days and half days.
-   - **Name not matched**: pick the person; tick **Remember this name** to match it next time. Someone matched who isn't on this board starts unticked: tick them to include their time off.
-   - **Overlaps another suggestion**: two suggestions cover the same days for one person; tick only one (Apply waits until you do).
-   - **Needs review**: can't be applied as read, for example a half day over several days.
-   - **Already recorded**: identical, so nothing to do.
-   - **Couldn't be read**: unclear rows, with the reason.
+2. Enter **Instructions**, such as *“Mia is off next Tue”*, *“cancel Ravi's PTO on Friday”*, *“set Sam to 3 days the week of 2 Nov”*, *“add Thanksgiving 26 Nov”* or *“Ravi works on Diwali”*. You can also paste text or add screenshots with **Paste image**, **Choose files…** or drag and drop. Instructions or material may be empty, but the request needs at least one.
+3. Check the dates, people, connection, model and effort, then click **Suggest changes**. The connection bar shares the app-wide AI connection with the summaries (**Settings › AI**). Your instructions, text, images, date range, the board's people's names and aliases, and recorded time off, this board's overrides and holidays within that range are sent; existing notes are excluded and holiday exceptions are sent as names. The disclosure names the destination host. The installed Codex CLI is required; an OpenAI-compatible server needs a Responses API. Screenshot support is known only for a ChatGPT-account catalog model; other models show an **Image support unknown** warning. A model declared unable to read images cannot suggest changes while screenshots are attached.
+4. Review **New**, **Changes**, **Removals**, **Holidays (applies to everyone)**, **Unmatched**, **Needs review** and **Already true**. New time off starts ticked; removals, replacements and holiday changes start unticked. Rows show the exact records removed, the pieces kept, and each affected week's before → after days. Pick unmatched people or ambiguous holidays locally; **Remember this name** saves an alias with the accepted change. Time off for someone outside this board starts unticked. Conflicting selections block Apply. A grouped move is selected as one row and keeps the original record's identity; ambiguous grouped moves need a clearer request, one change at a time.
 
-   If something was misread, type a correction (*"Ravi means Ravindra"*, *"those dates are in November"*) and click **Refine** to read it again.
-5. Click **Apply**. The line above it says how many entries, people and boards it affects. If someone's recorded time off changed while you were reviewing, Apply stops and asks you to check the rows again. It's one change in the Change Log, so **⌘Z** undoes it.
+   If something was misread, type a correction (*“Ravi means Ravindra”*, *“those dates are in November”*) and click **Suggest changes** again. **Notes from the assistant** shows any caveats.
+5. Click **Apply**. The impact line counts every effective addition, removal, override and holiday change, including removal-only requests. Time off counts on every board the person is on; holidays apply to everyone unless they work that holiday. If time off, holidays, overrides, board or membership dates, or board work days change during generation or review, the request is refused with **Things changed since this review — review again**. Apply saves one change in the Change Log, so **⌘Z** undoes it.
 
-Nothing is applied without your review, nothing is ever removed because it's missing from the list, and the screenshots aren't kept. Re-pasting the same list later adds only what's new.
+Nothing changes without your review, absence from a pasted list never removes a record, and screenshots aren't kept. Explicit instructions can remove or move existing entries. The material and the assistant's reply are checked locally; the assistant cannot use tools or change records itself.
 
-**Export it.** **⋯ › Export availability CSV…** saves one row per resource and week: possible, worked-out, overridden and effective days, allocation and status.
+**Export it.** **⋯ › Export availability CSV…** saves one row per resource and week: possible, worked-out, overridden and effective days, allocation, status and holiday days.
 
-Every change here is one entry in the board's **Change Log**, and **⌘Z** undoes it. Undo refuses if the same time off was changed again since, on any board.
+Every change here is one entry in the board's **Change Log**, and **⌘Z** undoes it. Undo refuses if the same time off or holiday was changed again since, on any board.
 
-**Backups and board files.** Full backups include board dates, all time off, overrides and remembered names. A board file (**Export board…**) includes the board's dates and overrides, and its people's time off that overlaps the board's dates. For a board without both dates, you choose the range when exporting. Entries that overlap the range are included whole. Importing it adds time off to the matched people without duplicating what's already there. If an entry or a week's override in the file differs from what's recorded, the preview says how many; you can choose to use the file's version, and otherwise yours is kept. When merging into an existing board, you choose whether to use the file's board dates. Restoring a backup from before availability existed removes the time off recorded here, and the restore confirmation says so.
+**Backups and board files.** Full backups include board dates, all time off, overrides, public holidays and remembered names. A board file (**Export board…**) includes the board's dates and overrides, its people's time off that overlaps the board's dates, and public holidays within the export range. For a board without both dates, you choose the range when exporting. Entries and holidays that overlap the range are included whole. Importing it adds time off and holidays to the matched people without duplicating what's already there. If an entry, a holiday, or a week's override in the file differs from what's recorded, the preview says how many; you can choose to use the file's version for each category, and otherwise yours is kept. When merging into an existing board, you choose whether to use the file's board dates. Restoring a backup from before availability existed removes the time off recorded here, and the restore confirmation says so. Restoring a backup before public holidays removes those too.
 
 Arrow keys move between cells, **Return** opens the details and **Esc** closes them.
 

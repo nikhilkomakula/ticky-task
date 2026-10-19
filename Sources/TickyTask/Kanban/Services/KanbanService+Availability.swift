@@ -1,8 +1,9 @@
 import Foundation
 import SwiftData
 
-/// Time off, weekly overrides and remembered names (design 03). Time off belongs to the person,
-/// so one entry here changes every board they're on. Each action is one undoable entry on the
+/// Time off, weekly overrides, remembered names (design 03) and public holidays (design 04).
+/// Time off belongs to the person and holidays to everyone, so one entry here can change every
+/// board. Each action is one undoable entry on the
 /// board where it was taken, holding the records' before and after states.
 extension KanbanService {
     /// Applies `delta` as one entry on `project`: every record must still be as `before` says,
@@ -10,15 +11,20 @@ extension KanbanService {
     @discardableResult
     func applyAvailability(_ delta: KanbanAvailabilityDelta, on project: KanbanProject, summary: String) throws -> Bool {
         try RecurrenceMaterializer.checkpoint(context)
-        let delta = KanbanAvailabilityDelta(timeOff: delta.timeOff.filter { $0.before != $0.after },
-                                            overrides: delta.overrides.filter { $0.before != $0.after },
-                                            aliases: delta.aliases.filter { $0.before != $0.after })
+        let delta = delta.changesOnly
         guard !delta.isEmpty else { return false }
         let records = try availabilityRecords()
         guard records.matches(delta, before: true) else {
             throw KanbanServiceError.conflict("Time off changed while you were editing it. Try again.")
         }
-        let plan = try records.plan(delta, resources: try context.fetch(FetchDescriptor<KanbanResource>()))
+        // What's logged must be what's saved: an exception for someone unknown is refused here,
+        // not quietly dropped by the plan.
+        for h in delta.holidays where !(h.after?.workedBy ?? []).allSatisfy({ records.people[$0] != nil }) {
+            throw KanbanServiceError.conflict("That person is no longer in TickyTask.")
+        }
+        let resources = try context.fetch(FetchDescriptor<KanbanResource>())
+        let plan = try records.plan(delta, resources: resources)
+        try records.checkCapacity(delta, resources: resources)
         let data = try KanbanActivityPayload(availability: delta).encoded()
         plan.apply(context)
         try save(project, kind: .availability, taskIDs: [], summary: summary, encodedPayload: data)
@@ -33,8 +39,13 @@ extension KanbanService {
         guard records.matches(delta, before: false) else {
             throw KanbanServiceError.conflict("That time off or availability was changed again afterwards (on this or another board). Revert the newer changes first.")
         }
-        let reversed = delta.reversed
+        var reversed = delta.reversed
         let plan = try records.plan(reversed, resources: try context.fetch(FetchDescriptor<KanbanResource>()))
+        // Undo can't restore an exception for someone deleted since; log what it does restore.
+        let restored = Dictionary(plan.holidays.map { ($0.0.id, $0.0) }, uniquingKeysWith: { a, _ in a })
+        for i in reversed.holidays.indices where reversed.holidays[i].after != nil {
+            reversed.holidays[i].after = restored[reversed.holidays[i].id]
+        }
         return Inverse(kind: .availability, payload: KanbanActivityPayload(availability: reversed)) { [context] in plan.apply(context) }
     }
 
@@ -66,7 +77,7 @@ extension KanbanService {
     func setOverride(_ resource: KanbanResource, week monday: KanbanDay, halfDays: Int?, note: String? = nil) throws {
         guard let project = resource.project else { throw KanbanServiceError.notFound }
         if let halfDays {
-            let possible = KanbanAvailability.cell(week: monday, board: .init(project), member: .init(resource)).possibleHalfDays
+            let possible = KanbanAvailability.cell(week: monday, board: .init(project), member: .init(resource), holidays: try holidays()).possibleHalfDays
             guard halfDays <= possible else {
                 throw KanbanServiceError.invariant("That week has \(KanbanAvailability.days(possible)) possible days on this board.")
             }
@@ -81,6 +92,47 @@ extension KanbanService {
         try applyAvailability(KanbanAvailabilityDelta(overrides: [.init(id: id, before: existing.map(KanbanAvailabilityOverrideDTO.init), after: after)]),
                               on: project, summary: halfDays.map { "Set \(resource.displayName)’s week of \(week) to \(KanbanAvailability.days($0)) days" }
                                   ?? "Cleared \(resource.displayName)’s override for the week of \(week)")
+    }
+
+    // MARK: Public holidays
+
+    func addHoliday(_ holiday: KanbanHolidayDTO, on project: KanbanProject) throws {
+        try applyAvailability(KanbanAvailabilityDelta(holidays: [.init(id: holiday.id, before: nil, after: holiday)]), on: project,
+                              summary: "Added the public holiday \(holiday.name) (\(Self.dayLabel(holiday.day)))")
+    }
+
+    func editHoliday(_ holiday: KanbanHoliday, to updated: KanbanHolidayDTO, on project: KanbanProject) throws {
+        var updated = updated
+        updated.id = holiday.id
+        updated.createdAt = holiday.createdAt
+        updated.updatedAt = now()
+        updated.workedBy = KanbanHoliday.normalized(updated.workedBy)
+        try applyAvailability(KanbanAvailabilityDelta(holidays: [.init(id: holiday.id, before: KanbanHolidayDTO(holiday), after: updated)]),
+                              on: project, summary: "Changed the public holiday \(updated.name) (\(Self.dayLabel(updated.day)))")
+    }
+
+    func deleteHolidays(_ holidays: [KanbanHoliday], on project: KanbanProject) throws {
+        guard let first = holidays.first else { return }
+        try applyAvailability(KanbanAvailabilityDelta(holidays: holidays.map { .init(id: $0.id, before: KanbanHolidayDTO($0), after: nil) }),
+                              on: project, summary: holidays.count == 1 ? "Removed the public holiday \(first.name) (\(Self.dayLabel(first.day)))"
+                                  : "Removed \(holidays.count) public holidays")
+    }
+
+    /// Whether `person` works `holiday` (an exception to it).
+    func setWorks(_ person: KanbanPerson, holiday: KanbanHoliday, works: Bool, on project: KanbanProject) throws {
+        var updated = KanbanHolidayDTO(holiday)
+        var people = Set(updated.workedBy ?? [])
+        if works { people.insert(person.id) } else { people.remove(person.id) }
+        updated.workedBy = KanbanHoliday.normalized(Array(people))
+        updated.updatedAt = now()
+        try applyAvailability(KanbanAvailabilityDelta(holidays: [.init(id: holiday.id, before: KanbanHolidayDTO(holiday), after: updated)]),
+                              on: project, summary: works ? "\(person.name) works on \(holiday.name) (\(Self.dayLabel(holiday.day)))"
+                                  : "\(person.name) is off on \(holiday.name) (\(Self.dayLabel(holiday.day)))")
+    }
+
+    /// Every public holiday, for the arithmetic.
+    func holidays() throws -> KanbanAvailability.Holidays {
+        KanbanAvailability.Holidays(try context.fetch(FetchDescriptor<KanbanHoliday>()))
     }
 
     // MARK: Board dates
@@ -121,6 +173,12 @@ extension KanbanService {
         return start == end ? start.utcDate.formatted(style) + suffix : "\(start.utcDate.formatted(style)) – \(end.utcDate.formatted(style))"
     }
 
+    static func dayLabel(_ key: String) -> String {
+        guard let day = KanbanDay(key: key) else { return key }
+        return day.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: KanbanAvailabilityFormat.calendar,
+                                                      timeZone: TimeZone(identifier: "UTC")!))
+    }
+
     static func weekLabel(_ monday: KanbanDay) -> String {
         monday.utcDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, calendar: KanbanAvailabilityFormat.calendar, timeZone: TimeZone(identifier: "UTC")!))
     }
@@ -131,7 +189,8 @@ extension KanbanService {
         AvailabilityRecords(timeOff: Dictionary(try context.fetch(FetchDescriptor<KanbanTimeOff>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }),
                             overrides: Dictionary(try context.fetch(FetchDescriptor<KanbanAvailabilityOverride>()).map { ($0.id, $0) },
                                                   uniquingKeysWith: { a, _ in a }),
-                            people: Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
+                            people: Dictionary(try context.fetch(FetchDescriptor<KanbanPerson>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }),
+                            holidays: Dictionary(try context.fetch(FetchDescriptor<KanbanHoliday>()).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }))
     }
 }
 
@@ -140,13 +199,37 @@ struct AvailabilityRecords {
     var timeOff: [UUID: KanbanTimeOff]
     var overrides: [UUID: KanbanAvailabilityOverride]
     var people: [UUID: KanbanPerson]
+    var holidays: [UUID: KanbanHoliday] = [:]
 
     /// Whether every record is as the delta's `before` (or `after`) says.
     func matches(_ delta: KanbanAvailabilityDelta, before: Bool) -> Bool {
         for t in delta.timeOff where timeOff[t.id].map(KanbanTimeOffDTO.init) != (before ? t.before : t.after) { return false }
         for o in delta.overrides where overrides[o.id].map(KanbanAvailabilityOverrideDTO.init) != (before ? o.before : o.after) { return false }
         for a in delta.aliases where people[a.personID]?.aliases != (before ? a.before : a.after) { return false }
+        for h in delta.holidays where holidays[h.id].map(KanbanHolidayDTO.init) != (before ? h.before : h.after) { return false }
         return true
+    }
+
+    /// New overrides fit the week's possible days once the change's holidays are in (design 04).
+    /// Undo skips this: it restores what was valid, and a stale override shows as needing review.
+    @MainActor
+    func checkCapacity(_ delta: KanbanAvailabilityDelta, resources: [KanbanResource]) throws {
+        let overrides = delta.overrides.compactMap(\.after)
+        guard !overrides.isEmpty else { return }
+        var final = holidays.mapValues(KanbanHolidayDTO.init)
+        for h in delta.holidays { final[h.id] = h.after }
+        let all = KanbanAvailability.Holidays(final.values.compactMap { h in
+            KanbanDay(key: h.day).map { KanbanAvailability.Holiday(id: h.id, day: $0, portion: KanbanTimeOffPortion(rawValue: h.portionRaw) ?? .full,
+                                                                   workedBy: Set(h.workedBy ?? [])) }
+        })
+        let byID = Dictionary(resources.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for o in overrides {
+            guard let resource = o.resourceId.flatMap({ byID[$0] }), let project = resource.project, let monday = KanbanDay(key: o.weekStart) else { continue }
+            let possible = KanbanAvailability.cell(week: monday, board: .init(project), member: .init(resource), holidays: all).possibleHalfDays
+            guard o.halfDays <= possible else {
+                throw KanbanServiceError.invariant("\(resource.displayName)’s week of \(KanbanService.weekLabel(monday)) has \(KanbanAvailability.days(possible)) possible days.")
+            }
+        }
     }
 
     /// Checks every `after` and resolves what it points at; throws before anything changes.
@@ -189,6 +272,19 @@ struct AvailabilityRecords {
             guard let person = peopleByID[a.personID] else { throw KanbanServiceError.conflict("That person is no longer in TickyTask.") }
             plan.aliases.append((person, a.after))
         }
+        for h in delta.holidays {
+            guard let after = h.after else {
+                if let record = holidays[h.id] { plan.deletions.append(record) }
+                continue
+            }
+            guard KanbanDay(key: after.day) != nil else { throw KanbanServiceError.invariant("A holiday needs a real day.") }
+            guard !after.name.trimmingCharacters(in: .whitespaces).isEmpty else { throw KanbanServiceError.invariant("A holiday needs a name.") }
+            guard KanbanTimeOffPortion(rawValue: after.portionRaw) != nil else { throw KanbanServiceError.invariant("Unknown part of the day.") }
+            // People deleted since keep no exception; undo can't bring an exception back for someone gone.
+            var kept = after
+            kept.workedBy = KanbanHoliday.normalized(after.workedBy?.filter { peopleByID[$0] != nil })
+            plan.holidays.append((kept, holidays[h.id]))
+        }
         return plan
     }
 
@@ -210,6 +306,7 @@ struct AvailabilityPlan {
     var timeOff: [(KanbanTimeOffDTO, KanbanTimeOff?, KanbanPerson)] = []
     var overrides: [(KanbanAvailabilityOverrideDTO, KanbanAvailabilityOverride?, KanbanResource)] = []
     var aliases: [(KanbanPerson, [String]?)] = []
+    var holidays: [(KanbanHolidayDTO, KanbanHoliday?)] = []
     var deletions: [any PersistentModel] = []
 
     func apply(_ context: ModelContext) {
@@ -243,6 +340,19 @@ struct AvailabilityPlan {
             record.resource = resource
         }
         for (person, aliases) in aliases { person.aliases = aliases }
+        for (dto, existing) in holidays {
+            let record = existing ?? {
+                let model = KanbanHoliday(id: dto.id, day: dto.day, name: dto.name)
+                context.insert(model)
+                return model
+            }()
+            record.day = dto.day
+            record.name = dto.name
+            record.portionRaw = dto.portionRaw
+            record.workedBy = dto.workedBy
+            record.createdAt = dto.createdAt
+            record.updatedAt = dto.updatedAt
+        }
         deletions.forEach { context.delete($0) }
     }
 }

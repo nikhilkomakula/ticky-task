@@ -30,10 +30,11 @@ struct KanbanStoreUpgradeCheck {
             "ZKANBANRESOURCE": try context.fetchCount(FetchDescriptor<KanbanResource>()),
             "ZKANBANACTIVITY": try context.fetchCount(FetchDescriptor<KanbanActivity>()),
             "ZKANBANTIMEOFF": try context.fetchCount(FetchDescriptor<KanbanTimeOff>()),
+            "ZKANBANAVAILABILITYOVERRIDE": try context.fetchCount(FetchDescriptor<KanbanAvailabilityOverride>()),
+            "ZKANBANHOLIDAY": try context.fetchCount(FetchDescriptor<KanbanHoliday>()),
         ]
-        // The new fields read as unset.
-        let boards = try context.fetch(FetchDescriptor<KanbanProject>())
-        #expect(boards.allSatisfy { $0.startDay == nil && $0.endDay == nil })
+        // v0.4.0's new table starts empty on a v0.3.0 store.
+        #expect(counts["ZKANBANHOLIDAY"] == 0)
         let text = counts.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: "\n") + "\n"
         try Data(text.utf8).write(to: url.deletingLastPathComponent().appendingPathComponent("upgrade-counts.txt"))
     }

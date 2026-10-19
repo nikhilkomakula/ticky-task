@@ -31,6 +31,7 @@ extension ModelContext {
         _ = try? fetch(FetchDescriptor<KanbanActivity>())
         _ = try? fetch(FetchDescriptor<KanbanTimeOff>())
         _ = try? fetch(FetchDescriptor<KanbanAvailabilityOverride>())
+        _ = try? fetch(FetchDescriptor<KanbanHoliday>())
     }
 }
 

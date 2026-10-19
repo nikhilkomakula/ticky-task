@@ -190,7 +190,7 @@ struct KanbanService {
         var keys = Set(project.collapsedRowKeys)
         if collapsed { keys.insert(row.storageKey) } else { keys.remove(row.storageKey) }
         project.collapsedRowKeys = keys.sorted()
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     /// Collapses or expands every row at once (⌃⌘↑ / ⌃⌘↓).
@@ -199,7 +199,7 @@ struct KanbanService {
         project.collapsedRowKeys = collapsed
             ? ([KanbanRowKey.unassigned.storageKey] + project.resources.filter { $0.archivedAt == nil }.map(\.id.uuidString)).sorted()
             : []
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     /// Stores the encoded board view state (last view, filters, sort, density, show-archived).
@@ -207,7 +207,7 @@ struct KanbanService {
         try RecurrenceMaterializer.checkpoint(context)
         guard project.boardState != state else { return }
         project.boardState = state
-        try saveOrUndo()
+        try saveViewStateOnly()
     }
 
     // MARK: - People and memberships
@@ -409,10 +409,18 @@ struct KanbanService {
     }
 
     /// Hard-deletes a person; refused while they have any membership, archived included.
+    /// Removes them from every holiday's workedBy list.
     func deletePerson(_ person: KanbanPerson) throws {
         try RecurrenceMaterializer.checkpoint(context)
         guard try memberships(of: person).isEmpty else {
             throw KanbanServiceError.invariant("\(person.name) is still on a board; archive them instead.")
+        }
+        let holidays = try context.fetch(FetchDescriptor<KanbanHoliday>())
+        for holiday in holidays {
+            if holiday.workedBy?.contains(person.id) ?? false {
+                holiday.workedBy = holiday.workedBy.flatMap { $0.filter { $0 != person.id } }
+                if holiday.workedBy?.isEmpty ?? false { holiday.workedBy = nil }
+            }
         }
         context.delete(person)
         try saveOrUndo()
@@ -1237,6 +1245,19 @@ struct KanbanService {
         generation?.bump()
     }
 
+    /// View state (collapsed rows, filters, sort, widths) doesn't change any metric, so a
+    /// successful save keeps every board's cached metrics. A failed one rolls back whatever
+    /// was pending, which may be data, so the caches go.
+    private func saveViewStateOnly() throws {
+        do {
+            try context.saveTransaction()
+        } catch {
+            context.undoFailedTransaction()
+            generation?.bump()
+            throw error
+        }
+    }
+
     private func activity(_ id: UUID) throws -> KanbanActivity? {
         try context.fetch(FetchDescriptor<KanbanActivity>(predicate: #Predicate { $0.id == id })).first
     }
@@ -1726,7 +1747,7 @@ struct KanbanService {
             for edge in g.incomingDependencies where edge.count == 2 { touches[edge[0], default: []].insert("dependsOn") }
         }
         if let a = p.availability {
-            for id in a.timeOff.map(\.id) + a.overrides.map(\.id) { touches[id, default: []].insert("*") }
+            for id in a.timeOff.map(\.id) + a.overrides.map(\.id) + a.holidays.map(\.id) { touches[id, default: []].insert("*") }
             for alias in a.aliases { touches[alias.personID, default: []].insert("aliases") }
         }
         return touches

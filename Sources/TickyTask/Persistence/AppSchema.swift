@@ -19,7 +19,9 @@ enum AppSchema {
          KanbanProject.self, KanbanColumn.self, KanbanPerson.self, KanbanResource.self,
          KanbanTask.self, KanbanSubtask.self, KanbanLabel.self, KanbanActivity.self,
          // Availability (v0.3.0): additive types.
-         KanbanTimeOff.self, KanbanAvailabilityOverride.self]
+         KanbanTimeOff.self, KanbanAvailabilityOverride.self,
+         // Public holidays (v0.4.0): additive.
+         KanbanHoliday.self]
 
     static let schema = Schema(models)
 }
