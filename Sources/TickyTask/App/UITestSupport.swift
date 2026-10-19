@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 
@@ -28,6 +29,44 @@ enum UITestSupport {
         let args = ProcessInfo.processInfo.arguments
         guard isRunning, let index = args.firstIndex(of: "-uitestKanbanVolume"), index + 1 < args.count else { return nil }
         return Int(args[index + 1])
+    }
+
+    /// `-uitestKanbanScrollJumps <N>`: N sweeps of the board's vertical scroll bar in 13 jumps each,
+    /// ending at the bottom, set through the app's own Accessibility elements as an assistive app
+    /// sets them (the path that once froze the board; programmatic scrolling doesn't take it).
+    static var kanbanScrollJumpRounds: Int? {
+        let args = ProcessInfo.processInfo.arguments
+        guard isRunning, let index = args.firstIndex(of: "-uitestKanbanScrollJumps"), index + 1 < args.count else { return nil }
+        return Int(args[index + 1])
+    }
+
+    @MainActor
+    static func jumpKanbanScroller() async {
+        guard let rounds = kanbanScrollJumpRounds else { return }
+        try? await Task.sleep(for: .seconds(2))
+        func find(_ element: Any, depth: Int, where match: (AnyObject) -> Bool) -> AnyObject? {
+            let object = element as AnyObject
+            if match(object) { return object }
+            guard depth < 40 else { return nil }
+            for child in (object.accessibilityChildren?() ?? []) ?? [] {
+                if let found = find(child, depth: depth + 1, where: match) { return found }
+            }
+            return nil
+        }
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }),
+              let board = find(window, depth: 0, where: { ($0.accessibilityIdentifier?() ?? nil) == "kanban-board" }),
+              let bar = (board.accessibilityVerticalScrollBar?() ?? nil) as AnyObject? else {
+            return
+        }
+        for round in 0..<rounds {
+            for step in 0...12 {
+                guard !Task.isCancelled else { return }
+                let value = NSNumber(value: Double(round.isMultiple(of: 2) ? step : 12 - step) / 12)
+                _ = bar.setAccessibilityValue?(value)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+        _ = bar.setAccessibilityValue?(NSNumber(value: 1))
     }
 
     #if DEBUG

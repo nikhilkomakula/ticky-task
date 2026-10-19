@@ -33,6 +33,9 @@ enum BoardScrollAnchor {
               let cell = new.cells.first(where: { $0.columnID == anchor.cell.columnID && $0.row == anchor.cell.row }),
               cell.cardLayouts.map(\.id) == anchor.cell.cardLayouts.map(\.id),
               let layout = cell.cardLayouts.first(where: { $0.id == anchor.layout.id }) else { return 0 }
-        return cell.frame.minY + layout.offset - anchor.cell.frame.minY - anchor.layout.offset
+        // Differences first: identical fractional frames then cancel exactly, and sub-point
+        // noise never asks the board to scroll.
+        let adjustment = (cell.frame.minY - anchor.cell.frame.minY) + (layout.offset - anchor.layout.offset)
+        return abs(adjustment) < 0.5 ? 0 : adjustment
     }
 }
