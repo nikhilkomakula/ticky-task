@@ -68,15 +68,21 @@ struct KanbanBoardView: View {
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
-                        ForEach(snapshot.rows, id: \.key) { row in
-                            let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
-                            boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells, shown: shown, doneHidden: doneHidden,
-                                     load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
-                                     collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs, metricsKey: key)
-                                .id(row.key)
-                            Divider()
+                        // The rows are one eager child, so the lazy stack only pins the headers. Lazily
+                        // built rows were thrown away off screen with their card measurements, came back
+                        // at estimated heights and settled again; at some offsets that re-laid the board
+                        // forever (I-D31). The cells window their cards, so eager rows stay cheap.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(snapshot.rows, id: \.key) { row in
+                                let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
+                                boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells, shown: shown, doneHidden: doneHidden,
+                                         load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
+                                         collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs, metricsKey: key)
+                                    .id(row.key)
+                                Divider()
+                            }
+                            addPersonButton
                         }
-                        addPersonButton
                     } header: {
                         columnHeaders(columns, widths: widths, snapshot: snapshot, metrics: metrics, hidden: presentation.hiddenByColumn)
                     }
