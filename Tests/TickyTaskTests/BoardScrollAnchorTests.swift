@@ -42,6 +42,17 @@ struct BoardScrollAnchorTests {
         #expect(indices == Array(100...104), "settling does not jump to another part of the 200-card cell")
     }
 
+    @Test("Unchanged fractional geometry, or sub-point noise, asks for no scroll")
+    func unchangedFractionalGeometry() {
+        var old = frames()
+        old.cells[0].frame.origin.y = 123.45
+        old.cells[0].cardLayouts = old.cells[0].cardLayouts.map { .init(id: $0.id, offset: $0.offset + 0.3, height: $0.height) }
+        #expect(BoardScrollAnchor.verticalAdjustment(from: old, to: old) == 0)
+        var nudged = old
+        nudged.cells[0].frame.origin.y += 0.25
+        #expect(BoardScrollAnchor.verticalAdjustment(from: old, to: nudged) == 0)
+    }
+
     @Test("Width or density changes preserve the visible card", arguments: [CGFloat(44), CGFloat(100)])
     func revisedEstimates(estimatedHeight: CGFloat) {
         let old = frames()

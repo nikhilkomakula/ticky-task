@@ -68,15 +68,21 @@ struct KanbanBoardView: View {
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
-                        ForEach(snapshot.rows, id: \.key) { row in
-                            let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
-                            boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells, shown: shown, doneHidden: doneHidden,
-                                     load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
-                                     collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs, metricsKey: key)
-                                .id(row.key)
-                            Divider()
+                        // The rows are one eager child, so the lazy stack only pins the headers. Lazily
+                        // built rows were thrown away off screen with their card measurements, came back
+                        // at estimated heights and settled again; at some offsets that re-laid the board
+                        // forever (I-D31). The cells window their cards, so eager rows stay cheap.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(snapshot.rows, id: \.key) { row in
+                                let resource = row.resourceID.flatMap { id in project.resources.first { $0.id == id } }
+                                boardRow(row, resource: resource, columns: columns, widths: widths, cells: cells, shown: shown, doneHidden: doneHidden,
+                                         load: loads[row.resourceID], person: row.personID.flatMap { people[$0] },
+                                         collapsed: collapsed.contains(row.key.storageKey), dragIDs: dragIDs, metricsKey: key)
+                                    .id(row.key)
+                                Divider()
+                            }
+                            addPersonButton
                         }
-                        addPersonButton
                     } header: {
                         columnHeaders(columns, widths: widths, snapshot: snapshot, metrics: metrics, hidden: presentation.hiddenByColumn)
                     }
@@ -115,6 +121,7 @@ struct KanbanBoardView: View {
             .onKeyPress(phases: .down) { press in
                 handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks, cells: shown, shortened: Set(doneHidden.keys).subtracting(expandedDone))
             }
+            .task(id: project.id) { await UITestSupport.jumpKanbanScroller() }
             // Runs on appear too: Attention sets the card before this board exists.
             .task(id: app.highlightedKanbanTaskID) { _ = await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
             .task(id: focusRequest) {
@@ -268,7 +275,7 @@ struct KanbanBoardView: View {
                     position.scrollTo(point: target)
                 }
             } else {
-                // Only the outer lazy row needs an ID scroll; its cells supply numeric card offsets.
+                // An ID scroll to the row first; its cells supply numeric card offsets.
                 settledFrame = nil
                 proxy.scrollTo(row, anchor: .top)
             }
@@ -645,7 +652,8 @@ private struct KanbanCell: View {
     var onAdd: () -> Void
     @AppStorage("compactView") private var compact = false
     @State private var hover = KanbanCellHoverState()
-    @State private var cellFrame: CGRect = .zero
+    /// Content coordinates; only the top places the scroll window in this cell.
+    @State private var cellTop: CGFloat = 0
     @State private var measurements = BoardCardMeasurements()
 
     private struct CardMeasurement: Equatable {
@@ -669,10 +677,12 @@ private struct KanbanCell: View {
             ($0.id, BoardCardMeasurements.Key(task: $0, width: cardWidth, compact: compact, clock: clock))
         })
         let layout = BoardCardLayout(ids: tasks.map(\.id), measuredHeights: measurements.heights(for: measurementKeys))
-        let range = (scroll.visibleRange.lowerBound - cellFrame.minY - 6)...(scroll.visibleRange.upperBound - cellFrame.minY - 6)
-        let indices = layout.visibleIndices(in: range, pinned: pinnedCards)
         VStack(spacing: 6) {
-            if !tasks.isEmpty { cardWindow(layout, indices: indices, measurementKeys: measurementKeys) }
+            if !tasks.isEmpty {
+                KanbanCardWindow(scroll: scroll, cellTop: cellTop, layout: layout, pinned: pinnedCards) { indices in
+                    cardWindow(layout, indices: indices, measurementKeys: measurementKeys)
+                }
+            }
             if let doneFooter { doneFooterButton(doneFooter) }
             KanbanCellAddButton(hover: hover, columnName: column.name, rowName: row.name, onAdd: onAdd)
         }
@@ -681,7 +691,7 @@ private struct KanbanCell: View {
         // Full estimated extent keeps all six cells aligned without realizing their cards.
         .frame(minHeight: 72, maxHeight: .infinity, alignment: .top)
         .background(KanbanColumnStyle(column).effectiveAccent.opacity(0.06))
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(BoardGeometry.contentSpace)) } action: { cellFrame = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(BoardGeometry.contentSpace)).minY } action: { cellTop = $0 }
         .publishBoardFrame(in: .named(BoardGeometry.contentSpace)) {
             BoardFrames(cells: [.init(columnID: column.id, row: row.key, frame: $0,
                                      cardLayouts: tasks.indices.filter { tasks[$0].archivedAt == nil }.map {
@@ -770,6 +780,22 @@ private struct KanbanCell: View {
         .help(label)
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
+    }
+}
+
+/// The only part of a cell that follows the scroll window: a 400-point step re-picks its cards
+/// without rebuilding the cell's card keys and layout, which on a board of eager rows would
+/// otherwise run for every card on the board.
+private struct KanbanCardWindow<Content: View>: View {
+    let scroll: KanbanScrollOffset
+    let cellTop: CGFloat
+    let layout: BoardCardLayout
+    let pinned: Set<UUID>
+    @ViewBuilder let content: ([Int]) -> Content
+
+    var body: some View {
+        let range = (scroll.visibleRange.lowerBound - cellTop - 6)...(scroll.visibleRange.upperBound - cellTop - 6)
+        content(layout.visibleIndices(in: range, pinned: pinned))
     }
 }
 
