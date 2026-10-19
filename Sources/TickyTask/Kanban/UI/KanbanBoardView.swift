@@ -115,6 +115,7 @@ struct KanbanBoardView: View {
             .onKeyPress(phases: .down) { press in
                 handleKey(press, snapshot: snapshot, columns: columns, tasks: tasks, cells: shown, shortened: Set(doneHidden.keys).subtracting(expandedDone))
             }
+            .task(id: project.id) { await UITestSupport.jumpKanbanScroller() }
             // Runs on appear too: Attention sets the card before this board exists.
             .task(id: app.highlightedKanbanTaskID) { _ = await reveal(app.highlightedKanbanTaskID, proxy: proxy) }
             .task(id: focusRequest) {
