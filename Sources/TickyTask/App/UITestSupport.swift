@@ -148,7 +148,7 @@ enum UITestSupport {
 
     /// `-uitestKanbanVaried`: a small board shaped like a real one that once sent the lazily
     /// built rows into an endless layout loop when scrolled in jumps: twelve people plus
-    /// Unassigned, 24 cards one to three per cell in To Do and In Progress, labelled titles that
+    /// Unassigned, 26 cards one to three per cell in To Do and In Progress, labelled titles that
     /// wrap to one, two or three lines, sorted by priority.
     @MainActor
     private static func seedVariedBoard(_ context: ModelContext) throws {
